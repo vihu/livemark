@@ -9,7 +9,7 @@ use pulldown_cmark::{Event, Tag, TagEnd};
 use crate::parse;
 
 /// How a stretch of source is drawn, in theme-agnostic terms.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Style {
     /// 0 for body text, 1 to 6 inside a heading of that level.
     pub heading: u8,

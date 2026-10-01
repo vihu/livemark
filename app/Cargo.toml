@@ -14,4 +14,5 @@ name = "livemark"
 path = "src/main.rs"
 
 [dependencies]
-iced = { workspace = true }
+iced     = { workspace = true }
+livemark = { path = ".." }

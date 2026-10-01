@@ -1,36 +1,44 @@
 //! livemark: a desktop editor for markdown files.
 //!
 //! ```text
-//! livemark [file.md]
-//! cargo run --release -p livemark-app -- [file.md]
+//! livemark [file.md] [--dark]
+//! cargo run --release -p livemark-app -- [file.md] [--dark]
 //! ```
 //!
-//! Until the live preview widget lands (PLAN-001 L0), the file opens in
-//! iced's own `text_editor`, unsaved.
-use iced::widget::text_editor;
-use iced::widget::text_editor::{Action, Content};
-use iced::{Element, Fill};
+//! Opens the file in livemark's live preview editor. Saving lands with L1
+//! (PLAN-001); until then edits stay in the window.
+use iced::{Element, Task, Theme};
+use livemark::widget::{Editor, Message};
 
 pub fn main() -> iced::Result {
-    let text = match std::env::args().nth(1) {
-        Some(path) => std::fs::read_to_string(&path).unwrap_or_else(|error| {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let text = match args.iter().find(|a| !a.starts_with("--")) {
+        Some(path) => std::fs::read_to_string(path).unwrap_or_else(|error| {
             eprintln!("{path}: {error}");
             std::process::exit(1);
         }),
         None => String::new(),
     };
-    iced::application(move || Content::with_text(&text), update, view)
-        .title("livemark")
-        .run()
+    let theme = if args.iter().any(|a| a == "--dark") {
+        Theme::Dark
+    } else {
+        Theme::Light
+    };
+    iced::application(
+        move || (Editor::new(text.clone()), Editor::focus()),
+        update,
+        view,
+    )
+    .title("livemark")
+    .theme(move |_: &Editor| theme.clone())
+    .run()
 }
 
-fn update(content: &mut Content, action: Action) {
-    content.perform(action);
+fn update(editor: &mut Editor, message: Message) -> Task<Message> {
+    editor.update(message);
+    Task::none()
 }
 
-fn view(content: &Content) -> Element<'_, Action> {
-    text_editor(content)
-        .on_action(|action| action)
-        .height(Fill)
-        .into()
+fn view(editor: &Editor) -> Element<'_, Message> {
+    editor.view()
 }
