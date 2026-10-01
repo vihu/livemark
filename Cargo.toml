@@ -33,6 +33,8 @@ unicode-segmentation = "1"
 [dev-dependencies]
 # Headless rendering for widget tests and the snapshot example; same rev as iced.
 iced_test = { git = "https://github.com/iced-rs/iced", rev = "90dec30cc7368c3fbaac69790e43a4b08a21691d" }
+# iced's frame loop (`UserInterface`) for the bench example; already in the tree.
+iced_runtime = { git = "https://github.com/iced-rs/iced", rev = "90dec30cc7368c3fbaac69790e43a4b08a21691d" }
 # HTML output for the spec conformance tests only.
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 serde          = { version = "1", features = ["derive"] }
