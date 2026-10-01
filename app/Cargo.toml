@@ -1,0 +1,17 @@
+[package]
+description            = "A live-preview markdown editor"
+edition.workspace      = true
+license.workspace      = true
+name                   = "livemark-app"
+publish                = false
+rust-version.workspace = true
+version.workspace      = true
+
+[[bin]]
+# Its docs would collide with the library's, which share the name.
+doc  = false
+name = "livemark"
+path = "src/main.rs"
+
+[dependencies]
+iced = { workspace = true }
