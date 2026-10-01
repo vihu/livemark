@@ -326,3 +326,14 @@ fn quotes_dim_every_marker_and_hang_after_them() {
     let rule = Styled::new("a\n\n---\n");
     assert_eq!(picked("a\n\n---\n", &rule, |s| s.marker), ["---"]);
 }
+
+#[test]
+fn bare_urls_are_link_text_without_markers() {
+    let text = "see www.example.com, https://a.b/c and me@x.yz.";
+    let styled = Styled::new(text);
+    assert_eq!(
+        picked(text, &styled, |s| s.link),
+        ["www.example.com", "https://a.b/c", "me@x.yz"]
+    );
+    assert!(styled.constructs().is_empty(), "nothing to hide");
+}

@@ -41,6 +41,8 @@ struct Span {
     image: bool,
     /// `<url>` or `<email>`: one-byte markers at both ends.
     angle: bool,
+    /// A `www.` link, bare URL or email address: no markers at all.
+    bare: bool,
     /// The end of the last event inside it: where its text ends.
     inner_end: Option<usize>,
 }
@@ -243,7 +245,10 @@ impl Walk<'_> {
     }
 
     fn span_start(&mut self, range: Range<usize>, link_type: LinkType, image: bool) {
-        let construct = (!image && self.cells.is_none()).then(|| {
+        let auto = matches!(link_type, LinkType::Autolink | LinkType::Email);
+        let angle = auto && self.text[range.start..].starts_with('<');
+        let bare = auto && !angle;
+        let construct = (!image && !bare && self.cells.is_none()).then(|| {
             let index = self.constructs.len();
             self.constructs.push(Construct {
                 syntax: Syntax::Link,
@@ -258,7 +263,8 @@ impl Walk<'_> {
             construct,
             range,
             image,
-            angle: matches!(link_type, LinkType::Autolink | LinkType::Email),
+            angle,
+            bare,
             inner_end: None,
         });
     }
@@ -277,6 +283,10 @@ impl Walk<'_> {
             parent.inner_end = Some(parent.inner_end.unwrap_or(0).max(span.range.end));
         }
         let Range { start, end } = span.range;
+        if span.bare {
+            self.toggles.push((start..end, Flag::Link));
+            return;
+        }
         let Some(inner) = span.inner_end else {
             self.toggles.push((start..end, Flag::Marker));
             return;
