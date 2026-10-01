@@ -6,7 +6,10 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use common::Rng;
 use livemark::doc::{Change, Doc, Kind, Selection};
+
+mod common;
 
 const SEEDS: u64 = 12;
 const STEPS: usize = 400;
@@ -15,15 +18,9 @@ const STEPS: usize = 400;
 /// `LIVEMARK_FUZZ_ONLY=<seed>` replays one.
 #[test]
 fn random_sessions_match_a_plain_string() {
-    let seeds = env_number("LIVEMARK_FUZZ_SEEDS").unwrap_or(SEEDS);
-    let only = env_number("LIVEMARK_FUZZ_ONLY");
-    for seed in only.map_or(0..seeds, |seed| seed..seed + 1) {
+    for seed in common::seeds(SEEDS) {
         session(seed);
     }
-}
-
-fn env_number(name: &str) -> Option<u64> {
-    std::env::var(name).ok().and_then(|n| n.parse().ok())
 }
 
 /// Text that stresses offsets and line starts: multi-byte characters and
@@ -196,34 +193,4 @@ fn fixture(name: &str) -> String {
         env!("CARGO_MANIFEST_DIR")
     ))
     .unwrap()
-}
-
-/// SplitMix64, as in roughdraft's random sessions.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        z ^ (z >> 31)
-    }
-
-    fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
-    }
-
-    fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
-        &items[self.below(items.len() as u64) as usize]
-    }
-
-    /// A char boundary in `text`, ends included.
-    fn boundary(&mut self, text: &str) -> usize {
-        let mut at = self.below(text.len() as u64 + 1) as usize;
-        while !text.is_char_boundary(at) {
-            at -= 1;
-        }
-        at
-    }
 }

@@ -2,4 +2,6 @@
 #![deny(unsafe_code, missing_docs, rustdoc::broken_intra_doc_links)]
 
 pub mod doc;
+pub mod layout;
 pub mod parse;
+pub mod style;
