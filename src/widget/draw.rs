@@ -38,6 +38,11 @@ impl Editor {
         let selection_color = palette.primary.weak.color;
         let code_background = palette.background.weak.color;
         let quote_bar = palette.background.strong.color;
+        let match_color = Color {
+            a: 0.35,
+            ..palette.warning.base.color
+        };
+        let matches = self.find.as_ref().map_or(&[][..], |f| &f.matches[..]);
         let selection = self.doc.selection().range();
         let caret_rect = caret.then(|| self.caret()).flatten();
         let quad = |renderer: &mut iced::Renderer, bounds: Rectangle, color: Color| {
@@ -83,6 +88,23 @@ impl Editor {
                             Size::new(r.width + 4.0, r.height - 4.0),
                         );
                         quad(renderer, at(r), code_background);
+                    }
+                }
+                // Find matches on this line, except those in hidden text
+                // (REFERENCE-001 section 16).
+                let first = matches.partition_point(|m| m.end < range.start);
+                for found in matches[first..].iter().take_while(|m| m.start <= range.end) {
+                    let hidden = source
+                        .hidden
+                        .iter()
+                        .any(|h| h.start < found.end && found.start < h.end);
+                    if hidden || found.end > range.end {
+                        continue;
+                    }
+                    let from = shaped.line.to_display(found.start);
+                    let to = shaped.line.to_display(found.end);
+                    for (r, _) in shaped.stretches(from..to) {
+                        quad(renderer, at(r), match_color);
                     }
                 }
                 if !selection.is_empty()

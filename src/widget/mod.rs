@@ -2,6 +2,7 @@
 //! is drawn; [`Editor::view`] shows it and [`Editor::update`] takes back the
 //! messages the view produces (`input.rs`). Behaviour per REFERENCE-001.
 mod draw;
+mod find;
 mod highlight;
 mod input;
 mod lines;
@@ -40,6 +41,8 @@ pub struct Editor {
     /// The last copy taken from a line with nothing selected, so pasting
     /// it puts back a line (REFERENCE-001 section 18).
     linewise: Option<String>,
+    /// The find bar, when it is open.
+    find: Option<find::Find>,
     lines: RefCell<Lines>,
 }
 
@@ -85,6 +88,7 @@ enum Input {
     /// Text committed by an input method.
     Commit(String),
     Paste(String),
+    Find(find::FindInput),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -133,6 +137,7 @@ impl Editor {
             press: None,
             goal_x: None,
             linewise: None,
+            find: None,
             lines: RefCell::new(Lines::new(Colors {
                 text: Color::BLACK,
                 marker: Color::BLACK,
@@ -179,9 +184,14 @@ impl Editor {
         self.with_lines(|lines, source| lines.reveal(source, selection.head, Affinity::After));
     }
 
-    /// The editor, filling the space it is given.
+    /// The editor, filling the space it is given, with the find bar under
+    /// the text when it is open.
     pub fn view(&self) -> Element<'_, Message> {
-        Element::new(surface::Surface { editor: self })
+        let surface = Element::new(surface::Surface { editor: self });
+        match self.find_bar() {
+            Some(bar) => iced::widget::column![surface, bar].into(),
+            None => surface,
+        }
     }
 
     /// A task that gives the editor keyboard focus.

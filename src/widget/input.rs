@@ -16,7 +16,7 @@ impl Editor {
         let version = self.doc.version();
         let mut side = Affinity::After;
         let mut vertical = false;
-        let mut clipboard = Task::none();
+        let mut task = Task::none();
         match input {
             Input::Press { at, shift, clicks } => side = self.press(at, shift, clicks),
             Input::Drag(at) => side = self.drag(at),
@@ -29,6 +29,7 @@ impl Editor {
                 return Task::none();
             }
             Input::Commit(text) => edit::type_text(&mut self.doc, &text, now),
+            Input::Find(input) => task = self.find_input(input, now),
             Input::Paste(text) => {
                 let line = self.doc.selection().range().is_empty()
                     && self.linewise.as_deref() == Some(text.as_str());
@@ -66,7 +67,7 @@ impl Editor {
                     if cut {
                         edit::cut(&mut self.doc, now);
                     }
-                    clipboard = iced::clipboard::write(text).discard();
+                    task = iced::clipboard::write(text).discard();
                 }
                 Key::SelectAll => self.doc.set_selection(Selection {
                     anchor: 0,
@@ -93,7 +94,8 @@ impl Editor {
         self.side = side;
         let head = self.doc.selection().head;
         self.with_lines(|lines, source| lines.reveal(source, head, side));
-        clipboard
+        self.refresh_matches();
+        task
     }
 
     /// A press: a caret (Shift extends the selection), a word on a double

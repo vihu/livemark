@@ -338,3 +338,37 @@ fn ctrl_b_e_and_k_format_the_selection() {
     });
     assert_eq!(editor.text(), "**word**`x`[t]()");
 }
+
+#[test]
+fn ctrl_f_finds_the_selection_and_f3_steps_through_matches() {
+    let mut editor = Editor::new("cat, dog, cat, dog\n".into());
+    let command = keyboard::Modifiers::COMMAND;
+    let none = keyboard::Modifiers::default();
+    let word = Point::new(16.0 + 8.0, 20.0);
+    run(&mut editor, |ui| {
+        click(ui, word);
+        click(ui, word);
+        ui.simulate([press(Key::Character("f".into()), command)]);
+    });
+    assert_eq!(selected(&editor), "cat", "the query is the selection");
+    run(&mut editor, |ui| {
+        ui.simulate([press(Key::Named(Named::F3), none)]);
+    });
+    assert_eq!(editor.selection().range(), 10..13, "the next cat");
+    // Typing a new query in the bar selects its first match.
+    run(&mut editor, |ui| {
+        ui.click("cat").expect("the query field");
+        ui.simulate([press(Key::Character("a".into()), command)]);
+        ui.typewrite("dog");
+    });
+    assert_eq!(editor.selection().range(), 5..8, "the first dog");
+    run(&mut editor, |ui| {
+        ui.simulate([press(Key::Named(Named::Escape), none)]);
+        ui.simulate([press(Key::Named(Named::F3), none)]);
+    });
+    assert_eq!(
+        editor.selection().range(),
+        5..8,
+        "closed: F3 no longer moves on"
+    );
+}

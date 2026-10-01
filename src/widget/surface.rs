@@ -12,6 +12,7 @@ use iced::keyboard;
 use iced::widget::text_editor::{Binding, KeyPress, Motion as IcedMotion};
 use iced::{Element, Event, Length, Pixels, Point, Rectangle, Size, Theme, Vector, window};
 
+use super::find::FindInput;
 use super::lines::TEXT_SIZE;
 use super::{Editor, ID, Input, Key, Message, Vertical};
 use crate::edit::Motion;
@@ -225,7 +226,17 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 modifiers,
                 text,
                 ..
-            }) if state.focus.is_some() => {
+            }) if state.focus.is_some() || self.editor.find.is_some() => {
+                // The find bar's keys, also while its fields have focus
+                // (REFERENCE-001 section 16).
+                if let Some(input) = self.find_key(key, *physical_key, *modifiers) {
+                    publish(shell, Input::Find(input));
+                    shell.capture_event();
+                    return;
+                }
+                if state.focus.is_none() {
+                    return;
+                }
                 let press = KeyPress {
                     key: key.clone(),
                     modified_key: modified_key.clone(),
@@ -316,6 +327,35 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 }
 
 impl Surface<'_> {
+    /// Ctrl/Cmd+F and Ctrl/Cmd+H open the find bar; while it is open, F3
+    /// and Ctrl/Cmd+G go to the next match (Shift: the previous one) and
+    /// Escape closes it.
+    fn find_key(
+        &self,
+        key: &keyboard::Key,
+        physical_key: keyboard::key::Physical,
+        modifiers: keyboard::Modifiers,
+    ) -> Option<FindInput> {
+        let letter = key.to_latin(physical_key);
+        let open = self.editor.find.is_some();
+        let forward = !modifiers.shift();
+        match key.as_ref() {
+            _ if modifiers.command() && !modifiers.alt() && matches!(letter, Some('f' | 'h')) => {
+                Some(FindInput::Open {
+                    replace: letter == Some('h'),
+                })
+            }
+            keyboard::Key::Named(keyboard::key::Named::F3) if open => {
+                Some(FindInput::Step { forward })
+            }
+            _ if open && modifiers.command() && letter == Some('g') => {
+                Some(FindInput::Step { forward })
+            }
+            keyboard::Key::Named(keyboard::key::Named::Escape) if open => Some(FindInput::Close),
+            _ => None,
+        }
+    }
+
     /// Carries out a key binding: clipboard ones here, the rest as
     /// messages.
     fn bind(
