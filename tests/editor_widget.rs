@@ -312,3 +312,29 @@ fn enter_continues_a_list_and_tab_nests_the_new_item() {
         "Shift+Tab out, Shift+Enter under the text"
     );
 }
+
+#[test]
+fn ctrl_b_e_and_k_format_the_selection() {
+    let mut editor = Editor::new("word".into());
+    let command = keyboard::Modifiers::COMMAND;
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        ui.simulate([
+            press(Key::Character("a".into()), command),
+            press(Key::Character("b".into()), command),
+        ]);
+    });
+    assert_eq!(editor.text(), "**word**");
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        ui.simulate([press(Key::Character("e".into()), command)]);
+        ui.typewrite("x");
+    });
+    assert_eq!(editor.text(), "**word**`x`", "a pair at the line's end");
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        ui.simulate([press(Key::Character("k".into()), command)]);
+        ui.typewrite("t");
+    });
+    assert_eq!(editor.text(), "**word**`x`[t]()");
+}

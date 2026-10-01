@@ -17,6 +17,7 @@ use iced::{Color, Element, Point, Rectangle, Size, Task};
 use self::lines::{Colors, Lines, Source};
 use crate::doc::{Doc, Selection};
 use crate::edit::Motion;
+use crate::edit::format::Format;
 use crate::layout::Affinity;
 use crate::style::Styled;
 
@@ -94,6 +95,10 @@ enum Key {
     SoftEnter,
     /// Tab, or Shift+Tab with `true`.
     Indent(bool),
+    /// Ctrl/Cmd+B, I or E (REFERENCE-001 section 12).
+    Format(Format),
+    /// Ctrl/Cmd+K.
+    Link,
     Delete(Motion),
     Move(Motion, bool),
     Vertical(Vertical, bool),

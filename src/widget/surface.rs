@@ -15,6 +15,7 @@ use iced::{Element, Event, Length, Pixels, Point, Rectangle, Size, Theme, Vector
 use super::lines::TEXT_SIZE;
 use super::{Editor, ID, Input, Key, Message, Vertical};
 use crate::edit::Motion;
+use crate::edit::format::Format;
 
 /// Space between the widget's edge and the text.
 const PADDING: f32 = 16.0;
@@ -243,6 +244,25 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                     }
                     shell.capture_event();
                     return;
+                }
+                // The formatting keys, by the letter on the key whatever the
+                // layout; with Shift or Alt they are left alone.
+                if modifiers.command() && !modifiers.shift() && !modifiers.alt() {
+                    let format = match key.to_latin(*physical_key) {
+                        Some('b') => Some(Key::Format(Format::Bold)),
+                        Some('i') => Some(Key::Format(Format::Italic)),
+                        Some('e') => Some(Key::Format(Format::Code)),
+                        Some('k') => Some(Key::Link),
+                        _ => None,
+                    };
+                    if let Some(format) = format {
+                        publish(shell, Input::Key(format));
+                        if let Some(focus) = &mut state.focus {
+                            focus.updated_at = Instant::now();
+                        }
+                        shell.capture_event();
+                        return;
+                    }
                 }
                 let Some(binding) = Binding::<()>::from_key_press(press) else {
                     return;
