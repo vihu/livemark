@@ -75,8 +75,16 @@ pub fn go(doc: &mut Doc, motion: Motion, extend: bool) {
 /// Home and End (REFERENCE-001 section 13, CodeMirror's
 /// `moveByLineBoundary`): to the edge of the visual row `row` the caret is
 /// on; from an edge already reached, to the edge of the source line. Home
-/// stops at the end of the indentation unless the caret is already there.
-pub fn line_boundary(doc: &Doc, head: usize, row: Range<usize>, forward: bool) -> usize {
+/// stops where the line's text starts unless the caret is already there:
+/// after the indentation, or after a list marker, task box or quote prefix
+/// ending at `markup` (the decision in section 13).
+pub fn line_boundary(
+    doc: &Doc,
+    head: usize,
+    row: Range<usize>,
+    forward: bool,
+    markup: Option<usize>,
+) -> usize {
     let line = doc.line_range(doc.line_at(head));
     let (edge, line_edge) = if forward {
         (row.end, line.end)
@@ -87,8 +95,9 @@ pub fn line_boundary(doc: &Doc, head: usize, row: Range<usize>, forward: bool) -
     if !forward && to == line.start && !line.is_empty() {
         let text = &doc.text()[line.clone()];
         let space = text.len() - text.trim_start_matches([' ', '\t']).len();
-        if space > 0 && head != line.start + space {
-            to = line.start + space;
+        let start = markup.unwrap_or(0).max(line.start + space);
+        if start > line.start && head != start {
+            to = start;
         }
     }
     to

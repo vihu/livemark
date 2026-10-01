@@ -167,7 +167,9 @@ impl Editor {
         let selection = self.doc.selection();
         let side = self.side;
         let row = self.with_lines(|lines, source| lines.row_bounds(source, selection.head, side));
-        let head = edit::line_boundary(&self.doc, selection.head, row, forward);
+        let line = self.doc.line_range(self.doc.line_at(selection.head));
+        let markup = self.styled.hang_at(line);
+        let head = edit::line_boundary(&self.doc, selection.head, row, forward, markup);
         let anchor = if extend { selection.anchor } else { head };
         self.doc.set_selection(Selection { anchor, head });
         if forward {

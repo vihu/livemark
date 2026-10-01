@@ -1,17 +1,21 @@
-//! Drawing the visible lines, the selection and the caret.
+//! Drawing the visible lines: code bands and quote bars behind, the
+//! selection, the text, strike and link lines over it, and the caret.
+use std::ops::Range;
+
 use iced::advanced::graphics::text::Raw;
 use iced::advanced::graphics::text::Renderer as _;
 use iced::advanced::renderer::{self, Renderer as _};
-use iced::{Color, Rectangle, Size, Theme, Vector};
-
-use std::ops::Range;
+use iced::{Color, Point, Rectangle, Size, Theme, Vector};
 
 use super::Editor;
-use super::lines::{self, Colors, TEXT_SIZE};
+use super::lines::{Colors, Shaped, TEXT_SIZE};
 use crate::style::Style;
 
 /// How far a code block's band reaches past the text on either side.
 const CODE_INSET: f32 = 8.0;
+
+/// Where a quote's bar sits in the gutter left of the text, and its width.
+const QUOTE_BAR: (f32, f32) = (10.0, 3.0);
 
 impl Editor {
     /// Draws the visible lines into `area` with the selection, and the
@@ -29,9 +33,11 @@ impl Editor {
             text,
             marker: Color { a: 0.4, ..text },
             code: palette.primary.base.color,
+            link: palette.primary.base.color,
         };
         let selection_color = palette.primary.weak.color;
         let code_background = palette.background.weak.color;
+        let quote_bar = palette.background.strong.color;
         let selection = self.doc.selection().range();
         let caret_rect = caret.then(|| self.caret()).flatten();
         let quad = |renderer: &mut iced::Renderer, bounds: Rectangle, color: Color| {
@@ -52,22 +58,31 @@ impl Editor {
             while top < lines.height && index < source.doc.line_count() {
                 let shaped = lines.shaped(source, index);
                 let origin = area.position() + Vector::new(0.0, top);
+                let at = |r: Rectangle| Rectangle::new(origin + Vector::new(r.x, r.y), r.size());
                 let range = source.doc.line_range(index);
                 // A code block is a band across the text area, fences
                 // included; inline code sits on a box of the same color.
                 if source.styled.code_block_at(range.clone()).is_some() {
-                    let at = origin - Vector::new(CODE_INSET, 0.0);
-                    let size = Size::new(area.width + 2.0 * CODE_INSET, shaped.height);
-                    quad(renderer, Rectangle::new(at, size), code_background);
+                    let band = Rectangle::new(
+                        origin - Vector::new(CODE_INSET, 0.0),
+                        Size::new(area.width + 2.0 * CODE_INSET, shaped.height),
+                    );
+                    quad(renderer, band, code_background);
                 }
-                for code in code_spans(&shaped.line.runs) {
-                    let (start, end) = (lines::cursor(code.start), lines::cursor(code.end));
-                    for run in shaped.buffer.layout_runs() {
-                        for (x, width) in run.highlight(start, end) {
-                            let at = origin + Vector::new(x - 2.0, run.line_top + 2.0);
-                            let size = Size::new(width + 4.0, run.line_height - 4.0);
-                            quad(renderer, Rectangle::new(at, size), code_background);
-                        }
+                if source.styled.in_quote(range.clone()) {
+                    let bar = Rectangle::new(
+                        origin - Vector::new(QUOTE_BAR.0, 0.0),
+                        Size::new(QUOTE_BAR.1, shaped.height),
+                    );
+                    quad(renderer, bar, quote_bar);
+                }
+                for code in spans(&shaped.line.runs, |s| s.code) {
+                    for (r, _) in shaped.stretches(code) {
+                        let r = Rectangle::new(
+                            Point::new(r.x - 2.0, r.y + 2.0),
+                            Size::new(r.width + 4.0, r.height - 4.0),
+                        );
+                        quad(renderer, at(r), code_background);
                     }
                 }
                 if !selection.is_empty()
@@ -76,32 +91,57 @@ impl Editor {
                 {
                     let from = shaped.line.to_display(selection.start.max(range.start));
                     let to = shaped.line.to_display(selection.end.min(range.end));
-                    let (start, end) = (lines::cursor(from), lines::cursor(to));
-                    let runs: Vec<_> = shaped.buffer.layout_runs().collect();
-                    for run in &runs {
-                        for (x, width) in run.highlight(start, end) {
-                            let at = origin + Vector::new(x, run.line_top);
-                            quad(
-                                renderer,
-                                Rectangle::new(at, Size::new(width, run.line_height)),
-                                selection_color,
-                            );
-                        }
+                    for (r, _) in shaped.stretches(from..to) {
+                        quad(renderer, at(r), selection_color);
                     }
                     // The line ending is selected too: a sliver past the
                     // end of the last row.
-                    if let Some(run) = runs.last().filter(|_| selection.end > range.end) {
-                        let at = origin + Vector::new(run.line_w, run.line_top);
+                    if let Some(run) = shaped
+                        .buffer
+                        .layout_runs()
+                        .last()
+                        .filter(|_| selection.end > range.end)
+                    {
+                        let x = run.line_w + shaped.shift(run.line_top);
                         let size = Size::new(TEXT_SIZE * 0.4, run.line_height);
-                        quad(renderer, Rectangle::new(at, size), selection_color);
+                        let sliver = Rectangle::new(Point::new(x, run.line_top), size);
+                        quad(renderer, at(sliver), selection_color);
                     }
                 }
-                renderer.fill_raw(Raw {
-                    buffer: std::sync::Arc::downgrade(&shaped.buffer),
-                    position: origin,
-                    color: text,
-                    clip_bounds: area,
-                });
+                draw_text(renderer, &shaped, origin, area, text);
+                // Strike lines through struck text and done tasks, a line
+                // under link text: iced's renderers draw no text
+                // decorations.
+                let size = shaped.buffer.metrics().font_size;
+                let thickness = (size / 16.0).max(1.0);
+                let decorations = [
+                    (
+                        spans(&shaped.line.runs, |s| s.strikethrough && !s.marker),
+                        -0.3,
+                        text,
+                    ),
+                    (
+                        spans(&shaped.line.runs, |s| s.done && !s.marker),
+                        -0.3,
+                        colors.marker,
+                    ),
+                    (
+                        spans(&shaped.line.runs, |s| s.link && !s.marker),
+                        0.15,
+                        colors.link,
+                    ),
+                ];
+                for (stretch, rise, color) in decorations {
+                    for range in stretch {
+                        for (r, baseline) in shaped.stretches(range) {
+                            let line = Rectangle::new(
+                                Point::new(r.x, baseline + rise * size),
+                                Size::new(r.width, thickness),
+                            );
+                            quad(renderer, at(line), color);
+                        }
+                    }
+                }
                 top += shaped.height;
                 index += 1;
                 drawn.push(shaped);
@@ -117,10 +157,56 @@ impl Editor {
     }
 }
 
-/// The stretches of inline code, backticks included, in display offsets.
-fn code_spans(runs: &[(Range<usize>, Style)]) -> Vec<Range<usize>> {
+/// Draws a line's text at `origin`; a hanging line twice, its first row
+/// in place and the rest shifted right under its text, each clipped to its
+/// rows.
+fn draw_text(
+    renderer: &mut iced::Renderer,
+    shaped: &Shaped,
+    origin: Point,
+    area: Rectangle,
+    color: Color,
+) {
+    let buffer = std::sync::Arc::downgrade(&shaped.buffer);
+    if shaped.hang == 0.0 {
+        renderer.fill_raw(Raw {
+            buffer,
+            position: origin,
+            color,
+            clip_bounds: area,
+        });
+        return;
+    }
+    let split = origin.y + shaped.first_row;
+    let first = Rectangle::new(
+        Point::new(area.x, area.y.max(origin.y)),
+        Size::new(area.width, (split - area.y.max(origin.y)).max(0.0)),
+    );
+    let rest = Rectangle::new(
+        Point::new(area.x, split.max(area.y)),
+        Size::new(
+            area.width,
+            (area.y + area.height - split.max(area.y)).max(0.0),
+        ),
+    );
+    for (position, clip) in [
+        (origin, first),
+        (origin + Vector::new(shaped.hang, 0.0), rest),
+    ] {
+        renderer.fill_raw(Raw {
+            buffer: buffer.clone(),
+            position,
+            color,
+            clip_bounds: clip,
+        });
+    }
+}
+
+/// The stretches of runs with `pick` set, neighbours joined, in display
+/// offsets.
+fn spans(runs: &[(Range<usize>, Style)], pick: fn(&Style) -> bool) -> Vec<Range<usize>> {
     let mut spans: Vec<Range<usize>> = Vec::new();
-    for (range, _) in runs.iter().filter(|(_, style)| style.code) {
+    for (range, _) in runs.iter().filter(|(_, style)| pick(style)) {
         match spans.last_mut() {
             Some(last) if last.end == range.start => last.end = range.end,
             _ => spans.push(range.clone()),

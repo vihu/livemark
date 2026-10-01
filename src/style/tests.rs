@@ -148,15 +148,17 @@ fn markers_are_syntax_the_parser_never_calls_text() {
             })
             .collect();
         for c in styled.constructs() {
-            let syntax: &[u8] = match c.syntax {
-                Syntax::Heading(_) => b"# \t",
-                Syntax::Emphasis | Syntax::Strong => b"*_",
-                Syntax::Strikethrough => b"~",
-                Syntax::Code => b"`",
+            // A link's closing marker holds its destination: any bytes.
+            let syntax: Option<&[u8]> = match c.syntax {
+                Syntax::Heading(_) => Some(b"# \t"),
+                Syntax::Emphasis | Syntax::Strong => Some(b"*_"),
+                Syntax::Strikethrough => Some(b"~"),
+                Syntax::Code => Some(b"`"),
+                Syntax::Link => None,
             };
             for m in c.markers.iter().filter(|m| !m.is_empty()) {
                 assert!(
-                    markdown[m.clone()].bytes().all(|b| syntax.contains(&b)),
+                    syntax.is_none_or(|s| markdown[m.clone()].bytes().all(|b| s.contains(&b))),
                     "{markdown:?}: marker {m:?} of {c:?}"
                 );
                 for (leaf, code) in &leaves {
@@ -192,9 +194,10 @@ fn code_blocks_dim_their_fences_and_keep_their_lines() {
         .filter(|(_, style)| style.marker)
         .map(|(r, _)| &text[r.clone()])
         .collect();
-    // The quoted block starts after its first `> `, which is the quote's.
+    // The quoted block starts after its first `> `, which is the quote's
+    // (its `>` dimmed as a quote marker).
     assert_eq!(
-        marked, "```rust title\n``````\n> > ```",
+        marked, "```rust title\n```>```\n> > ```",
         "fences and prefixes only"
     );
     assert!(
@@ -255,4 +258,71 @@ fn inline_markers_in_a_table_stay_so_columns_line_up() {
     let shown: Vec<&str> = hidden.iter().map(|r| &text[r.clone()]).collect();
     assert_eq!(shown, ["**", "**"], "only the paragraph's, after the table");
     assert!(hidden.iter().all(|r| r.start > 24));
+}
+
+/// The text of every run with `pick` set, joined.
+fn picked(text: &str, styled: &Styled, pick: fn(&Style) -> bool) -> Vec<String> {
+    styled
+        .runs()
+        .iter()
+        .filter(|(_, style)| pick(style))
+        .map(|(r, _)| text[r.clone()].to_owned())
+        .collect()
+}
+
+#[test]
+fn links_show_their_text_and_hide_the_rest_unless_touched() {
+    let text = "[t **b**](u \"x\") [r][id] <http://a.b> [](e)\n\n[id]: /u\n";
+    let styled = Styled::new(text);
+    let links: Vec<_> = styled
+        .constructs()
+        .iter()
+        .filter(|c| c.syntax == Syntax::Link)
+        .map(|c| c.markers.clone().map(|m| text[m].to_owned()))
+        .collect();
+    assert_eq!(
+        links,
+        [
+            ["[".to_owned(), "](u \"x\")".to_owned()],
+            ["[".into(), "][id]".into()],
+            ["<".into(), ">".into()],
+            ["".into(), "".into()],
+        ],
+        "an empty link keeps everything"
+    );
+    assert_eq!(
+        picked(text, &styled, |s| s.link && !s.marker),
+        ["t ", "b", "r", "http://a.b"]
+    );
+    let hidden = styled.hidden(text.len()..text.len());
+    assert!(hidden.iter().all(|h| !text[h.clone()].contains("](e)")));
+    // The strong inside the link reveals with it (outermost span decides).
+    assert!(styled.hidden(2..2).iter().all(|h| h.start > 16));
+}
+
+#[test]
+fn list_markers_dim_task_boxes_and_done_text_mute_and_rows_hang() {
+    let text = "- a\n  - [x] done\n10. ten\n- [ ] open\n";
+    let styled = Styled::new(text);
+    assert_eq!(
+        picked(text, &styled, |s| s.marker),
+        ["-", "-", "[x]", "10.", "-", "[ ]"]
+    );
+    assert_eq!(picked(text, &styled, |s| s.done), ["done"]);
+    let hang = |line: std::ops::Range<usize>| styled.hang_at(line);
+    assert_eq!(hang(0..3), Some(2));
+    assert_eq!(hang(4..16), Some(12), "after the task box");
+    assert_eq!(hang(17..24), Some(21));
+}
+
+#[test]
+fn quotes_dim_every_marker_and_hang_after_them() {
+    let text = "> q\n> > n\nlazy\n\nafter\n";
+    let styled = Styled::new(text);
+    assert_eq!(picked(text, &styled, |s| s.marker), [">", ">", ">"]);
+    assert_eq!(styled.hang_at(4..9), Some(8), "after both markers");
+    assert!(styled.in_quote(10..14), "a lazy line");
+    assert!(!styled.in_quote(16..21));
+    let rule = Styled::new("a\n\n---\n");
+    assert_eq!(picked("a\n\n---\n", &rule, |s| s.marker), ["---"]);
 }

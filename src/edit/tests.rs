@@ -85,12 +85,12 @@ fn home_goes_to_the_row_start_then_toggles_indentation_and_line_start() {
     use super::line_boundary;
     // One source line, wrapped as two rows: 0..10 and 10..20.
     let doc = doc_at("    aaaa bbbbbbbbbbb", 0);
-    let home = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, false);
+    let home = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, false, None);
     assert_eq!(home(15, 10..20), 10, "the row's start first");
     assert_eq!(home(10, 10..20), 4, "then the end of the indentation");
     assert_eq!(home(4, 0..10), 0, "then the line start");
     assert_eq!(home(0, 0..10), 4, "and back");
-    let end = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, true);
+    let end = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, true, None);
     assert_eq!(end(2, 0..10), 10);
     assert_eq!(end(10, 0..10), 20, "from the row's end, the line's end");
 }
@@ -130,4 +130,14 @@ fn copy_with_nothing_selected_takes_the_line_and_pastes_it_above() {
     );
     doc.set_selection(Selection { anchor: 0, head: 3 });
     assert_eq!(copied(&doc), ("one".into(), 0..3, false));
+}
+
+#[test]
+fn home_stops_after_list_and_quote_markup_first() {
+    use super::line_boundary;
+    let doc = doc_at("  - [ ] task text", 0);
+    let home = |head| line_boundary(&doc, head, 0..17, false, Some(8));
+    assert_eq!(home(17), 8, "the item's text, not the line's start");
+    assert_eq!(home(8), 0, "then the line's start");
+    assert_eq!(home(0), 8, "and back");
 }

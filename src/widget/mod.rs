@@ -128,6 +128,7 @@ impl Editor {
                 text: Color::BLACK,
                 marker: Color::BLACK,
                 code: Color::BLACK,
+                link: Color::BLACK,
             })),
         }
     }

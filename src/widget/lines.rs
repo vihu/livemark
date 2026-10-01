@@ -31,6 +31,7 @@ pub struct Colors {
     pub text: iced::Color,
     pub marker: iced::Color,
     pub code: iced::Color,
+    pub link: iced::Color,
 }
 
 /// A source line shaped for drawing.
@@ -40,6 +41,33 @@ pub struct Shaped {
     /// (equal lines elsewhere share the buffer, not the offsets).
     pub line: Line,
     pub height: f32,
+    /// How far rows after the first are drawn right of it: the width of a
+    /// list marker or quote prefix (REFERENCE-001 sections 6, 7).
+    pub hang: f32,
+    /// Where the first row ends.
+    pub first_row: f32,
+}
+
+impl Shaped {
+    /// How far the row starting `line_top` down is drawn to the right.
+    pub fn shift(&self, line_top: f32) -> f32 {
+        if line_top > 0.0 { self.hang } else { 0.0 }
+    }
+
+    /// The rectangles display `range` covers, row by row, in the line's
+    /// own coordinates, each with its row's baseline.
+    pub fn stretches(&self, range: Range<usize>) -> Vec<(iced::Rectangle, f32)> {
+        let (start, end) = (cursor(range.start), cursor(range.end));
+        let mut stretches = Vec::new();
+        for run in self.buffer.layout_runs() {
+            for (x, width) in run.highlight(start, end) {
+                let at = iced::Point::new(x + self.shift(run.line_top), run.line_top);
+                let size = iced::Size::new(width, run.line_height);
+                stretches.push((iced::Rectangle::new(at, size), run.line_y));
+            }
+        }
+        stretches
+    }
 }
 
 /// A shaped buffer, the same for every line with the same text and style.
@@ -47,6 +75,8 @@ pub struct Shaped {
 struct Cached {
     buffer: Arc<cosmic_text::Buffer>,
     height: f32,
+    hang: f32,
+    first_row: f32,
 }
 
 /// What the lines are drawn from, borrowed for one call.
@@ -109,6 +139,10 @@ impl Lines {
             source.styled.runs(),
         );
         let level = heading_level(source.styled, range.clone());
+        let hang = source
+            .styled
+            .hang_at(range.clone())
+            .map(|at| line.to_display(at));
         let tokens = match &self.theme {
             Some(theme) => {
                 self.highlights
@@ -117,8 +151,13 @@ impl Lines {
             None => Vec::new(),
         };
         let mut hasher = DefaultHasher::new();
-        (&line.text, &line.runs, level, self.width.to_bits()).hash(&mut hasher);
-        for color in [self.colors.text, self.colors.marker, self.colors.code] {
+        (&line.text, &line.runs, level, hang, self.width.to_bits()).hash(&mut hasher);
+        for color in [
+            self.colors.text,
+            self.colors.marker,
+            self.colors.code,
+            self.colors.link,
+        ] {
             color.into_rgba8().hash(&mut hasher);
         }
         for token in &tokens {
@@ -128,7 +167,7 @@ impl Lines {
         let cached = match self.cache.get(&key) {
             Some(cached) => cached.clone(),
             None => {
-                let cached = shape(&line, level, self.width, self.colors, &tokens);
+                let cached = shape(&line, level, hang, self.width, self.colors, &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
             }
@@ -137,6 +176,8 @@ impl Lines {
             buffer: cached.buffer,
             line,
             height: cached.height,
+            hang: cached.hang,
+            first_row: cached.first_row,
         }
     }
 
@@ -201,7 +242,13 @@ impl Lines {
     pub fn hit(&mut self, source: &Source, x: f32, y: f32) -> (usize, Affinity) {
         let (index, top) = self.line_at_y(source, y);
         let shaped = self.shaped(source, index);
-        match shaped.buffer.hit(x, y - top) {
+        let y = y - top;
+        let x = if y >= shaped.first_row {
+            x - shaped.hang
+        } else {
+            x
+        };
+        match shaped.buffer.hit(x, y) {
             Some(cursor) => {
                 let affinity = match cursor.affinity {
                     cosmic_text::Affinity::Before => Affinity::Before,
@@ -248,11 +295,16 @@ impl Lines {
         let runs: Vec<_> = shaped.buffer.layout_runs().collect();
         for run in &runs {
             if let Some(x) = run.cursor_position(&cursor) {
-                return (x, run.line_top, run.line_height);
+                return (
+                    x + shaped.shift(run.line_top),
+                    run.line_top,
+                    run.line_height,
+                );
             }
         }
         runs.last().map_or((0.0, 0.0, shaped.height), |run| {
-            (run.line_w, run.line_top, run.line_height)
+            let x = run.line_w + shaped.shift(run.line_top);
+            (x, run.line_top, run.line_height)
         })
     }
 
@@ -322,7 +374,14 @@ fn heading_level(styled: &Styled, range: Range<usize>) -> u8 {
         .map_or(0, |(_, style)| style.heading)
 }
 
-fn shape(line: &Line, level: u8, width: f32, colors: Colors, tokens: &[Token]) -> Cached {
+fn shape(
+    line: &Line,
+    level: u8,
+    hang: Option<usize>,
+    width: f32,
+    colors: Colors,
+    tokens: &[Token],
+) -> Cached {
     let scale = if level == 0 {
         1.0
     } else {
@@ -368,13 +427,35 @@ fn shape(line: &Line, level: u8, width: f32, colors: Colors, tokens: &[Token]) -
     }
     buffer.set_rich_text(spans, &plain, cosmic_text::Shaping::Advanced, None);
     buffer.shape_until_scroll(raw, false);
+    // A wrapped list item or quoted line: shaped again narrower by its
+    // prefix, so the rows after the first fit when drawn under its text.
+    let mut indent = 0.0;
+    if let Some(at) = hang
+        && buffer.layout_runs().nth(1).is_some()
+    {
+        let x = buffer
+            .layout_runs()
+            .find_map(|run| run.cursor_position(&cursor(at)))
+            .unwrap_or(0.0);
+        if x > 0.0 && x < width / 2.0 {
+            buffer.set_size(Some(width - x), None);
+            buffer.shape_until_scroll(raw, false);
+            indent = x;
+        }
+    }
     let height = buffer
         .layout_runs()
         .map(|run| run.line_top + run.line_height)
         .fold(metrics.line_height, f32::max);
+    let first_row = buffer
+        .layout_runs()
+        .next()
+        .map_or(height, |run| run.line_top + run.line_height);
     Cached {
         buffer: Arc::new(buffer),
         height,
+        hang: indent,
+        first_row,
     }
 }
 
@@ -391,10 +472,12 @@ fn attrs(style: Style, colors: Colors) -> cosmic_text::Attrs<'static> {
     if style.emphasis {
         attrs = attrs.style(cosmic_text::Style::Italic);
     }
-    let color = if style.marker {
+    let color = if style.marker || style.done {
         colors.marker
     } else if style.code {
         colors.code
+    } else if style.link {
+        colors.link
     } else {
         colors.text
     };
