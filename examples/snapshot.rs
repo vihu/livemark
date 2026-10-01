@@ -1,7 +1,7 @@
 //! A markdown file drawn headlessly by the editor, for typography reviews.
 //!
 //! ```text
-//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--caret <offset>]
+//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--caret <offset>|<anchor>..<head>]
 //! ```
 //!
 //! Writes `<out>-<renderer>.png` at 2x, 900 by 1100 points, with the caret
@@ -12,7 +12,9 @@ use livemark::widget::Editor;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [file, out, ..] = args.as_slice() else {
-        eprintln!("usage: snapshot <file.md> <out.png> [--dark] [--caret <offset>]");
+        eprintln!(
+            "usage: snapshot <file.md> <out.png> [--dark] [--caret <offset>|<anchor>..<head>]"
+        );
         std::process::exit(2);
     };
     let theme = if args.iter().any(|a| a == "--dark") {
@@ -20,17 +22,16 @@ fn main() {
     } else {
         Theme::Light
     };
-    let caret = args
-        .iter()
-        .position(|a| a == "--caret")
-        .and_then(|i| args.get(i + 1)?.parse().ok());
+    // `--caret 12` or a selection `--caret 4..30`.
+    let caret: Option<(usize, usize)> = args.iter().position(|a| a == "--caret").and_then(|i| {
+        let value = args.get(i + 1)?;
+        let (a, b) = value.split_once("..").unwrap_or((value, value));
+        Some((a.parse().ok()?, b.parse().ok()?))
+    });
     let mut editor = Editor::new(std::fs::read_to_string(file).expect("the markdown file"));
-    if let Some(caret) = caret {
-        editor.select(caret, caret);
-    } else {
-        let end = editor.text().len();
-        editor.select(end, end);
-    }
+    let end = editor.text().len();
+    let (anchor, head) = caret.unwrap_or((end, end));
+    editor.select(anchor, head);
     let size = (900.0, 1100.0);
     let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), size, editor.view());
     // A press outside the text focuses nothing and moves nothing; it only

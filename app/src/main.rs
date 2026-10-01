@@ -110,7 +110,7 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Editor(message) => self.editor.update(message),
+            Message::Editor(message) => return self.editor.update(message).map(Message::Editor),
             Message::Open if self.unsaved() => self.pending = Some(After::Open),
             Message::Open => return Task::perform(pick_file(), Message::Opened),
             Message::Opened(Some(path)) => match file::load(&path) {

@@ -2,6 +2,7 @@
 //! typing, deleting, Enter and paste as transactions (REFERENCE-001
 //! sections 13, 15 and 18). Motions that need layout (up, down, pages) are
 //! the widget's.
+use std::ops::Range;
 use std::time::Duration;
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -71,6 +72,128 @@ pub fn go(doc: &mut Doc, motion: Motion, extend: bool) {
     });
 }
 
+/// Home and End (REFERENCE-001 section 13, CodeMirror's
+/// `moveByLineBoundary`): to the edge of the visual row `row` the caret is
+/// on; from an edge already reached, to the edge of the source line. Home
+/// stops at the end of the indentation unless the caret is already there.
+pub fn line_boundary(doc: &Doc, head: usize, row: Range<usize>, forward: bool) -> usize {
+    let line = doc.line_range(doc.line_at(head));
+    let (edge, line_edge) = if forward {
+        (row.end, line.end)
+    } else {
+        (row.start, line.start)
+    };
+    let mut to = if edge == head { line_edge } else { edge };
+    if !forward && to == line.start && !line.is_empty() {
+        let text = &doc.text()[line.clone()];
+        let space = text.len() - text.trim_start_matches([' ', '\t']).len();
+        if space > 0 && head != line.start + space {
+            to = line.start + space;
+        }
+    }
+    to
+}
+
+/// The word, run of spaces or run of punctuation a double click at `at`
+/// selects (REFERENCE-001 section 14): the grapheme before `at` when
+/// `before` (the click was on the right half of it), else the one after,
+/// grown in both directions within the line while the class holds.
+pub fn word_at(doc: &Doc, at: usize, before: bool) -> Range<usize> {
+    let line = doc.line_range(doc.line_at(at));
+    let text = &doc.text()[line.clone()];
+    let at = at.min(line.end) - line.start;
+    if text.is_empty() {
+        return line.start..line.start;
+    }
+    let (mut from, mut to) = if (before && at > 0) || at == text.len() {
+        let prev = text[..at]
+            .grapheme_indices(true)
+            .next_back()
+            .map_or(0, |(i, _)| i);
+        (prev, at)
+    } else {
+        let next = text[at..]
+            .graphemes(true)
+            .next()
+            .map_or(at, |g| at + g.len());
+        (at, next)
+    };
+    let kind = class(text[from..].chars().next().unwrap_or(' '));
+    while let Some((i, g)) = text[..from].grapheme_indices(true).next_back() {
+        if g.chars().next().map(class) != Some(kind) {
+            break;
+        }
+        from = i;
+    }
+    while let Some(g) = text[to..].graphemes(true).next() {
+        if g.chars().next().map(class) != Some(kind) {
+            break;
+        }
+        to += g.len();
+    }
+    line.start + from..line.start + to
+}
+
+/// The source line at `at` with its line ending: what a triple click
+/// selects (REFERENCE-001 section 14).
+pub fn line_with_ending(doc: &Doc, at: usize) -> Range<usize> {
+    let index = doc.line_at(at);
+    let start = doc.line_range(index).start;
+    let end = if index + 1 < doc.line_count() {
+        doc.line_range(index + 1).start
+    } else {
+        doc.text().len()
+    };
+    start..end
+}
+
+/// What copy takes and cut removes: the selection, or with nothing
+/// selected the caret's line (its text without the ending; cut removes the
+/// ending too), and whether it was such a line-wise copy (REFERENCE-001
+/// section 18, CodeMirror's `copiedRange`).
+pub fn copied(doc: &Doc) -> (String, Range<usize>, bool) {
+    let range = doc.selection().range();
+    if range.is_empty() {
+        let line = doc.line_range(doc.line_at(range.start));
+        let text = doc.text()[line].to_owned();
+        (text, line_with_ending(doc, range.start), true)
+    } else {
+        (doc.text()[range.clone()].to_owned(), range, false)
+    }
+}
+
+/// Cut after copying: removes what [`copied`] took, the line and its
+/// ending when nothing was selected.
+pub fn cut(doc: &mut Doc, now: Duration) {
+    let (_, range, _) = copied(doc);
+    if !range.is_empty() {
+        let start = range.start;
+        doc.apply(
+            vec![Change::delete(range)],
+            Selection::caret(start),
+            Kind::Delete,
+            now,
+        );
+    }
+}
+
+/// Pastes a line-wise copy with nothing selected: `text` as a new line
+/// above the caret's line, the caret moving with its text (CodeMirror's
+/// `doPaste`).
+pub fn paste_line(doc: &mut Doc, text: &str, now: Duration) {
+    let ending = line_ending(doc.text());
+    let text = convert_endings(text, ending) + ending;
+    let head = doc.selection().head;
+    let start = doc.line_range(doc.line_at(head)).start;
+    let caret = head + text.len();
+    doc.apply(
+        vec![Change::insert(start, text)],
+        Selection::caret(caret),
+        Kind::Other,
+        now,
+    );
+}
+
 /// Replaces the selection with typed `text`.
 pub fn type_text(doc: &mut Doc, text: &str, now: Duration) {
     replace_selection(doc, text, Kind::Type, now);
@@ -86,14 +209,18 @@ pub fn enter(doc: &mut Doc, now: Duration) {
 /// Replaces the selection with pasted `text`, its line breaks turned into
 /// the document's line ending (REFERENCE-001 section 18).
 pub fn paste(doc: &mut Doc, text: &str, now: Duration) {
-    let ending = line_ending(doc.text());
+    let text = convert_endings(text, line_ending(doc.text()));
+    replace_selection(doc, &text, Kind::Other, now);
+}
+
+/// `text` with every line break (`\r\n`, `\r`, `\n`) as `ending`.
+fn convert_endings(text: &str, ending: &str) -> String {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
-    let text = if ending == "\n" {
+    if ending == "\n" {
         text
     } else {
         text.replace('\n', ending)
-    };
-    replace_selection(doc, &text, Kind::Other, now);
+    }
 }
 
 /// Deletes the selection, or from the caret to where `motion` takes it
@@ -141,7 +268,7 @@ pub fn line_ending(text: &str) -> &'static str {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum Class {
     Space,
     Break,

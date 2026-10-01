@@ -164,7 +164,12 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                     state.dragging = true;
                     let at = position - Vector::new(text.x, text.y);
                     let shift = state.modifiers.shift();
-                    publish(shell, Input::Press { at, shift });
+                    let clicks = match click.kind() {
+                        mouse::click::Kind::Single => 1,
+                        mouse::click::Kind::Double => 2,
+                        mouse::click::Kind::Triple => 3,
+                    };
+                    publish(shell, Input::Press { at, shift, clicks });
                     shell.capture_event();
                 } else if state.focus.take().is_some() {
                     shell.request_redraw();
@@ -291,15 +296,8 @@ impl Surface<'_> {
     ) {
         let key = |key| Message(Input::Key(key));
         match binding {
-            Binding::Copy | Binding::Cut => {
-                let range = self.editor.selection().range();
-                if !range.is_empty() {
-                    shell.write_clipboard(self.editor.text()[range].to_owned());
-                    if matches!(binding, Binding::Cut) {
-                        shell.publish(key(Key::Delete(Motion::Right)));
-                    }
-                }
-            }
+            Binding::Copy => shell.publish(key(Key::Copy(false))),
+            Binding::Cut => shell.publish(key(Key::Copy(true))),
             Binding::Paste => {
                 state.pasting = true;
                 shell.read_clipboard(clipboard::Kind::Text);

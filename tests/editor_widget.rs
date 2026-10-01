@@ -18,7 +18,7 @@ fn run(editor: &mut Editor, events: impl FnOnce(&mut iced_test::Simulator<'_, Me
         ui.into_messages().collect()
     };
     for message in messages {
-        editor.update(message);
+        let _ = editor.update(message);
     }
 }
 
@@ -177,5 +177,116 @@ fn ctrl_with_a_letter_is_left_to_the_host() {
         statuses,
         [iced::event::Status::Ignored],
         "the app sees Ctrl+S"
+    );
+}
+
+/// The selected text.
+fn selected(editor: &Editor) -> &str {
+    &editor.text()[editor.selection().range()]
+}
+
+#[test]
+fn double_and_triple_clicks_select_a_word_and_a_line() {
+    let mut editor = Editor::new("alpha beta gamma\nsecond line\n".into());
+    // 16 px text: "alpha" covers well past 8 px into the text area.
+    let word = Point::new(16.0 + 8.0, 20.0);
+    run(&mut editor, |ui| {
+        click(ui, word);
+        click(ui, word);
+    });
+    assert_eq!(selected(&editor), "alpha");
+    run(&mut editor, |ui| {
+        // A drag on the second press of a double click grows by words, to
+        // the line's end.
+        click(ui, word);
+        ui.simulate([Event::Mouse(mouse::Event::ButtonPressed(
+            mouse::Button::Left,
+        ))]);
+        let end = Point::new(700.0, 20.0);
+        ui.point_at(end);
+        ui.simulate([Event::Mouse(mouse::Event::CursorMoved { position: end })]);
+    });
+    assert_eq!(selected(&editor), "alpha beta gamma");
+    run(&mut editor, |ui| {
+        let line = Point::new(30.0, 16.0 + 24.0 + 10.0);
+        for _ in 0..3 {
+            click(ui, line);
+        }
+    });
+    assert_eq!(selected(&editor), "second line\n", "with its ending");
+}
+
+#[test]
+fn home_and_end_stop_at_the_edges_of_a_wrapped_row_first() {
+    let text = "word ".repeat(40);
+    let mut editor = Editor::new(text.clone());
+    let narrow = |editor: &mut Editor, keys: &[Event]| {
+        let messages: Vec<_> = {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                (300.0, 600.0),
+                editor.view(),
+            );
+            click(&mut ui, Point::new(20.0, 20.0));
+            ui.simulate(keys.iter().cloned());
+            ui.into_messages().collect()
+        };
+        for message in messages {
+            let _ = editor.update(message);
+        }
+        editor.selection().head
+    };
+    let none = keyboard::Modifiers::default();
+    let home = press(Key::Named(Named::Home), none);
+    let end = press(Key::Named(Named::End), none);
+    // From the start of the first row: End reaches its end, a second End
+    // the end of the line (wrapped over at least three rows).
+    let row_end = narrow(&mut editor, std::slice::from_ref(&end));
+    assert!(0 < row_end && row_end < 100, "first row ends at {row_end}");
+    let line_end = narrow(&mut editor, &[end.clone(), end.clone()]);
+    assert_eq!(line_end, text.len());
+    // From the end: Home to the last row's start, then the line's.
+    let all_end = press(Key::Named(Named::End), keyboard::Modifiers::COMMAND);
+    let row_start = narrow(&mut editor, &[all_end.clone(), home.clone()]);
+    assert!(
+        row_start > 100 && row_start < text.len(),
+        "last row starts at {row_start}"
+    );
+    assert_eq!(narrow(&mut editor, &[all_end, home.clone(), home]), 0);
+}
+
+#[test]
+fn copy_and_cut_with_nothing_selected_take_the_line() {
+    use iced::advanced::clipboard;
+
+    let mut editor = Editor::new("one\ntwo\nthree".into());
+    let second = Point::new(700.0, 16.0 + 24.0 + 10.0);
+    run(&mut editor, |ui| {
+        click(ui, second);
+        ui.simulate([
+            press(Key::Character("c".into()), keyboard::Modifiers::COMMAND),
+            press(Key::Character("v".into()), keyboard::Modifiers::COMMAND),
+        ]);
+        let text = clipboard::Content::Text("two".into());
+        ui.simulate([Event::Clipboard(clipboard::Event::Read(Ok(
+            std::sync::Arc::new(text),
+        )))]);
+    });
+    assert_eq!(
+        editor.text(),
+        "one\ntwo\ntwo\nthree",
+        "pasted as a line above"
+    );
+    run(&mut editor, |ui| {
+        click(ui, second);
+        ui.simulate([press(
+            Key::Character("x".into()),
+            keyboard::Modifiers::COMMAND,
+        )]);
+    });
+    assert_eq!(
+        editor.text(),
+        "one\ntwo\nthree",
+        "the line and its ending cut"
     );
 }

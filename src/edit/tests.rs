@@ -79,3 +79,55 @@ fn deleting_takes_the_selection_or_one_motion() {
     delete(&mut doc, Motion::Right, Duration::ZERO);
     assert_eq!(doc.text(), "x", "nothing after the caret");
 }
+
+#[test]
+fn home_goes_to_the_row_start_then_toggles_indentation_and_line_start() {
+    use super::line_boundary;
+    // One source line, wrapped as two rows: 0..10 and 10..20.
+    let doc = doc_at("    aaaa bbbbbbbbbbb", 0);
+    let home = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, false);
+    assert_eq!(home(15, 10..20), 10, "the row's start first");
+    assert_eq!(home(10, 10..20), 4, "then the end of the indentation");
+    assert_eq!(home(4, 0..10), 0, "then the line start");
+    assert_eq!(home(0, 0..10), 4, "and back");
+    let end = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, true);
+    assert_eq!(end(2, 0..10), 10);
+    assert_eq!(end(10, 0..10), 20, "from the row's end, the line's end");
+}
+
+#[test]
+fn a_double_click_takes_the_class_on_the_clicked_side() {
+    use super::word_at;
+    let doc = doc_at("say **bold_er**,  ok\n\nx", 0);
+    let word = |at, before| &doc.text()[word_at(&doc, at, before)];
+    assert_eq!(word(7, false), "bold_er");
+    assert_eq!(word(6, true), "**", "right half of the second *");
+    assert_eq!(word(6, false), "bold_er");
+    assert_eq!(word(16, false), "  ");
+    assert_eq!(word(20, true), "ok", "at the line's end, the word before");
+    assert_eq!(word(21, false), "", "an empty line");
+    assert_eq!(word(0, true), "say", "at the line's start, the word after");
+}
+
+#[test]
+fn copy_with_nothing_selected_takes_the_line_and_pastes_it_above() {
+    use super::{copied, line_with_ending, paste_line};
+    let mut doc = doc_at("one\r\ntwo\r\nthree", 6);
+    assert_eq!(line_with_ending(&doc, 6), 5..10);
+    assert_eq!(
+        line_with_ending(&doc, 12),
+        10..15,
+        "the last line has no ending"
+    );
+    let (text, range, linewise) = copied(&doc);
+    assert_eq!((text.as_str(), range, linewise), ("two", 5..10, true));
+    paste_line(&mut doc, &text, Duration::ZERO);
+    assert_eq!(doc.text(), "one\r\ntwo\r\ntwo\r\nthree");
+    assert_eq!(
+        doc.selection(),
+        Selection::caret(11),
+        "the caret moved with its line"
+    );
+    doc.set_selection(Selection { anchor: 0, head: 3 });
+    assert_eq!(copied(&doc), ("one".into(), 0..3, false));
+}

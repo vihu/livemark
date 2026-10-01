@@ -166,10 +166,11 @@ impl Lines {
         }
     }
 
-    /// The source offset at a point of the visible area. Where hidden text
-    /// sits between two glyphs, it attaches to the glyph clicked
-    /// (REFERENCE-001 section 14).
-    pub fn hit(&mut self, source: &Source, x: f32, y: f32) -> usize {
+    /// The source offset at a point of the visible area, and which side
+    /// of it was clicked: where hidden text sits between two glyphs, the
+    /// offset attaches to the glyph clicked (REFERENCE-001 section 14), and
+    /// at a soft wrap the side tells which row the caret is drawn on.
+    pub fn hit(&mut self, source: &Source, x: f32, y: f32) -> (usize, Affinity) {
         let (index, top) = self.line_at_y(source, y);
         let shaped = self.shaped(source, index);
         match shaped.buffer.hit(x, y - top) {
@@ -178,9 +179,9 @@ impl Lines {
                     cosmic_text::Affinity::Before => Affinity::Before,
                     cosmic_text::Affinity::After => Affinity::After,
                 };
-                shaped.line.to_source(cursor.index, affinity)
+                (shaped.line.to_source(cursor.index, affinity), affinity)
             }
-            None => source.doc.line_range(index).end,
+            None => (source.doc.line_range(index).end, Affinity::Before),
         }
     }
 
@@ -206,12 +207,16 @@ impl Lines {
         Some(top)
     }
 
-    /// The caret at `offset` as (x, top, height) within its line.
-    pub fn caret_in_line(&mut self, source: &Source, offset: usize) -> (f32, f32, f32) {
+    /// The caret at `offset` as (x, top, height) within its line, on the
+    /// row before a soft wrap with [`Affinity::Before`], else after it.
+    pub fn caret_in_line(
+        &mut self,
+        source: &Source,
+        offset: usize,
+        side: Affinity,
+    ) -> (f32, f32, f32) {
         let shaped = self.shaped(source, source.doc.line_at(offset));
-        let display = shaped.line.to_display(offset);
-        let cursor =
-            cosmic_text::Cursor::new_with_affinity(0, display, cosmic_text::Affinity::After);
+        let cursor = side_cursor(shaped.line.to_display(offset), side);
         let runs: Vec<_> = shaped.buffer.layout_runs().collect();
         for run in &runs {
             if let Some(x) = run.cursor_position(&cursor) {
@@ -223,10 +228,30 @@ impl Lines {
         })
     }
 
+    /// The source offsets at the start and end of the visual row the caret
+    /// at `offset` is on: before hidden text at the start, after it at the
+    /// end, so typing there lands outside the hidden markers.
+    pub fn row_bounds(&mut self, source: &Source, offset: usize, side: Affinity) -> Range<usize> {
+        let shaped = self.shaped(source, source.doc.line_at(offset));
+        let cursor = side_cursor(shaped.line.to_display(offset), side);
+        let row = shaped
+            .buffer
+            .layout_runs()
+            .find(|run| run.cursor_position(&cursor).is_some())
+            .map(|run| {
+                let start = run.glyphs.iter().map(|g| g.start).min().unwrap_or(0);
+                let end = run.glyphs.iter().map(|g| g.end).max().unwrap_or(0);
+                start..end
+            })
+            .unwrap_or(0..shaped.line.text.len());
+        shaped.line.to_source(row.start, Affinity::Before)
+            ..shaped.line.to_source(row.end, Affinity::After)
+    }
+
     /// Scrolls the least that shows the caret at `offset`.
-    pub fn reveal(&mut self, source: &Source, offset: usize) {
+    pub fn reveal(&mut self, source: &Source, offset: usize, side: Affinity) {
         let index = source.doc.line_at(offset);
-        let (_, row_top, row_height) = self.caret_in_line(source, offset);
+        let (_, row_top, row_height) = self.caret_in_line(source, offset, side);
         let Some(top) = self.top_of(source, index) else {
             // Far away: put its line at the top, then centre-ish below.
             self.anchor = index;
@@ -241,6 +266,16 @@ impl Lines {
             self.scroll_by(source, caret_bottom - self.height);
         }
     }
+}
+
+/// A cosmic-text cursor at display offset `display`, on the given side of a
+/// soft wrap.
+fn side_cursor(display: usize, side: Affinity) -> cosmic_text::Cursor {
+    let affinity = match side {
+        Affinity::Before => cosmic_text::Affinity::Before,
+        Affinity::After => cosmic_text::Affinity::After,
+    };
+    cosmic_text::Cursor::new_with_affinity(0, display, affinity)
 }
 
 /// A cosmic-text cursor at display offset `display` of a line's buffer.

@@ -160,7 +160,7 @@ impl Bench {
         );
         self.cache = Some(ui.into_cache());
         for message in messages {
-            editor.update(message);
+            let _ = editor.update(message);
         }
         let update = start.elapsed();
 

@@ -21,8 +21,8 @@ fn main() -> iced::Result {
 }
 
 fn update(editor: &mut Editor, message: Message) -> Task<Message> {
-    editor.update(message);
-    Task::none()
+    // The task writes the clipboard after a copy or cut.
+    editor.update(message)
 }
 
 fn view(editor: &Editor) -> Element<'_, Message> {
