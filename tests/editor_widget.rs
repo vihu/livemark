@@ -158,3 +158,24 @@ fn the_editor_draws_headlessly() {
         ui.snapshot(&theme).expect("a frame");
     }
 }
+
+#[test]
+fn ctrl_with_a_letter_is_left_to_the_host() {
+    let mut editor = Editor::new("note".into());
+    let mut statuses = Vec::new();
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        // Some platforms report the letter as text even with Ctrl held.
+        let mut save = press(Key::Character("s".into()), keyboard::Modifiers::COMMAND);
+        if let Event::Keyboard(keyboard::Event::KeyPressed { text, .. }) = &mut save {
+            *text = Some("s".into());
+        }
+        statuses = ui.simulate([save]);
+    });
+    assert_eq!(editor.text(), "note");
+    assert_eq!(
+        statuses,
+        [iced::event::Status::Ignored],
+        "the app sees Ctrl+S"
+    );
+}

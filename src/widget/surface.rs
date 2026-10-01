@@ -231,6 +231,12 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 let Some(binding) = Binding::<()>::from_key_press(press) else {
                     return;
                 };
+                // Ctrl/Cmd with a letter is the host's shortcut (Ctrl+S),
+                // not typing; AltGr letters come with Alt and still type.
+                if matches!(binding, Binding::Insert(_)) && modifiers.command() && !modifiers.alt()
+                {
+                    return;
+                }
                 self.bind(binding, modifiers.shift(), state, shell);
                 if let Some(focus) = &mut state.focus {
                     focus.updated_at = Instant::now();
