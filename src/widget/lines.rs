@@ -7,32 +7,14 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 use std::sync::Arc;
 
-use iced::advanced::graphics::text::{cosmic_text, font_system, to_attributes, to_color};
-use iced::{Font, Theme};
+use iced::Theme;
+use iced::advanced::graphics::text::cosmic_text;
 
-use super::highlight::{Highlights, Token};
+use super::highlight::Highlights;
+use super::shape::{Cached, Colors, cursor, heading_level, shape};
 use crate::doc::Doc;
-use crate::fonts;
 use crate::layout::{Affinity, Line};
-use crate::style::{Style, Styled};
-
-/// Body text size in pixels.
-pub const TEXT_SIZE: f32 = 16.0;
-
-/// Line height as a multiple of the text size.
-const LINE_HEIGHT: f32 = 1.5;
-
-/// Heading sizes in em by level (Keeprs' web editor: 1.4, 1.25, 1.1).
-const HEADING: [f32; 6] = [1.4, 1.25, 1.1, 1.0, 1.0, 1.0];
-
-/// Colors the lines are shaped with.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Colors {
-    pub text: iced::Color,
-    pub marker: iced::Color,
-    pub code: iced::Color,
-    pub link: iced::Color,
-}
+use crate::style::Styled;
 
 /// A source line shaped for drawing.
 pub struct Shaped {
@@ -70,15 +52,6 @@ impl Shaped {
     }
 }
 
-/// A shaped buffer, the same for every line with the same text and style.
-#[derive(Clone)]
-struct Cached {
-    buffer: Arc<cosmic_text::Buffer>,
-    height: f32,
-    hang: f32,
-    first_row: f32,
-}
-
 /// What the lines are drawn from, borrowed for one call.
 pub struct Source<'a> {
     pub doc: &'a Doc,
@@ -99,19 +72,11 @@ pub struct Lines {
     pub colors: Colors,
     /// The theme code is highlighted with; none before the first draw.
     pub theme: Option<Theme>,
+    /// Source mode: one size, the code font throughout (REFERENCE-001
+    /// section 17).
+    pub source: bool,
     highlights: Highlights,
     cache: HashMap<u64, Cached>,
-}
-
-/// Loads the bundled fonts into iced's font system, once.
-pub fn load_fonts() {
-    static LOADED: std::sync::Once = std::sync::Once::new();
-    LOADED.call_once(|| {
-        let mut system = font_system().write().expect("font system lock");
-        for font in fonts::JETBRAINS_MONO {
-            system.load_font(std::borrow::Cow::Borrowed(font));
-        }
-    });
 }
 
 impl Lines {
@@ -123,6 +88,7 @@ impl Lines {
             offset: 0.0,
             colors,
             theme: None,
+            source: false,
             highlights: Highlights::default(),
             cache: HashMap::new(),
         }
@@ -138,7 +104,11 @@ impl Lines {
             source.hidden,
             source.styled.runs(),
         );
-        let level = heading_level(source.styled, range.clone());
+        let level = if self.source {
+            0
+        } else {
+            heading_level(source.styled, range.clone())
+        };
         let hang = source
             .styled
             .hang_at(range.clone())
@@ -151,7 +121,16 @@ impl Lines {
             None => Vec::new(),
         };
         let mut hasher = DefaultHasher::new();
-        (&line.text, &line.runs, level, hang, self.width.to_bits()).hash(&mut hasher);
+        let mono = self.source;
+        (
+            &line.text,
+            &line.runs,
+            level,
+            hang,
+            mono,
+            self.width.to_bits(),
+        )
+            .hash(&mut hasher);
         for color in [
             self.colors.text,
             self.colors.marker,
@@ -167,7 +146,8 @@ impl Lines {
         let cached = match self.cache.get(&key) {
             Some(cached) => cached.clone(),
             None => {
-                let cached = shape(&line, level, hang, self.width, self.colors, &tokens);
+                let looks = (level, mono, self.colors);
+                let cached = shape(&line, looks, hang, self.width, &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
             }
@@ -356,130 +336,4 @@ fn side_cursor(display: usize, side: Affinity) -> cosmic_text::Cursor {
         Affinity::After => cosmic_text::Affinity::After,
     };
     cosmic_text::Cursor::new_with_affinity(0, display, affinity)
-}
-
-/// A cosmic-text cursor at display offset `display` of a line's buffer.
-pub fn cursor(display: usize) -> cosmic_text::Cursor {
-    cosmic_text::Cursor::new(0, display)
-}
-
-/// The heading level of the line at `range`, or 0.
-fn heading_level(styled: &Styled, range: Range<usize>) -> u8 {
-    let runs = styled.runs();
-    let first = runs.partition_point(|(r, _)| r.end <= range.start);
-    runs[first..]
-        .iter()
-        .take_while(|(r, _)| r.start < range.end)
-        .find(|(_, style)| style.heading > 0)
-        .map_or(0, |(_, style)| style.heading)
-}
-
-fn shape(
-    line: &Line,
-    level: u8,
-    hang: Option<usize>,
-    width: f32,
-    colors: Colors,
-    tokens: &[Token],
-) -> Cached {
-    let scale = if level == 0 {
-        1.0
-    } else {
-        HEADING[usize::from(level) - 1]
-    };
-    let size = TEXT_SIZE * scale;
-    let metrics = cosmic_text::Metrics::new(size, (size * LINE_HEIGHT).round());
-    let mut system = font_system().write().expect("font system lock");
-    let raw = system.raw();
-    let mut buffer = cosmic_text::Buffer::new(raw, metrics);
-    buffer.set_size(Some(width.max(1.0)), None);
-    buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
-    let plain = attrs(Style::default(), colors);
-    // One span per stretch where neither the style nor the token changes.
-    let mut edges = vec![0, line.text.len()];
-    for (range, _) in &line.runs {
-        edges.extend([range.start, range.end]);
-    }
-    for token in tokens {
-        edges.extend([token.range.start, token.range.end]);
-    }
-    edges.sort_unstable();
-    edges.dedup();
-    let mut spans = Vec::new();
-    for pair in edges.windows(2) {
-        let (from, to) = (pair[0], pair[1]);
-        let style = line
-            .runs
-            .iter()
-            .find(|(r, _)| r.start <= from && from < r.end)
-            .map_or(Style::default(), |(_, style)| *style);
-        let mut attrs = attrs(style, colors);
-        let token = tokens
-            .iter()
-            .find(|t| t.range.start <= from && from < t.range.end);
-        if let Some(token) = token.filter(|_| !style.marker) {
-            attrs = attrs.color(to_color(token.color));
-            if token.italic {
-                attrs = attrs.style(cosmic_text::Style::Italic);
-            }
-        }
-        spans.push((&line.text[from..to], attrs));
-    }
-    buffer.set_rich_text(spans, &plain, cosmic_text::Shaping::Advanced, None);
-    buffer.shape_until_scroll(raw, false);
-    // A wrapped list item or quoted line: shaped again narrower by its
-    // prefix, so the rows after the first fit when drawn under its text.
-    let mut indent = 0.0;
-    if let Some(at) = hang
-        && buffer.layout_runs().nth(1).is_some()
-    {
-        let x = buffer
-            .layout_runs()
-            .find_map(|run| run.cursor_position(&cursor(at)))
-            .unwrap_or(0.0);
-        if x > 0.0 && x < width / 2.0 {
-            buffer.set_size(Some(width - x), None);
-            buffer.shape_until_scroll(raw, false);
-            indent = x;
-        }
-    }
-    let height = buffer
-        .layout_runs()
-        .map(|run| run.line_top + run.line_height)
-        .fold(metrics.line_height, f32::max);
-    let first_row = buffer
-        .layout_runs()
-        .next()
-        .map_or(height, |run| run.line_top + run.line_height);
-    Cached {
-        buffer: Arc::new(buffer),
-        height,
-        hang: indent,
-        first_row,
-    }
-}
-
-fn attrs(style: Style, colors: Colors) -> cosmic_text::Attrs<'static> {
-    let font = if style.code || style.code_block || style.table {
-        Font::new(fonts::MONO)
-    } else {
-        Font::DEFAULT
-    };
-    let mut attrs = to_attributes(font);
-    if style.strong || style.heading > 0 {
-        attrs = attrs.weight(cosmic_text::Weight::BOLD);
-    }
-    if style.emphasis {
-        attrs = attrs.style(cosmic_text::Style::Italic);
-    }
-    let color = if style.marker || style.done {
-        colors.marker
-    } else if style.code {
-        colors.code
-    } else if style.link {
-        colors.link
-    } else {
-        colors.text
-    };
-    attrs.color(to_color(color))
 }

@@ -372,3 +372,22 @@ fn ctrl_f_finds_the_selection_and_f3_steps_through_matches() {
         "closed: F3 no longer moves on"
     );
 }
+
+#[test]
+fn ctrl_shift_e_shows_the_markdown_as_written() {
+    let mut editor = Editor::new("# Title\n\nbody".into());
+    let first_glyph = Point::new(16.0 + 1.0, 20.0);
+    // The caret on the body line: the heading's `# ` is hidden, so the
+    // first glyph is the T.
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 16.0 + 34.0 + 24.0 + 5.0))
+    });
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 16.0 + 34.0 + 24.0 + 5.0));
+        let source = keyboard::Modifiers::COMMAND | keyboard::Modifiers::SHIFT;
+        ui.simulate([press(Key::Character("e".into()), source)]);
+    });
+    assert_eq!(editor.mode(), livemark::widget::Mode::Source);
+    run(&mut editor, |ui| click(ui, first_glyph));
+    assert_eq!(editor.selection().head, 0, "the `#` shows in source mode");
+}

@@ -1,7 +1,7 @@
 //! A markdown file drawn headlessly by the editor, for typography reviews.
 //!
 //! ```text
-//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--caret <offset>|<anchor>..<head>]
+//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>]
 //! ```
 //!
 //! Writes `<out>-<renderer>.png` at 2x, 900 by 1100 points, with the caret
@@ -13,7 +13,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [file, out, ..] = args.as_slice() else {
         eprintln!(
-            "usage: snapshot <file.md> <out.png> [--dark] [--caret <offset>|<anchor>..<head>]"
+            "usage: snapshot <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>]"
         );
         std::process::exit(2);
     };
@@ -32,6 +32,9 @@ fn main() {
     let end = editor.text().len();
     let (anchor, head) = caret.unwrap_or((end, end));
     editor.select(anchor, head);
+    if args.iter().any(|a| a == "--source") {
+        editor.set_mode(livemark::widget::Mode::Source);
+    }
     let size = (900.0, 1100.0);
     let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), size, editor.view());
     // A press outside the text focuses nothing and moves nothing; it only

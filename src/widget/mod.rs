@@ -6,6 +6,7 @@ mod find;
 mod highlight;
 mod input;
 mod lines;
+mod shape;
 mod surface;
 
 use std::cell::RefCell;
@@ -15,7 +16,8 @@ use std::time::Instant;
 use iced::advanced::widget::Id;
 use iced::{Color, Element, Point, Rectangle, Size, Task};
 
-use self::lines::{Colors, Lines, Source};
+use self::lines::{Lines, Source};
+use self::shape::Colors;
 use crate::doc::{Doc, Selection};
 use crate::edit::Motion;
 use crate::edit::format::Format;
@@ -24,6 +26,18 @@ use crate::style::Styled;
 
 /// The id the editor widget takes, for [`Editor::focus`].
 const ID: Id = Id::new("livemark-editor");
+
+/// How the markdown is drawn (REFERENCE-001 section 17).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    /// Live preview: markers hidden until the caret touches them,
+    /// headings sized.
+    #[default]
+    Live,
+    /// The markdown as written: one size, the code font throughout,
+    /// nothing hidden, still highlighted.
+    Source,
+}
 
 /// A markdown document being edited with live preview.
 pub struct Editor {
@@ -43,6 +57,7 @@ pub struct Editor {
     linewise: Option<String>,
     /// The find bar, when it is open.
     find: Option<find::Find>,
+    mode: Mode,
     lines: RefCell<Lines>,
 }
 
@@ -103,6 +118,8 @@ enum Key {
     Format(Format),
     /// Ctrl/Cmd+K.
     Link,
+    /// Ctrl/Cmd+Shift+E: live preview or source mode (the user's pick).
+    ToggleMode,
     Delete(Motion),
     Move(Motion, bool),
     Vertical(Vertical, bool),
@@ -126,7 +143,7 @@ enum Vertical {
 impl Editor {
     /// An editor holding `text` exactly, caret at the start.
     pub fn new(text: String) -> Self {
-        lines::load_fonts();
+        shape::load_fonts();
         let doc = Doc::new(text);
         let styled = Styled::new(doc.text());
         Self {
@@ -138,6 +155,7 @@ impl Editor {
             goal_x: None,
             linewise: None,
             find: None,
+            mode: Mode::Live,
             lines: RefCell::new(Lines::new(Colors {
                 text: Color::BLACK,
                 marker: Color::BLACK,
@@ -184,6 +202,39 @@ impl Editor {
         self.with_lines(|lines, source| lines.reveal(source, selection.head, Affinity::After));
     }
 
+    /// How the markdown is drawn.
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// Switches between live preview and source mode, keeping the
+    /// selection and the caret's row where it is on screen (REFERENCE-001
+    /// section 17).
+    pub fn set_mode(&mut self, mode: Mode) {
+        if mode == self.mode {
+            return;
+        }
+        let (head, side) = (self.doc.selection().head, self.side);
+        let caret = |lines: &mut Lines, source: &Source| {
+            let row = lines.caret_in_line(source, head, side).1;
+            (source.doc.line_at(head), row)
+        };
+        let before = self.with_lines(|lines, source| {
+            let (index, row) = caret(lines, source);
+            lines.top_of(source, index).map(|top| top + row)
+        });
+        self.mode = mode;
+        self.lines.borrow_mut().source = mode == Mode::Source;
+        if let Some(y) = before {
+            self.with_lines(|lines, source| {
+                let (index, row) = caret(lines, source);
+                lines.anchor = index;
+                lines.offset = row - y;
+                lines.scroll_by(source, 0.0);
+            });
+        }
+    }
+
     /// The editor, filling the space it is given, with the find bar under
     /// the text when it is open.
     pub fn view(&self) -> Element<'_, Message> {
@@ -199,8 +250,12 @@ impl Editor {
         iced::widget::operation::focus(ID)
     }
 
-    /// The markers hidden with the selection drawn now.
+    /// The markers hidden with the selection drawn now; none in source
+    /// mode.
     fn hidden(&self) -> Vec<Range<usize>> {
+        if self.mode == Mode::Source {
+            return Vec::new();
+        }
         let selection = self
             .press
             .as_ref()

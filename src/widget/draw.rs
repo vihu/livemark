@@ -8,7 +8,8 @@ use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Color, Point, Rectangle, Size, Theme, Vector};
 
 use super::Editor;
-use super::lines::{Colors, Shaped, TEXT_SIZE};
+use super::lines::Shaped;
+use super::shape::{Colors, TEXT_SIZE};
 use crate::style::Style;
 
 /// How far a code block's band reaches past the text on either side.

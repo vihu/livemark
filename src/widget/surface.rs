@@ -13,7 +13,7 @@ use iced::widget::text_editor::{Binding, KeyPress, Motion as IcedMotion};
 use iced::{Element, Event, Length, Pixels, Point, Rectangle, Size, Theme, Vector, window};
 
 use super::find::FindInput;
-use super::lines::TEXT_SIZE;
+use super::shape::TEXT_SIZE;
 use super::{Editor, ID, Input, Key, Message, Vertical};
 use crate::edit::Motion;
 use crate::edit::format::Format;
@@ -253,6 +253,16 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                     if let Some(focus) = &mut state.focus {
                         focus.updated_at = Instant::now();
                     }
+                    shell.capture_event();
+                    return;
+                }
+                // Ctrl/Cmd+Shift+E: live preview or source mode.
+                let source_key = modifiers.command()
+                    && modifiers.shift()
+                    && !modifiers.alt()
+                    && key.to_latin(*physical_key) == Some('e');
+                if source_key {
+                    publish(shell, Input::Key(Key::ToggleMode));
                     shell.capture_event();
                     return;
                 }

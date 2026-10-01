@@ -2,7 +2,7 @@
 //! input method commits and the clipboard (REFERENCE-001 sections 13 to 19).
 use iced::{Point, Task};
 
-use super::{Editor, Input, Key, Message, Press, Unit, Vertical};
+use super::{Editor, Input, Key, Message, Mode, Press, Unit, Vertical};
 use crate::doc::Selection;
 use crate::edit::{self, Motion};
 use crate::layout::Affinity;
@@ -48,6 +48,10 @@ impl Editor {
                     edit::format::toggle(&mut self.doc, &self.styled, format, now);
                 }
                 Key::Link => edit::format::link(&mut self.doc, now),
+                Key::ToggleMode => self.set_mode(match self.mode {
+                    Mode::Live => Mode::Source,
+                    Mode::Source => Mode::Live,
+                }),
                 Key::Delete(Motion::Left) => edit::backspace(&mut self.doc, now),
                 Key::Delete(motion) => edit::delete(&mut self.doc, motion, now),
                 Key::Move(motion @ (Motion::LineStart | Motion::LineEnd), extend) => {
