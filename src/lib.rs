@@ -3,6 +3,7 @@
 
 pub mod doc;
 pub mod edit;
+pub mod fonts;
 pub mod layout;
 pub mod parse;
 pub mod style;

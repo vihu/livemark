@@ -4,8 +4,14 @@ use iced::advanced::graphics::text::Renderer as _;
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Color, Rectangle, Size, Theme, Vector};
 
+use std::ops::Range;
+
 use super::Editor;
 use super::lines::{self, Colors, TEXT_SIZE};
+use crate::style::Style;
+
+/// How far a code block's band reaches past the text on either side.
+const CODE_INSET: f32 = 8.0;
 
 impl Editor {
     /// Draws the visible lines into `area` with the selection, and the
@@ -25,6 +31,7 @@ impl Editor {
             code: palette.primary.base.color,
         };
         let selection_color = palette.primary.weak.color;
+        let code_background = palette.background.weak.color;
         let selection = self.doc.selection().range();
         let caret_rect = caret.then(|| self.caret()).flatten();
         let quad = |renderer: &mut iced::Renderer, bounds: Rectangle, color: Color| {
@@ -38,6 +45,7 @@ impl Editor {
         };
         self.with_lines(|lines, source| {
             lines.colors = colors;
+            lines.theme = Some(theme.clone());
             let mut drawn = Vec::new();
             let mut index = lines.anchor;
             let mut top = -lines.offset;
@@ -45,6 +53,23 @@ impl Editor {
                 let shaped = lines.shaped(source, index);
                 let origin = area.position() + Vector::new(0.0, top);
                 let range = source.doc.line_range(index);
+                // A code block is a band across the text area, fences
+                // included; inline code sits on a box of the same color.
+                if source.styled.code_block_at(range.clone()).is_some() {
+                    let at = origin - Vector::new(CODE_INSET, 0.0);
+                    let size = Size::new(area.width + 2.0 * CODE_INSET, shaped.height);
+                    quad(renderer, Rectangle::new(at, size), code_background);
+                }
+                for code in code_spans(&shaped.line.runs) {
+                    let (start, end) = (lines::cursor(code.start), lines::cursor(code.end));
+                    for run in shaped.buffer.layout_runs() {
+                        for (x, width) in run.highlight(start, end) {
+                            let at = origin + Vector::new(x - 2.0, run.line_top + 2.0);
+                            let size = Size::new(width + 4.0, run.line_height - 4.0);
+                            quad(renderer, Rectangle::new(at, size), code_background);
+                        }
+                    }
+                }
                 if !selection.is_empty()
                     && selection.start <= range.end
                     && range.start <= selection.end
@@ -90,4 +115,16 @@ impl Editor {
             }
         }
     }
+}
+
+/// The stretches of inline code, backticks included, in display offsets.
+fn code_spans(runs: &[(Range<usize>, Style)]) -> Vec<Range<usize>> {
+    let mut spans: Vec<Range<usize>> = Vec::new();
+    for (range, _) in runs.iter().filter(|(_, style)| style.code) {
+        match spans.last_mut() {
+            Some(last) if last.end == range.start => last.end = range.end,
+            _ => spans.push(range.clone()),
+        }
+    }
+    spans
 }

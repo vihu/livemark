@@ -2,6 +2,7 @@
 //! is drawn; [`Editor::view`] shows it and [`Editor::update`] takes back the
 //! messages the view produces (`input.rs`). Behaviour per REFERENCE-001.
 mod draw;
+mod highlight;
 mod input;
 mod lines;
 mod surface;
@@ -112,6 +113,7 @@ enum Vertical {
 impl Editor {
     /// An editor holding `text` exactly, caret at the start.
     pub fn new(text: String) -> Self {
+        lines::load_fonts();
         let doc = Doc::new(text);
         let styled = Styled::new(doc.text());
         Self {

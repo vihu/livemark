@@ -172,3 +172,87 @@ fn markers_are_syntax_the_parser_never_calls_text() {
     }
     assert!(checked > 400, "only {checked} markers checked");
 }
+
+#[test]
+fn code_blocks_dim_their_fences_and_keep_their_lines() {
+    let text = "```rust title\nfn a() {\n\n}\n```\n> ```\n> x\n> ```\n\n    indented\n";
+    let styled = Styled::new(text);
+    let blocks = styled.code_blocks();
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(blocks[0].language.as_deref(), Some("rust"));
+    assert_eq!(blocks[0].range, 0..29);
+    let lines: Vec<&str> = blocks[0].lines.iter().map(|r| &text[r.clone()]).collect();
+    assert_eq!(lines, ["fn a() {", "", "}"]);
+    let quoted: Vec<&str> = blocks[1].lines.iter().map(|r| &text[r.clone()]).collect();
+    assert_eq!(quoted, ["x"], "without the quote's prefix");
+    assert_eq!(blocks[2].language, None, "indented");
+    let marked: String = styled
+        .runs()
+        .iter()
+        .filter(|(_, style)| style.marker)
+        .map(|(r, _)| &text[r.clone()])
+        .collect();
+    // The quoted block starts after its first `> `, which is the quote's.
+    assert_eq!(
+        marked, "```rust title\n``````\n> > ```",
+        "fences and prefixes only"
+    );
+    assert!(
+        styled
+            .runs()
+            .iter()
+            .any(|(r, s)| s.code_block && r.start == 14)
+    );
+}
+
+#[test]
+fn a_table_is_monospace_with_its_pipes_and_delimiter_row_dimmed() {
+    let text = "| a | b |\n| :- | -: |\n| 1 | 2 |\n";
+    let styled = Styled::new(text);
+    assert!(styled.runs().iter().all(|(_, s)| s.table));
+    let marked: Vec<&str> = styled
+        .runs()
+        .iter()
+        .filter(|(_, style)| style.marker)
+        .map(|(r, _)| &text[r.clone()])
+        .collect();
+    assert_eq!(marked, ["|", "|", "|\n| :- | -: |\n|", "|", "|"]);
+}
+
+#[test]
+fn no_dimmed_marker_covers_what_the_parser_calls_text() {
+    let coverage = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/docs/coverage.md"
+    ))
+    .unwrap();
+    let all = examples("commonmark-0.31.2.json")
+        .into_iter()
+        .chain(examples("gfm-0.29-extensions.json"))
+        .chain([coverage]);
+    for markdown in all {
+        let styled = Styled::new(&markdown);
+        let texts: Vec<Range<usize>> = parse::events(&markdown)
+            .filter(|(event, _)| matches!(event, Event::Text(_)))
+            .map(|(_, range)| range)
+            .collect();
+        for (run, _) in styled.runs().iter().filter(|(_, style)| style.marker) {
+            for text in &texts {
+                assert!(
+                    text.end <= run.start || run.end <= text.start,
+                    "{markdown:?}: marker {run:?} covers text {text:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn inline_markers_in_a_table_stay_so_columns_line_up() {
+    let text = "| **b** | `c` |\n| - | - |\n\n**d**\n";
+    let styled = Styled::new(text);
+    let hidden = styled.hidden(text.len()..text.len());
+    let shown: Vec<&str> = hidden.iter().map(|r| &text[r.clone()]).collect();
+    assert_eq!(shown, ["**", "**"], "only the paragraph's, after the table");
+    assert!(hidden.iter().all(|r| r.start > 24));
+}

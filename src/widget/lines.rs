@@ -7,10 +7,12 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 use std::sync::Arc;
 
-use iced::Font;
 use iced::advanced::graphics::text::{cosmic_text, font_system, to_attributes, to_color};
+use iced::{Font, Theme};
 
+use super::highlight::{Highlights, Token};
 use crate::doc::Doc;
+use crate::fonts;
 use crate::layout::{Affinity, Line};
 use crate::style::{Style, Styled};
 
@@ -65,7 +67,21 @@ pub struct Lines {
     /// How far the anchor line starts above the top, in pixels.
     pub offset: f32,
     pub colors: Colors,
+    /// The theme code is highlighted with; none before the first draw.
+    pub theme: Option<Theme>,
+    highlights: Highlights,
     cache: HashMap<u64, Cached>,
+}
+
+/// Loads the bundled fonts into iced's font system, once.
+pub fn load_fonts() {
+    static LOADED: std::sync::Once = std::sync::Once::new();
+    LOADED.call_once(|| {
+        let mut system = font_system().write().expect("font system lock");
+        for font in fonts::JETBRAINS_MONO {
+            system.load_font(std::borrow::Cow::Borrowed(font));
+        }
+    });
 }
 
 impl Lines {
@@ -76,6 +92,8 @@ impl Lines {
             anchor: 0,
             offset: 0.0,
             colors,
+            theme: None,
+            highlights: Highlights::default(),
             cache: HashMap::new(),
         }
     }
@@ -90,17 +108,27 @@ impl Lines {
             source.hidden,
             source.styled.runs(),
         );
-        let level = heading_level(source.styled, range);
+        let level = heading_level(source.styled, range.clone());
+        let tokens = match &self.theme {
+            Some(theme) => {
+                self.highlights
+                    .tokens(source.doc.text(), source.styled, range, &line, theme)
+            }
+            None => Vec::new(),
+        };
         let mut hasher = DefaultHasher::new();
         (&line.text, &line.runs, level, self.width.to_bits()).hash(&mut hasher);
         for color in [self.colors.text, self.colors.marker, self.colors.code] {
             color.into_rgba8().hash(&mut hasher);
         }
+        for token in &tokens {
+            (&token.range, token.color.into_rgba8(), token.italic).hash(&mut hasher);
+        }
         let key = hasher.finish();
         let cached = match self.cache.get(&key) {
             Some(cached) => cached.clone(),
             None => {
-                let cached = shape(&line, level, self.width, self.colors);
+                let cached = shape(&line, level, self.width, self.colors, &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
             }
@@ -294,7 +322,7 @@ fn heading_level(styled: &Styled, range: Range<usize>) -> u8 {
         .map_or(0, |(_, style)| style.heading)
 }
 
-fn shape(line: &Line, level: u8, width: f32, colors: Colors) -> Cached {
+fn shape(line: &Line, level: u8, width: f32, colors: Colors, tokens: &[Token]) -> Cached {
     let scale = if level == 0 {
         1.0
     } else {
@@ -308,17 +336,35 @@ fn shape(line: &Line, level: u8, width: f32, colors: Colors) -> Cached {
     buffer.set_size(Some(width.max(1.0)), None);
     buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
     let plain = attrs(Style::default(), colors);
-    let mut spans = Vec::new();
-    let mut at = 0;
-    for (range, style) in &line.runs {
-        if at < range.start {
-            spans.push((&line.text[at..range.start], plain.clone()));
-        }
-        spans.push((&line.text[range.clone()], attrs(*style, colors)));
-        at = range.end;
+    // One span per stretch where neither the style nor the token changes.
+    let mut edges = vec![0, line.text.len()];
+    for (range, _) in &line.runs {
+        edges.extend([range.start, range.end]);
     }
-    if at < line.text.len() {
-        spans.push((&line.text[at..], plain.clone()));
+    for token in tokens {
+        edges.extend([token.range.start, token.range.end]);
+    }
+    edges.sort_unstable();
+    edges.dedup();
+    let mut spans = Vec::new();
+    for pair in edges.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        let style = line
+            .runs
+            .iter()
+            .find(|(r, _)| r.start <= from && from < r.end)
+            .map_or(Style::default(), |(_, style)| *style);
+        let mut attrs = attrs(style, colors);
+        let token = tokens
+            .iter()
+            .find(|t| t.range.start <= from && from < t.range.end);
+        if let Some(token) = token.filter(|_| !style.marker) {
+            attrs = attrs.color(to_color(token.color));
+            if token.italic {
+                attrs = attrs.style(cosmic_text::Style::Italic);
+            }
+        }
+        spans.push((&line.text[from..to], attrs));
     }
     buffer.set_rich_text(spans, &plain, cosmic_text::Shaping::Advanced, None);
     buffer.shape_until_scroll(raw, false);
@@ -333,8 +379,8 @@ fn shape(line: &Line, level: u8, width: f32, colors: Colors) -> Cached {
 }
 
 fn attrs(style: Style, colors: Colors) -> cosmic_text::Attrs<'static> {
-    let font = if style.code {
-        Font::MONOSPACE
+    let font = if style.code || style.code_block || style.table {
+        Font::new(fonts::MONO)
     } else {
         Font::DEFAULT
     };
