@@ -41,6 +41,9 @@ impl Editor {
             Input::Key(key) => match key {
                 Key::Insert(c) => edit::type_text(&mut self.doc, c.encode_utf8(&mut [0; 4]), now),
                 Key::Enter => edit::enter(&mut self.doc, now),
+                Key::SoftEnter => edit::markup::soft_break(&mut self.doc, now),
+                Key::Indent(outdent) => edit::markup::indent(&mut self.doc, outdent, now),
+                Key::Delete(Motion::Left) => edit::backspace(&mut self.doc, now),
                 Key::Delete(motion) => edit::delete(&mut self.doc, motion, now),
                 Key::Move(motion @ (Motion::LineStart | Motion::LineEnd), extend) => {
                     side = self.line_boundary(motion == Motion::LineEnd, extend);

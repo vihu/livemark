@@ -233,6 +233,17 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                     text: text.clone(),
                     is_focused: true,
                 };
+                // Tab types nothing in iced's bindings (its text is a
+                // control character); here it indents (REFERENCE-001
+                // section 7).
+                if *key == keyboard::Key::Named(keyboard::key::Named::Tab) && !modifiers.command() {
+                    publish(shell, Input::Key(Key::Indent(modifiers.shift())));
+                    if let Some(focus) = &mut state.focus {
+                        focus.updated_at = Instant::now();
+                    }
+                    shell.capture_event();
+                    return;
+                }
                 let Some(binding) = Binding::<()>::from_key_press(press) else {
                     return;
                 };
@@ -309,6 +320,7 @@ impl Surface<'_> {
             Binding::Redo => shell.publish(key(Key::Redo)),
             Binding::SelectAll => shell.publish(key(Key::SelectAll)),
             Binding::Insert(c) => shell.publish(key(Key::Insert(c))),
+            Binding::Enter if shift => shell.publish(key(Key::SoftEnter)),
             Binding::Enter => shell.publish(key(Key::Enter)),
             Binding::Backspace => shell.publish(key(Key::Delete(Motion::Left))),
             Binding::BackspaceWord => shell.publish(key(Key::Delete(Motion::WordLeft))),

@@ -290,3 +290,25 @@ fn copy_and_cut_with_nothing_selected_take_the_line() {
         "the line and its ending cut"
     );
 }
+
+#[test]
+fn enter_continues_a_list_and_tab_nests_the_new_item() {
+    let mut editor = Editor::new("- a".into());
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        ui.tap_key(Named::Enter);
+        ui.typewrite("b");
+        ui.tap_key(Named::Tab);
+    });
+    assert_eq!(editor.text(), "- a\n  - b");
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 16.0 + 24.0 + 10.0));
+        ui.simulate([press(Key::Named(Named::Tab), keyboard::Modifiers::SHIFT)]);
+        ui.simulate([press(Key::Named(Named::Enter), keyboard::Modifiers::SHIFT)]);
+    });
+    assert_eq!(
+        editor.text(),
+        "- a\n- b\n  ",
+        "Shift+Tab out, Shift+Enter under the text"
+    );
+}

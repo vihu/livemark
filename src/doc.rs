@@ -149,13 +149,14 @@ impl Doc {
     }
 
     /// Moves the caret or selection without editing. A move ends a typing
-    /// burst.
+    /// burst. An end between the `\r` and `\n` of a line ending moves before
+    /// the `\r`: no caret can show there.
     ///
     /// # Panics
     ///
     /// When an end is past the text or not on a char boundary.
     pub fn set_selection(&mut self, selection: Selection) {
-        self.check(selection);
+        let selection = self.fit(selection);
         if selection != self.selection {
             self.selection = selection;
             self.last_change = None;
@@ -216,7 +217,7 @@ impl Doc {
                 })
             });
         self.replace(&changes);
-        self.check(selection);
+        let selection = self.fit(selection);
         self.issued += 1;
         let step = Step {
             undo,
@@ -333,12 +334,23 @@ impl Doc {
         self.lines.splice(keep..tail, found);
     }
 
-    fn check(&self, selection: Selection) {
-        for end in [selection.anchor, selection.head] {
+    /// `selection` checked, with an end inside a CRLF moved before it.
+    fn fit(&self, selection: Selection) -> Selection {
+        let fit = |end: usize| {
             assert!(
                 self.text.is_char_boundary(end),
                 "selection end {end} past the text or inside a character"
             );
+            let bytes = self.text.as_bytes();
+            if end > 0 && bytes[end - 1] == b'\r' && bytes.get(end) == Some(&b'\n') {
+                end - 1
+            } else {
+                end
+            }
+        };
+        Selection {
+            anchor: fit(selection.anchor),
+            head: fit(selection.head),
         }
     }
 }

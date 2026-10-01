@@ -207,3 +207,17 @@ fn a_newline_typed_after_a_lone_cr_joins_it_into_one_ending() {
     let text = "a\r";
     assert_eq!(Doc::new(text.into()).line_count(), 2, "an empty last line");
 }
+
+#[test]
+fn a_caret_inside_a_crlf_moves_before_it() {
+    let mut doc = Doc::new("a\r\nb".into());
+    doc.set_selection(Selection { anchor: 0, head: 2 });
+    assert_eq!(doc.selection(), Selection { anchor: 0, head: 1 });
+    doc.apply(
+        vec![Change::insert(0, "x")],
+        Selection::caret(3),
+        Kind::Type,
+        ms(0),
+    );
+    assert_eq!(doc.selection(), Selection::caret(2));
+}

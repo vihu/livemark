@@ -90,6 +90,10 @@ enum Input {
 enum Key {
     Insert(char),
     Enter,
+    /// Shift+Enter: a new line without new markup.
+    SoftEnter,
+    /// Tab, or Shift+Tab with `true`.
+    Indent(bool),
     Delete(Motion),
     Move(Motion, bool),
     Vertical(Vertical, bool),

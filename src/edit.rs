@@ -2,6 +2,8 @@
 //! typing, deleting, Enter and paste as transactions (REFERENCE-001
 //! sections 13, 15 and 18). Motions that need layout (up, down, pages) are
 //! the widget's.
+pub mod markup;
+
 use std::ops::Range;
 use std::time::Duration;
 
@@ -208,11 +210,22 @@ pub fn type_text(doc: &mut Doc, text: &str, now: Duration) {
     replace_selection(doc, text, Kind::Type, now);
 }
 
-/// Enter outside lists, quotes and code: the document's line ending
-/// (REFERENCE-001 section 13).
+/// Enter: list and quote markup carried on, or taken away on an empty item
+/// ([`markup::continue_markup`]); elsewhere the document's line ending
+/// (REFERENCE-001 sections 7, 13).
 pub fn enter(doc: &mut Doc, now: Duration) {
-    let ending = line_ending(doc.text());
-    replace_selection(doc, ending, Kind::Other, now);
+    if !markup::continue_markup(doc, now) {
+        let ending = line_ending(doc.text());
+        replace_selection(doc, ending, Kind::Other, now);
+    }
+}
+
+/// Backspace: one level of list or quote markup right before the caret
+/// ([`markup::delete_markup`]), else the selection or one grapheme.
+pub fn backspace(doc: &mut Doc, now: Duration) {
+    if !markup::delete_markup(doc, now) {
+        delete(doc, Motion::Left, now);
+    }
 }
 
 /// Replaces the selection with pasted `text`, its line breaks turned into

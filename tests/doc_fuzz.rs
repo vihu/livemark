@@ -113,7 +113,17 @@ fn session(seed: u64) {
                     head: rng.boundary(doc.text()),
                 };
                 doc.set_selection(selection);
-                assert_eq!(doc.selection(), selection, "{at}");
+                // An end inside a CRLF moves before its `\r`.
+                let fit = |end: usize| {
+                    let inside =
+                        doc.text()[..end].ends_with('\r') && doc.text()[end..].starts_with('\n');
+                    if inside { end - 1 } else { end }
+                };
+                let expected = Selection {
+                    anchor: fit(selection.anchor),
+                    head: fit(selection.head),
+                };
+                assert_eq!(doc.selection(), expected, "{at}");
             }
             _ => {
                 for _ in 0..1 + rng.below(3) {
