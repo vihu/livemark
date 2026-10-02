@@ -97,6 +97,50 @@ fn front_matter(text: &str) -> Option<(Range<usize>, Range<usize>)> {
     None
 }
 
+/// The lines of the YAML front matter at the start of `text`, between its
+/// fences, if it has one (as [`events`] reads it).
+pub fn front_matter_text(text: &str) -> Option<&str> {
+    front_matter(text).map(|(_, body)| &text[body])
+}
+
+/// Inline `#tags`, Obsidian's: a `#` at a line's start or after a space,
+/// then letters, digits, `_`, `-` and `/`, not all of them digits (`#12`
+/// is an issue number). Only in text: not in code, front matter or links
+/// (a URL's `#fragment` is no tag), and not escaped. Each range covers the
+/// `#` and the name.
+pub fn tags(text: &str) -> Vec<Range<usize>> {
+    let name = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '/');
+    let mut found: Vec<Range<usize>> = Vec::new();
+    let (mut code, mut links) = (0usize, 0usize);
+    for (event, range) in events(text) {
+        match event {
+            Event::Start(Tag::CodeBlock(_) | Tag::MetadataBlock(_)) => code += 1,
+            Event::End(TagEnd::CodeBlock | TagEnd::MetadataBlock(_)) => code -= 1,
+            Event::Start(Tag::Link { .. } | Tag::Image { .. }) => links += 1,
+            Event::End(TagEnd::Link | TagEnd::Image) => links -= 1,
+            Event::Text(_) if code == 0 && links == 0 => {
+                for (at, _) in text[range.clone()].match_indices('#') {
+                    let start = range.start + at;
+                    let before = text[..start].chars().next_back();
+                    if before.is_some_and(|c| !c.is_whitespace()) {
+                        continue;
+                    }
+                    // The name may run on past this event: pulldown-cmark
+                    // splits text at `_` and the like.
+                    let rest = &text[start + 1..];
+                    let len = rest.find(|c: char| !name(c)).unwrap_or(rest.len());
+                    let tag = &rest[..len];
+                    if !tag.is_empty() && !tag.chars().all(|c| c.is_ascii_digit()) {
+                        found.push(start..start + 1 + len);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
 /// pulldown-cmark's events with extended autolinks spliced in, lazily:
 /// only the current run of text is held back.
 struct Events<'a> {
@@ -338,6 +382,17 @@ mod tests {
                 "612 Autolinks"
             ]
         );
+    }
+
+    #[test]
+    fn tags_are_words_after_a_hash_in_text_only() {
+        let text = "---\ntags: [a]\n#meta\n---\n# Heading\n#travel and #work/2026, not#this\n\
+                    #12 \\#esc `#code` [#link](u#frag) <https://x.org/#top>\n\
+                    ```\n#fenced\n```\n- #my_tag_name.\n";
+        let names: Vec<&str> = super::tags(text).into_iter().map(|r| &text[r]).collect();
+        assert_eq!(names, ["#travel", "#work/2026", "#my_tag_name"]);
+        assert_eq!(super::front_matter_text(text), Some("tags: [a]\n#meta\n"));
+        assert_eq!(super::front_matter_text("no front matter"), None);
     }
 
     #[test]

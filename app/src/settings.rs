@@ -27,6 +27,8 @@ pub struct Settings {
     pub recent: Vec<PathBuf>,
     /// The markdown's share of the width side by side.
     pub split: f32,
+    /// The vault last opened (PLAN-004).
+    pub vault: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -37,6 +39,7 @@ impl Default for Settings {
             window: None,
             recent: Vec::new(),
             split: 0.5,
+            vault: None,
         }
     }
 }
@@ -109,6 +112,7 @@ impl Settings {
                     });
                     settings.window = size.filter(|&(w, h)| w >= 200.0 && h >= 150.0);
                 }
+                "vault" if !value.is_empty() => settings.vault = Some(PathBuf::from(value)),
                 "recent" if !value.is_empty() && settings.recent.len() < RECENT => {
                     settings.recent.push(PathBuf::from(value));
                 }
@@ -132,6 +136,9 @@ impl Settings {
         text += &format!("split = {}\n", self.split);
         if let Some((width, height)) = self.window {
             text += &format!("window = {}x{}\n", width.round(), height.round());
+        }
+        if let Some(vault) = &self.vault {
+            text += &format!("vault = {}\n", vault.display());
         }
         for path in &self.recent {
             text += &format!("recent = {}\n", path.display());
@@ -160,6 +167,7 @@ mod tests {
             window: Some((1200.0, 800.0)),
             recent: Vec::new(),
             split: 0.35,
+            vault: Some("/notes".into()),
         };
         settings.opened(std::path::Path::new("/notes/a.md"));
         settings.opened(std::path::Path::new("/notes/b.md"));

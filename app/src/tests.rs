@@ -289,3 +289,73 @@ fn another_note_keeps_the_zoom_the_mode_and_the_divider() {
     std::fs::remove_file(&other).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn a_vault_opens_lists_its_notes_and_filters_by_tag() {
+    use crate::sidebar::VaultMessage;
+    let dir = std::env::temp_dir().join(format!("livemark-app-vault-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    write(
+        &dir.join("2026-10-01-lisbon.md"),
+        "---\ntags: [travel]\n---\n# Lisbon\n",
+        0,
+    );
+    write(&dir.join("2026-10-02-standup.md"), "# Standup\n#work\n", 10);
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let vault = app.vault.as_ref().expect("opened");
+    assert_eq!(vault.notes[0].title, "Standup", "most recent first");
+    assert_eq!(
+        app.settings.vault,
+        Some(std::fs::canonicalize(&dir).unwrap())
+    );
+    assert!(app.sidebar().is_some());
+    let _ = app.view();
+    // A tag filters; the same tag again shows all.
+    let _ = app.update(Message::Vault(VaultMessage::Tag(Some("travel".into()))));
+    assert_eq!(app.tag.as_deref(), Some("travel"));
+    let _ = app.view();
+    let _ = app.update(Message::Vault(VaultMessage::Tag(Some("travel".into()))));
+    assert_eq!(app.tag, None);
+    // A note made elsewhere shows up when the window comes back.
+    write(&dir.join("2026-10-03-agent.md"), "# From an agent\n", 20);
+    let _ = app.update(Message::Focused);
+    assert_eq!(app.vault.as_ref().unwrap().notes[0].title, "From an agent");
+    // Opening one from the list is an ordinary open.
+    let lisbon = std::fs::canonicalize(dir.join("2026-10-01-lisbon.md")).unwrap();
+    let _ = app.update(Message::Opened(Some(lisbon.clone())));
+    assert_eq!(app.path.as_ref(), Some(&lisbon));
+    // Not a folder: said, and nothing changes.
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(
+        dir.join("2026-10-01-lisbon.md"),
+    ))));
+    assert!(app.error.is_some());
+    assert!(app.vault.is_some());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A vault of 5,000 notes read in full; run with `cargo test --release -p
+/// livemark-app -- --ignored` (PLAN-004 slice 86).
+#[test]
+#[ignore = "timing, release only"]
+fn five_thousand_notes_are_read_quickly() {
+    let dir = std::env::temp_dir().join(format!("livemark-vault-5k-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let body = "Some text with **bold** and a [link](x.md), #tag and more words.\n".repeat(30);
+    for i in 0..5000 {
+        let text = format!(
+            "---\ntitle: Note {i}\ntags: [t{}]\n---\n# Note {i}\n{body}",
+            i % 20
+        );
+        std::fs::write(dir.join(format!("2026-01-01-note-{i}.md")), text).unwrap();
+    }
+    let start = std::time::Instant::now();
+    let mut vault = crate::vault::Vault::open(&dir).unwrap();
+    let opened = start.elapsed();
+    let start = std::time::Instant::now();
+    vault.refresh();
+    let refreshed = start.elapsed();
+    println!("5,000 notes: open {opened:?}, refresh with no change {refreshed:?}");
+    assert_eq!(vault.notes.len(), 5000);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -121,7 +121,12 @@ impl App {
                 container(opaque(self.menu())).padding([0, 12]),
             ]
         });
-        column![toolbar, stack![editor].push(menu)]
+        // The vault's sidebar left of the text; a zero-width space without
+        // one, so the editor keeps its place in the row.
+        let sidebar = self
+            .sidebar()
+            .unwrap_or_else(|| Space::new().width(0).into());
+        column![toolbar, stack![row![sidebar, editor]].push(menu)]
             .push(bar.map(|bar| container(bar).padding(12)))
             .into()
     }
@@ -132,9 +137,13 @@ impl App {
             button(
                 row![
                     text(label).size(14).width(Length::Fill),
-                    text(format!("{COMMAND}+{key}"))
-                        .size(12)
-                        .style(text::secondary),
+                    text(if key.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{COMMAND}+{key}")
+                    })
+                    .size(12)
+                    .style(text::secondary),
                 ]
                 .spacing(12)
                 .align_y(iced::Center),
@@ -149,6 +158,11 @@ impl App {
             item("Open...", "O", Message::Open),
             item("Save", "S", Message::Save { choose: false }),
             item("Save as...", "Shift+S", Message::Save { choose: true }),
+            item(
+                "Open vault...",
+                "",
+                Message::Vault(super::sidebar::VaultMessage::Open)
+            ),
         ];
         if !self.settings.recent.is_empty() {
             items = items.push(rule::horizontal(1));

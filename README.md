@@ -53,6 +53,12 @@ paths); the app makes no network requests, so web images stay as markdown.
 A picture pasted with Ctrl+V is saved as `assets/<note>-<n>.png` next to the
 note and linked at the caret (a new note is saved first); a picture file
 dropped on the window is linked by its path, a dropped `.md` file opens.
+File > Open vault picks a folder of notes (a vault, kept in your own git
+repository; the app never runs git): a sidebar lists its notes, most
+recently changed first, and their tags (front matter `tags: [work,
+travel]` and inline `#tags`) with counts, a click on one showing only its
+notes. Nothing is stored but the notes: they are read into memory (5,000
+notes in about 0.1 s) and read again when the window comes back.
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
 the theme (System, Light, Dark). The zoom, the window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click

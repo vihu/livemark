@@ -13,10 +13,15 @@
 //! in the system's browser or mail program. The title shows `*` while there are unsaved changes; closing
 //! the window or opening another file then asks first. When the window
 //! comes back into focus and the file changed on disk, it is loaded again,
-//! or with unsaved changes the app asks which to keep.
+//! or with unsaved changes the app asks which to keep. File > Open vault
+//! makes a folder of notes a vault with a sidebar (PLAN-004, `vault.rs`,
+//! `sidebar.rs`); with one and no file given, the note last open in it
+//! opens.
 mod file;
 mod pictures;
 mod settings;
+mod sidebar;
+mod vault;
 mod view;
 
 use std::path::PathBuf;
@@ -36,6 +41,12 @@ pub fn main() -> iced::Result {
         .as_deref()
         .map(Settings::load)
         .unwrap_or_default();
+    // With a vault and no file asked for, the note last open in it.
+    let path = path.or_else(|| {
+        let vault = settings.vault.as_ref()?;
+        let last = settings.recent.first()?;
+        (last.starts_with(vault) && last.exists()).then(|| last.clone())
+    });
     let theme = if args.iter().any(|a| a == "--dark") {
         Some(Theme::Dark)
     } else if args.iter().any(|a| a == "--light") {
@@ -105,6 +116,10 @@ struct App {
     waiting_picture: Option<Vec<u8>>,
     /// Whether the File menu is open.
     menu: bool,
+    /// The vault open, if any (PLAN-004).
+    vault: Option<vault::Vault>,
+    /// The tag the sidebar's notes are filtered by.
+    tag: Option<String>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -150,6 +165,8 @@ enum Message {
     Recent(PathBuf),
     /// The theme picked in the File menu, remembered.
     Theme(settings::Theme),
+    /// The vault and its sidebar.
+    Vault(sidebar::VaultMessage),
 }
 
 impl App {
@@ -180,6 +197,8 @@ impl App {
             settings_file: None,
             waiting_picture: None,
             menu: false,
+            vault: None,
+            tag: None,
         }
         .with_images()
     }
@@ -191,6 +210,11 @@ impl App {
         self.settings_file = file;
         self.editor.set_zoom(self.settings.zoom);
         self.editor.set_split_ratio(self.settings.split);
+        self.vault = self
+            .settings
+            .vault
+            .as_deref()
+            .and_then(|root| vault::Vault::open(root).ok());
         self.settings.recent.retain(|path| path.exists());
         if let Some(path) = self.path.clone() {
             self.settings.opened(&path);
@@ -307,6 +331,7 @@ impl App {
                 return self.paste_picture(message.pasted_image().unwrap_or_default());
             }
             Message::Dropped(file) => return self.dropped(file),
+            Message::Vault(message) => return self.vault_update(message),
             Message::Editor(message) => {
                 // Only a failure is reported; an open or save error stays.
                 if let Some(Err(error)) = message.link().map(open_link) {
@@ -353,6 +378,7 @@ impl App {
                 self.path = Some(path);
                 self.saved = version;
                 self.load_images();
+                self.refresh_vault();
                 // A picture pasted before the note had a place.
                 if let Some(png) = self.waiting_picture.take() {
                     let _ = self.paste_picture(png);
@@ -381,7 +407,10 @@ impl App {
                 }
             }
             Message::Unsaved(None) => self.pending = None,
-            Message::Focused => self.check_disk(),
+            Message::Focused => {
+                self.check_disk();
+                self.refresh_vault();
+            }
             Message::Resized(size) => self.settings.window = Some((size.width, size.height)),
             Message::Reload(true) => {
                 // Nothing is unsaved after it: a close or open waiting on

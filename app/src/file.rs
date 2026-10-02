@@ -109,6 +109,12 @@ pub async fn pick() -> Option<PathBuf> {
     Some(file.path().to_owned())
 }
 
+/// The folder the user picks, if any: a vault.
+pub async fn pick_folder() -> Option<PathBuf> {
+    let folder = rfd::AsyncFileDialog::new().pick_folder().await?;
+    Some(folder.path().to_owned())
+}
+
 /// Saves to `path`, or asks where first when there is none.
 pub async fn save_as(path: Option<PathBuf>, text: String) -> Result<Option<PathBuf>, String> {
     let path = match path {
