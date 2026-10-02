@@ -17,7 +17,8 @@ const SEEDS: u64 = 200;
 const PIECES: &[&str] = &[
     "# ", "## ", "###### ", "#", " #", " ##", "**", "*", "_", "__", "~~", "~", "`", "``", "\\",
     "word", "x", " ", "\t", "é", "😀", "&amp;", "\n", "\r\n", "\r", "===", "---", "> ", "- ",
-    "1. ", "[a](b)", "www.", "https://", "@", ".com", "(", ")",
+    "1. ", "[a](b)", "www.", "https://", "@", ".com", "(", ")", "[ ] ", "[x] ", "```", "~~~", "| ",
+    " |", "|-|", ":-", "* ", "+ ", "***",
 ];
 
 #[test]
@@ -121,6 +122,29 @@ fn check(doc: &Doc, styled: &Styled, selection: std::ops::Range<usize>, at: &str
             covered = r.end;
         }
         assert!(covered >= h.end, "{at}: hidden {h:?} is not marker text");
+    }
+    // Concealed marks are drawn line by line: each lies on one line, on
+    // character boundaries, sorted, inside what reveals it, and untouched
+    // by the selection.
+    let concealed = styled.concealed(selection.clone());
+    for m in &concealed {
+        let r = &m.range;
+        assert!(text.is_char_boundary(r.start) && text.is_char_boundary(r.end));
+        assert!(
+            !text[r.clone()].contains(['\n', '\r']),
+            "{at}: {m:?} spans lines"
+        );
+        assert!(
+            m.touch.start <= r.start && r.end <= m.touch.end,
+            "{at}: {m:?}"
+        );
+        assert!(selection.end < m.touch.start || m.touch.end < selection.start);
+    }
+    for pair in concealed.windows(2) {
+        assert!(
+            pair[0].range.end <= pair[1].range.start,
+            "{at}: {pair:?} overlap"
+        );
     }
     // A selection end is never inside hidden text.
     for end in [selection.start, selection.end] {

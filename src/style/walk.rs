@@ -191,16 +191,20 @@ impl Walk<'_> {
             }
             Event::End(TagEnd::BlockQuote(_)) => self.quote_depth -= 1,
             Event::Start(Tag::Item) => {
-                // The bullet, or the number and its `.` or `)`.
-                let item = &self.text[range.start..];
-                let digits = item.bytes().take_while(u8::is_ascii_digit).count();
+                // The bullet, or the number and its `.` or `)`. After a
+                // lone `\r` pulldown-cmark starts the range at that line
+                // ending, so the marker is found past it.
+                let item = &self.text[range.clone()];
+                let start = range.end - item.trim_start_matches(['\r', '\n', ' ', '\t']).len();
+                let rest = &self.text[start..range.end];
+                let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
                 let width = if digits > 0 { digits + 1 } else { 1 };
-                let marker = range.start..(range.start + width).min(range.end);
-                if digits == 0 {
+                let marker = start..(start + width).min(range.end);
+                if digits == 0 && rest.starts_with(['-', '+', '*']) {
                     self.mark(marker.clone(), MarkKind::Bullet);
                 }
                 self.toggles.push((marker, Flag::Marker));
-                self.item = Some(range.start);
+                self.item = Some(start);
             }
             Event::End(TagEnd::Item) => self.item = None,
             Event::TaskListMarker(checked) => {
@@ -274,7 +278,12 @@ impl Walk<'_> {
         } else {
             // Setext: the underline is syntax; collapsing it is live
             // preview's (REFERENCE-001 section 3).
-            let underline = self.text[..end].rfind(['\n', '\r']).map_or(end, |i| i + 1);
+            // The underline line, after any container prefix (`> `).
+            let line = self.text[..end].rfind(['\n', '\r']).map_or(end, |i| i + 1);
+            let underline = end
+                - self.text[line..end]
+                    .trim_start_matches(['>', ' ', '\t'])
+                    .len();
             self.toggles.push((underline..end, Flag::Marker));
             self.marks.push(Mark {
                 range: underline..end,

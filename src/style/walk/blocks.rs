@@ -132,7 +132,11 @@ impl Walk<'_> {
             .collect();
         if let Some((head, _)) = table.rows.first() {
             let rest = &self.text[head.end..touch.end];
-            let after = rest.find('\n').map_or(rest.len(), |i| i + 1);
+            let after = match rest.find(['\n', '\r']) {
+                Some(i) if rest[i..].starts_with("\r\n") => i + 2,
+                Some(i) => i + 1,
+                None => rest.len(),
+            };
             let line = head.end + after;
             let next = &self.text[line..touch.end];
             let len = next.find(['\n', '\r']).unwrap_or(next.len());
