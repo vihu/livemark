@@ -125,6 +125,26 @@ never prompts and never overwrites a note (a second one that day gets
 `-2`). `tags` lists the vault's tags, `tag count` a line, so an agent can
 reuse `travel` rather than invent `trips`. `livemark --help` shows both.
 
+`skills/writing-livemark-notes/` is an [Agent Skill] that teaches a coding
+agent (Claude Code, pi, and others that read Agent Skills) when and how to
+write a note with them: only when asked, existing tags first, a specific
+title, no secrets, never touching other notes or git. Link the folder where
+your agent looks for skills:
+
+```text
+ln -s "$PWD/skills/writing-livemark-notes" ~/.claude/skills/   # Claude Code
+ln -s "$PWD/skills/writing-livemark-notes" ~/.agents/skills/   # pi, and others
+```
+
+The agent needs `livemark` on its `PATH`: the AppImage renamed to
+`livemark`, `livemark.app/Contents/MacOS/livemark` on macOS, or
+`cargo install --locked --git https://github.com/vihu/livemark livemark-app`.
+With the Flatpak, a one-line script on the `PATH` named `livemark` that runs
+`exec flatpak run io.github.vihu.livemark "$@"` does it (the Flatpak can
+write in your home folder).
+
+[Agent Skill]: https://agentskills.io
+
 ## Embedding
 
 Keep an `Editor` in your state, show its view, and pass its messages back:
