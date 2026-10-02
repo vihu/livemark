@@ -240,9 +240,20 @@ fn line_above_heading(doc: &mut Doc, now: Duration) -> bool {
     let rest = &line[indent + hashes..];
     let space = rest.len() - rest.trim_start_matches([' ', '\t']).len();
     let prefix = indent + hashes + space;
-    let heading = indent < 4 && (1..=6).contains(&hashes) && space > 0;
     let col = pos - range.start;
-    if !heading || col == 0 || col > prefix || prefix == line.len() {
+    let looks = indent < 4 && (1..=6).contains(&hashes) && space > 0;
+    if !looks || col == 0 || col > prefix || prefix == line.len() {
+        return false;
+    }
+    // A heading to the parser, not a `# comment` in code.
+    let at = range.start + indent;
+    let heading = crate::parse::events(doc.text()).any(|(event, r)| {
+        matches!(
+            event,
+            pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading { .. })
+        ) && r.start == at
+    });
+    if !heading {
         return false;
     }
     let ending = line_ending(doc.text()).to_owned();

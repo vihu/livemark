@@ -22,8 +22,11 @@ use crate::style::{Mark, MarkKind, Styled};
 /// there stands where typed text will go.
 fn blank_in_item(source: &Source, index: usize) -> Option<usize> {
     let text = source.doc.text();
+    // Spaces after any quote markers (`>       ` in a callout).
+    let blank = |line: &str| line.trim_matches([' ', '\t', '>']).is_empty();
+    let spaced = |line: &str| line.ends_with([' ', '\t']);
     let own = &text[source.doc.line_range(index)];
-    if own.is_empty() || !own.trim().is_empty() {
+    if !blank(own) || !spaced(own) {
         return None;
     }
     let mut above = index;
@@ -34,14 +37,23 @@ fn blank_in_item(source: &Source, index: usize) -> Option<usize> {
         if let Some(at) = source.styled.continuation_at(range.clone()) {
             return Some(at);
         }
-        if !line.trim().is_empty() {
-            // The item's first line: its text, unless it is a quote's.
-            return source
-                .styled
-                .hang_at(range)
-                .filter(|_| !line.trim_start().starts_with('>'));
+        if !blank(line) {
+            // An item's first line: its text.
+            let content = line.trim_start_matches([' ', '\t', '>']);
+            let digits = content.bytes().take_while(u8::is_ascii_digit).count();
+            let marker = if content.starts_with(['-', '+', '*']) {
+                1
+            } else if digits > 0 && content[digits..].starts_with(['.', ')']) {
+                digits + 1
+            } else {
+                return None;
+            };
+            return content[marker..]
+                .starts_with([' ', '\t'])
+                .then(|| source.styled.hang_at(range))
+                .flatten();
         }
-        if line.is_empty() {
+        if !spaced(line) {
             return None;
         }
     }
@@ -189,15 +201,9 @@ impl Lines {
             super::marks::start_x(&plain, range.start + indent)
         };
         // Its first row past its own indentation, the rest at the quoted
-        // text; in a list item all its text at the item's, however far it
-        // is indented (a paragraph's lines lose their indentation,
-        // CommonMark 4.8).
-        let shift = if item {
-            (target - own, target)
-        } else {
-            ((target - own).max(0.0), target.max(own))
-        };
-        self.shape_line(source, index, shift)
+        // text or the item's; a line indented further keeps its place (a
+        // shift left would put its start, and a caret there, in the margin).
+        self.shape_line(source, index, ((target - own).max(0.0), target.max(own)))
     }
 
     /// Line `index` shaped with its first row `lead` to the right and,

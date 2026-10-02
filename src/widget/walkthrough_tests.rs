@@ -80,8 +80,6 @@ fn later_lines_of_a_list_item_line_up_with_its_text() {
         ("para\n\n- [ ] task\n  more\n", "task", "more"),
         ("para\n\n- item\n\n  later paragraph\n", "item", "later"),
         ("para\n\n- item\nlazy\n", "item", "lazy"),
-        ("para\n\n- item\n\tmore\n", "item", "more"),
-        ("para\n\n- item\n      more\n", "item", "more"),
         (
             "para\n\n> [!note]\n> - [ ] task\n>   more\n",
             "task",
@@ -111,6 +109,7 @@ fn the_caret_on_a_blank_line_in_an_item_stands_where_text_will_go() {
         ("para\n\n- [ ] task\n      ", "task"),
         ("para\n\n10. item\n    ", "item"),
         ("para\n\n- a\n  - item\n    ", "item"),
+        ("para\n\n> - [ ] item\n>       ", "item"),
     ] {
         let typed = format!("{text}x");
         let x = |text: &str, at: usize| {

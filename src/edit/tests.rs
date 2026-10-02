@@ -184,6 +184,10 @@ fn enter_at_a_headings_text_start_opens_a_line_above() {
         assert_eq!(doc.text(), "intro\n\n## Data\nbody");
         assert_eq!(doc.selection().head, 10, "at the heading's text");
     }
+    // A `# comment` in code is no heading.
+    let mut doc = doc_at("```bash\n# comment\n```", 10);
+    enter(&mut doc, Duration::ZERO);
+    assert_eq!(doc.text(), "```bash\n# \ncomment\n```");
     // Elsewhere in the heading, a plain line break.
     let mut doc = doc_at("## Data", 5);
     enter(&mut doc, Duration::ZERO);

@@ -152,3 +152,33 @@ fn a_selection_is_wrapped_line_by_line_without_markup_or_spaces() {
         "[1. ```a```\n2. ``b]``"
     );
 }
+
+#[test]
+fn a_second_press_over_several_lines_takes_the_format_off() {
+    for format in [Format::Bold, Format::Italic, Format::Code] {
+        for text in ["first line\nsecond line\n", "- a\n- b", "> one\n> two"] {
+            let mut doc = Doc::new(text.into());
+            doc.set_selection(Selection {
+                anchor: 0,
+                head: text.len(),
+            });
+            for _ in 0..2 {
+                let styled = Styled::new(doc.text());
+                toggle(&mut doc, &styled, format, Duration::ZERO);
+            }
+            assert_eq!(doc.text(), text, "{format:?}");
+        }
+    }
+}
+
+#[test]
+fn a_hard_break_backslash_stays_outside_the_markers() {
+    let mut doc = Doc::new("line \\\nnext".into());
+    doc.set_selection(Selection {
+        anchor: 0,
+        head: 11,
+    });
+    let styled = Styled::new(doc.text());
+    toggle(&mut doc, &styled, Format::Bold, Duration::ZERO);
+    assert_eq!(doc.text(), "**line** \\\n**next**");
+}

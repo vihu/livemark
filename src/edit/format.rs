@@ -44,6 +44,45 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         .iter()
         .filter(|c| c.syntax == syntax && c.range.start <= range.start && range.end <= c.range.end)
         .min_by_key(|c| c.range.len());
+    // Over several lines, off when each line's text is one such span (as
+    // the keys wrap them, line by line).
+    let text = doc.text();
+    if text[range.clone()].contains(['\n', '\r']) {
+        let start = text[..range.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+        // Up to the end of the last line the selection has text on.
+        let last = if text[..range.end].ends_with(['\n', '\r']) {
+            range.end - 1
+        } else {
+            range.end
+        };
+        let end = last + text[last..].find(['\n', '\r']).unwrap_or(text.len() - last);
+        let spans: Option<Vec<_>> = content_lines(text, start..end)
+            .iter()
+            .map(|line| {
+                styled
+                    .constructs()
+                    .iter()
+                    .find(|c| c.syntax == syntax && c.range == *line)
+            })
+            .collect();
+        if let Some(spans) = spans.filter(|s| !s.is_empty()) {
+            let mut cuts: Vec<_> = spans.iter().flat_map(|c| c.markers.clone()).collect();
+            cuts.sort_by_key(|c| c.start);
+            let map = |at: usize| {
+                at - cuts
+                    .iter()
+                    .map(|c| at.min(c.end).saturating_sub(c.start))
+                    .sum::<usize>()
+            };
+            let selection = Selection {
+                anchor: map(selection.anchor),
+                head: map(selection.head),
+            };
+            let changes = cuts.into_iter().map(Change::delete).collect();
+            doc.apply(changes, selection, Kind::Other, now);
+            return;
+        }
+    }
     if let Some(construct) = inside {
         let [open, close] = construct.markers.clone();
         if range.is_empty() && range.start == close.start && range.start > open.end {
@@ -74,7 +113,6 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         );
         return;
     }
-    let text = doc.text();
     // A selection is wrapped line by line, each without its spaces at
     // either end and its block markup (`- `, `> `, `# `): `**- a\n**` would
     // break the item and draw the stars.
@@ -140,7 +178,18 @@ fn content_lines(text: &str, range: std::ops::Range<usize>) -> Vec<std::ops::Ran
         if from < to {
             let cut = &text[from..to];
             let lead = cut.len() - cut.trim_start().len();
-            let content = from + lead..from + cut.trim_end().len();
+            let mut content = from + lead..(from + cut.trim_end().len()).max(from + lead);
+            // A backslash ending the line is a hard break, not text: a
+            // marker after it would be escaped.
+            let slashes = text[content.clone()]
+                .bytes()
+                .rev()
+                .take_while(|&b| b == b'\\')
+                .count();
+            if content.end == end && slashes % 2 == 1 {
+                content.end -= 1;
+                content.end = content.start + text[content.clone()].trim_end().len();
+            }
             if !content.is_empty() {
                 lines.push(content);
             }
