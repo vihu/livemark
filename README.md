@@ -76,6 +76,7 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | Ctrl+Enter | A blank line below, indented like this one |
 | Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z | Undo, redo (typing undoes in bursts) |
 | Ctrl+C, Ctrl+X | With nothing selected, copy or cut the whole line (pasted back as a line) |
+| Ctrl+Home, Ctrl+End | The document's start and end (on macOS also Cmd+Up, Cmd+Down) |
 | Home, End | The start or end of the row, then of the line; Home skips list and quote markup |
 | Double, triple click | Selects a word, a line; dragging extends by words or lines |
 | Ctrl+click on a link, Alt+Enter in one | Opens it (web and mail links) |
