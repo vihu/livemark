@@ -77,6 +77,10 @@ fn random_widget_sessions_keep_the_text_whole() {
                 let (anchor, head) = (rng.boundary(editor.text()), rng.boundary(editor.text()));
                 editor.select(anchor, head);
             }
+            // And zooms (`Editor::set_zoom`): layouts and grids at another size.
+            if rng.below(8) == 0 {
+                editor.set_zoom(*rng.pick(&[0.5, 1.0, 1.3, 2.0]));
+            }
             run(&mut editor, rng.below(4) != 0, |ui| {
                 for event in events {
                     for e in event {

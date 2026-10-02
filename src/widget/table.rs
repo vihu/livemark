@@ -17,7 +17,7 @@ use super::shape::{Colors, shape};
 use crate::layout::{Affinity, Line};
 use crate::style::{Align, Style, Styled, Table};
 
-/// Space between a cell's border and its text.
+/// Space between a cell's border and its text, at 100%.
 const PAD: f32 = 8.0;
 
 /// The narrowest a column shrinks to.
@@ -30,6 +30,8 @@ pub struct Grid {
     /// Each row's cells, the header row first.
     pub cells: Vec<Vec<Cell>>,
     pub align: Vec<Align>,
+    /// Space between a cell's border and its text, with the zoom.
+    pad: f32,
 }
 
 /// A cell shaped on its own.
@@ -46,7 +48,13 @@ pub struct Cell {
 
 impl Grid {
     /// `table` of `text` laid out to fit `width`.
-    pub fn new(text: &str, styled: &Styled, table: &Table, colors: Colors, width: f32) -> Self {
+    pub fn new(
+        text: &str,
+        styled: &Styled,
+        table: &Table,
+        (colors, zoom): (Colors, f32),
+        width: f32,
+    ) -> Self {
         let cells: Vec<Vec<Cell>> = table
             .rows
             .iter()
@@ -69,7 +77,8 @@ impl Grid {
                             })
                             .collect();
                         let line = Line::new(text, cell, &table.markers, &runs);
-                        let cached = shape(&line, (0, false, colors, false), None, f32::MAX, &[]);
+                        let cached =
+                            shape(&line, (0, false, colors, false, zoom), None, f32::MAX, &[]);
                         let width = cached
                             .buffer
                             .layout_runs()
@@ -91,7 +100,7 @@ impl Grid {
                     .iter()
                     .map(|row| row[c].size.width)
                     .fold(0.0, f32::max);
-                (widest + 2.0 * PAD).max(MIN_COLUMN)
+                (widest + 2.0 * PAD * zoom).max(MIN_COLUMN)
             })
             .collect();
         let total: f32 = widths.iter().sum();
@@ -112,6 +121,7 @@ impl Grid {
             columns,
             cells,
             align: table.align.clone(),
+            pad: PAD * zoom,
         }
     }
 
@@ -123,8 +133,8 @@ impl Grid {
     /// Where cell `row`, `column`'s text starts, from the row's start.
     fn text_x(&self, row: usize, column: usize) -> f32 {
         let (x, width) = self.columns[column];
-        let room = (width - 2.0 * PAD - self.cells[row][column].size.width).max(0.0);
-        x + PAD
+        let room = (width - 2.0 * self.pad - self.cells[row][column].size.width).max(0.0);
+        x + self.pad
             + match self.align[column] {
                 Align::Right => room,
                 Align::Center => room / 2.0,

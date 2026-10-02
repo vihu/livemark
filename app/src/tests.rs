@@ -101,3 +101,20 @@ fn a_new_path_a_reload_and_loading_after_a_close() {
     std::fs::remove_file(&path).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn zoom_keys_step_by_a_tenth_and_reset() {
+    let mut app = App::open(None, None);
+    for _ in 0..3 {
+        let _ = app.update(Message::Zoom(1));
+    }
+    assert!((app.editor.zoom() - 1.3).abs() < 1e-6);
+    let _ = app.update(Message::Zoom(-1));
+    assert!((app.editor.zoom() - 1.2).abs() < 1e-6);
+    let _ = app.update(Message::Zoom(0));
+    assert_eq!(app.editor.zoom(), 1.0);
+    for _ in 0..20 {
+        let _ = app.update(Message::Zoom(-1));
+    }
+    assert_eq!(app.editor.zoom(), 0.5, "no smaller than half");
+}

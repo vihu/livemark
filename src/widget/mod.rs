@@ -286,6 +286,28 @@ impl Editor {
         if mode == self.mode {
             return;
         }
+        self.mode = mode;
+        self.keep_caret_row(|lines| lines.source = mode == Mode::Source);
+    }
+
+    /// The text size as a share of the default, 1.0 for 100%.
+    pub fn zoom(&self) -> f32 {
+        self.lines.borrow().zoom
+    }
+
+    /// Sets the text size as a share of the default, from 0.5 to 3.0
+    /// (prose, headings, code and tables together), keeping the caret's
+    /// row where it was on screen. Ctrl+=, Ctrl+- and Ctrl+0 in the app.
+    pub fn set_zoom(&mut self, zoom: f32) {
+        let zoom = zoom.clamp(0.5, 3.0);
+        if zoom != self.zoom() {
+            self.keep_caret_row(|lines| lines.zoom = zoom);
+        }
+    }
+
+    /// Applies `change` to the layout, keeping the caret's row where it
+    /// was on screen when it was in view.
+    fn keep_caret_row(&mut self, change: impl FnOnce(&mut Lines)) {
         let (head, side) = (self.doc.selection().head, self.side);
         let caret = |lines: &mut Lines, source: &Source| {
             let row = lines.caret_in_line(source, head, side).1;
@@ -295,8 +317,7 @@ impl Editor {
             let (index, row) = caret(lines, source);
             lines.top_of(source, index).map(|top| top + row)
         });
-        self.mode = mode;
-        self.lines.borrow_mut().source = mode == Mode::Source;
+        change(&mut self.lines.borrow_mut());
         if let Some(y) = before {
             self.with_lines(|lines, source| {
                 let (index, row) = caret(lines, source);

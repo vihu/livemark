@@ -178,7 +178,7 @@ impl Editor {
                         .filter(|_| selection.end > range.end)
                     {
                         let x = run.line_w + shaped.shift(run.line_top);
-                        let size = Size::new(TEXT_SIZE * 0.4, run.line_height);
+                        let size = Size::new(TEXT_SIZE * lines.zoom * 0.4, run.line_height);
                         let sliver = Rectangle::new(Point::new(x, run.line_top), size);
                         quad(renderer, at(sliver), selection_color);
                     }

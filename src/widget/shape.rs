@@ -95,7 +95,7 @@ pub fn heading_level(styled: &Styled, range: Range<usize>) -> u8 {
 /// is in the code font, and the colors.
 pub fn shape(
     line: &Line,
-    (level, mono, colors, compact): (u8, bool, Colors, bool),
+    (level, mono, colors, compact, zoom): (u8, bool, Colors, bool, f32),
     hang: Option<usize>,
     width: f32,
     tokens: &[Token],
@@ -109,7 +109,7 @@ pub fn shape(
     } else {
         HEADING[usize::from(level) - 1]
     };
-    let size = TEXT_SIZE * scale;
+    let size = TEXT_SIZE * zoom * scale;
     let metrics = cosmic_text::Metrics::new(size, (size * LINE_HEIGHT).round());
     let mut system = font_system().write().expect("font system lock");
     let raw = system.raw();

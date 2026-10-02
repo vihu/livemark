@@ -153,3 +153,38 @@ fn the_scroll_bar_at_its_bottom_shows_the_end_of_mixed_lines() {
         );
     });
 }
+
+#[test]
+fn zoom_scales_every_line_and_keeps_the_caret_row_in_place() {
+    let text = format!(
+        "{}# Title\n\n- item\n\n| a | b |\n| - | - |\n| c | d |\n",
+        "line\n".repeat(60)
+    );
+    let mut editor = Editor::new(text.clone());
+    let caret = text.find("item").unwrap();
+    editor.select(caret, caret);
+    let at = |editor: &Editor| {
+        editor.with_lines(|lines, source| {
+            let index = source.doc.line_at(caret);
+            let top = lines.top_of(source, index).expect("on screen");
+            let (_, row, height) =
+                lines.caret_in_line(source, caret, crate::layout::Affinity::After);
+            (top + row, height)
+        })
+    };
+    let _ = editor.update(Message(Input::ScrollTo(1.0)));
+    let (y, height) = at(&editor);
+    editor.set_zoom(2.0);
+    assert_eq!(editor.zoom(), 2.0);
+    let (zoomed_y, zoomed) = at(&editor);
+    assert!((zoomed - 2.0 * height).abs() < 2.0, "{zoomed} vs {height}");
+    assert!(
+        (zoomed_y - y).abs() < 0.5,
+        "the caret's row stays: {zoomed_y} vs {y}"
+    );
+    // Clamped, and back.
+    editor.set_zoom(10.0);
+    assert_eq!(editor.zoom(), 3.0);
+    editor.set_zoom(1.0);
+    assert!((at(&editor).1 - height).abs() < 0.5);
+}

@@ -104,6 +104,9 @@ enum Message {
     /// The answer to "changed on disk": load it (discarding the unsaved
     /// changes) or keep the text here.
     Reload(bool),
+    /// Ctrl+= or Ctrl++ (1), Ctrl+- (-1): the text size a 10% step up or
+    /// down; Ctrl+0 (0): back to 100%.
+    Zoom(i8),
 }
 
 impl App {
@@ -261,6 +264,11 @@ impl App {
                 self.pending = None;
                 self.reload();
             }
+            Message::Zoom(step) => {
+                let tenths = (self.editor.zoom() * 10.0).round() + f32::from(step);
+                self.editor
+                    .set_zoom(if step == 0 { 1.0 } else { tenths / 10.0 });
+            }
             Message::Reload(false) => {
                 // Keep this text; saving will replace the file's.
                 self.changed = false;
@@ -379,6 +387,9 @@ impl App {
                 's' => Some(Message::Save {
                     choose: modifiers.shift(),
                 }),
+                '=' | '+' => Some(Message::Zoom(1)),
+                '-' => Some(Message::Zoom(-1)),
+                '0' => Some(Message::Zoom(0)),
                 _ => None,
             }
         });

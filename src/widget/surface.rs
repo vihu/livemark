@@ -157,10 +157,10 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 focus.now = *now;
                 let left = BLINK_MILLIS - (focus.now - focus.updated_at).as_millis() % BLINK_MILLIS;
                 shell.request_redraw_at(*now + Duration::from_millis(left as u64));
-                let caret = self
-                    .editor
-                    .caret()
-                    .unwrap_or(Rectangle::new(Point::ORIGIN, Size::new(1.0, TEXT_SIZE)));
+                let caret = self.editor.caret().unwrap_or(Rectangle::new(
+                    Point::ORIGIN,
+                    Size::new(1.0, TEXT_SIZE * self.editor.zoom()),
+                ));
                 shell.request_input_method(&input_method::InputMethod::Enabled {
                     cursor: caret + Vector::new(text.x, text.y),
                     purpose: input_method::Purpose::Normal,
@@ -243,7 +243,9 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) if cursor.is_over(bounds) => {
                 let dy = match delta {
-                    mouse::ScrollDelta::Lines { y, .. } => -y * WHEEL_LINES * TEXT_SIZE * 1.5,
+                    mouse::ScrollDelta::Lines { y, .. } => {
+                        -y * WHEEL_LINES * TEXT_SIZE * self.editor.zoom() * 1.5
+                    }
                     mouse::ScrollDelta::Pixels { y, .. } => -y,
                 };
                 publish(shell, Input::Scroll(dy));
@@ -259,7 +261,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                         state.preedit = Some(input_method::Preedit {
                             content: content.clone(),
                             selection: selection.clone(),
-                            text_size: Some(Pixels(TEXT_SIZE)),
+                            text_size: Some(Pixels(TEXT_SIZE * self.editor.zoom())),
                         });
                     }
                     input_method::Event::Commit(content) => {

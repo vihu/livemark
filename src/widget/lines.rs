@@ -134,6 +134,8 @@ pub struct Lines {
     /// Source mode: one size, the code font throughout (REFERENCE-001
     /// section 17).
     pub source: bool,
+    /// Every text size times this (`Editor::set_zoom`).
+    pub zoom: f32,
     highlights: Highlights,
     cache: HashMap<u64, Cached>,
     /// Tables as grids, by table text and styling, width and colors, and
@@ -155,6 +157,7 @@ impl Lines {
             sized: false,
             pending_reveal: None,
             source: false,
+            zoom: 1.0,
             highlights: Highlights::default(),
             grids: HashMap::new(),
             grids_used: Vec::new(),
@@ -253,6 +256,7 @@ impl Lines {
             hang,
             mono,
             self.width.to_bits(),
+            self.zoom.to_bits(),
             lead.to_bits(),
             rest.to_bits(),
         )
@@ -272,7 +276,7 @@ impl Lines {
         let cached = match self.cache.get(&key) {
             Some(cached) => cached.clone(),
             None => {
-                let looks = (level, mono, self.colors, compact);
+                let looks = (level, mono, self.colors, compact, self.zoom);
                 let cached = shape(&line, looks, hang, self.width - lead.max(rest), &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
@@ -591,6 +595,7 @@ impl Lines {
         ] {
             color.into_rgba8().hash(&mut hasher);
         }
+        self.zoom.to_bits().hash(&mut hasher);
         let key = hasher.finish();
         self.grids_used.push(key);
         if let Some(grid) = self.grids.get(&key) {
@@ -600,7 +605,7 @@ impl Lines {
             source.doc.text(),
             source.styled,
             table,
-            self.colors,
+            (self.colors, self.zoom),
             width,
         ));
         self.grids.insert(key, grid.clone());
