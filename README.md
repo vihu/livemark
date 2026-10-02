@@ -87,7 +87,9 @@ fn view(editor: &Editor) -> Element<'_, Message> {
 `Editor::text` is the markdown to save, byte for byte as loaded plus the
 edits; `Editor::version` changes on every edit and comes back with undo, so
 compare it with the value from the last save to know when to autosave.
-`Editor::image_urls` lists where the note's images point; hand each
+`Editor::toolbar` is a row of buttons (bold, italic, code, link, heading,
+list, task, quote, the mode) to show where the host likes; each runs its
+key's command. `Editor::image_urls` lists where the note's images point; hand each
 picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn
 under its line while its markdown hides. `Editor::set_zoom` scales the
 text.

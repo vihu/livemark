@@ -467,9 +467,11 @@ impl App {
                 .as_ref()
                 .map(|error| text(error).style(text::danger).into())
         };
-        // Always a column, so the editor keeps its place in the widget tree
-        // (and its focus) when a bar comes or goes.
-        column![editor]
+        // The toolbar always on top (PLAN-002). Always a column, so the
+        // editor keeps its place in the widget tree (and its focus) when a
+        // bar comes or goes.
+        let toolbar = container(self.editor.toolbar().map(Message::Editor)).padding([6, 12]);
+        column![toolbar, editor]
             .push(bar.map(|bar| container(bar).padding(12)))
             .into()
     }

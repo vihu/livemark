@@ -12,6 +12,12 @@ impl Editor {
     /// Applies a message from [`Editor::view`]. The task writes the
     /// clipboard after a copy or cut; run it, or copying does nothing.
     pub fn update(&mut self, Message(input): Message) -> Task<Message> {
+        // A toolbar button: its key's command, and the keyboard back to the
+        // text (the button took the press).
+        if let Input::Tool(key) = input {
+            let task = self.update(Message(Input::Key(key)));
+            return Task::batch([task, iced::widget::operation::focus(super::ID)]);
+        }
         let now = self.started.elapsed();
         let version = self.doc.version();
         let mut side = Affinity::After;
@@ -109,6 +115,8 @@ impl Editor {
                 return Task::none();
             }
             Input::Commit(text) => edit::type_text(&mut self.doc, &text, now),
+            // Handled before this match.
+            Input::Tool(_) => {}
             Input::Find(input) => {
                 // Typing a replacement, closing the bar or a query with no
                 // match moves nothing: the view stays.
@@ -134,6 +142,8 @@ impl Editor {
                     edit::format::toggle(&mut self.doc, &self.styled, format, now);
                 }
                 Key::Link => edit::format::link(&mut self.doc, now),
+                Key::Block(block) => edit::blocks::toggle(&mut self.doc, block, now),
+                Key::SetMode(mode) => self.set_mode(mode),
                 Key::MoveLines(down) => edit::lines::move_lines(&mut self.doc, down, now),
                 Key::CopyLines(down) => edit::lines::copy_lines(&mut self.doc, down, now),
                 Key::DeleteLines => edit::lines::delete_lines(&mut self.doc, now),

@@ -13,6 +13,7 @@ mod scrollbar;
 mod shape;
 mod surface;
 mod table;
+mod toolbar;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -159,6 +160,9 @@ enum Input {
     /// is held (the field submits whatever the modifiers).
     Shift(bool),
     Key(Key),
+    /// A toolbar button: its key's command, then the focus back to the
+    /// text.
+    Tool(Key),
     /// Text committed by an input method.
     Commit(String),
     Paste(String),
@@ -199,6 +203,10 @@ enum Key {
     Redo,
     /// Escape: collapse the selection (REFERENCE-001 section 13).
     Collapse,
+    /// A toolbar button: a line prefix on or off (`edit::blocks`).
+    Block(crate::edit::blocks::Block),
+    /// A toolbar button: this mode.
+    SetMode(Mode),
 }
 
 #[derive(Debug, Clone, Copy)]

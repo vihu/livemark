@@ -2,6 +2,7 @@
 //! typing, deleting, Enter and paste as transactions (REFERENCE-001
 //! sections 13, 15 and 18). Motions that need layout (up, down, pages) are
 //! the widget's.
+pub mod blocks;
 pub mod find;
 pub mod format;
 pub mod lines;

@@ -571,3 +571,38 @@ fn ctrl_with_the_wheel_zooms_and_without_it_scrolls() {
         "the plain wheel scrolls"
     );
 }
+
+#[test]
+fn toolbar_buttons_run_their_keys_commands() {
+    let click = |editor: &mut Editor, label: &str| {
+        let messages: Vec<_> = {
+            let view = iced::widget::column![editor.toolbar(), editor.view()];
+            let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), SIZE, view);
+            ui.click(label)
+                .unwrap_or_else(|_| panic!("a {label} button"));
+            ui.into_messages().collect()
+        };
+        for message in messages {
+            let _ = editor.update(message);
+        }
+    };
+    for (label, before, after) in [
+        ("B", "word", "**word**"),
+        ("I", "word", "*word*"),
+        ("Code", "word", "`word`"),
+        ("H", "Title", "# Title"),
+        ("List", "milk", "- milk"),
+        ("Task", "milk", "- [ ] milk"),
+        ("Quote", "a", "> a"),
+    ] {
+        let mut editor = Editor::new(before.into());
+        editor.select(0, before.len());
+        click(&mut editor, label);
+        assert_eq!(editor.text(), after, "{label}");
+    }
+    let mut editor = Editor::new("text".into());
+    click(&mut editor, "Source");
+    assert_eq!(editor.mode(), livemark::widget::Mode::Source);
+    click(&mut editor, "Live");
+    assert_eq!(editor.mode(), livemark::widget::Mode::Live);
+}

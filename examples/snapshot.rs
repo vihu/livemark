@@ -1,7 +1,7 @@
 //! A markdown file drawn headlessly by the editor, for typography reviews.
 //!
 //! ```text
-//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>]
+//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]
 //! ```
 //!
 //! Writes `<out>-<renderer>.png` at 2x, 900 by 1100 points (or `--size`), with the caret
@@ -13,7 +13,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [file, out, ..] = args.as_slice() else {
         eprintln!(
-            "usage: snapshot <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>]"
+            "usage: snapshot <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]"
         );
         std::process::exit(2);
     };
@@ -59,7 +59,17 @@ fn main() {
             Some((w.parse().ok()?, h.parse().ok()?))
         })
         .unwrap_or((900.0, 1100.0));
-    let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), size, editor.view());
+    // With `--toolbar`, the toolbar above the text, as the app shows it.
+    let view: iced::Element<'_, _> = if args.iter().any(|a| a == "--toolbar") {
+        iced::widget::column![
+            iced::widget::container(editor.toolbar()).padding([6, 12]),
+            editor.view()
+        ]
+        .into()
+    } else {
+        editor.view()
+    };
+    let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), size, view);
     // A press outside the text focuses nothing and moves nothing; it only
     // lets the first frame settle the layout.
     ui.point_at(Point::new(-10.0, -10.0));
