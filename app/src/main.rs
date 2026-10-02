@@ -29,6 +29,7 @@ mod into_vault;
 mod links;
 mod manager;
 mod manager_view;
+mod matching;
 mod menu;
 mod note;
 mod note_actions;

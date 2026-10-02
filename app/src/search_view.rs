@@ -2,12 +2,14 @@
 //! of every match (`search.rs` finds them).
 use iced::widget::text::{Ellipsis, Wrapping};
 use iced::widget::{
-    Space, button, column, container, lazy, mouse_area, opaque, row, rule, stack, text, text_input,
+    Space, button, column, container, lazy, mouse_area, opaque, rich_text, row, rule, span, stack,
+    text, text_input,
 };
 use iced::{Element, Length, Theme};
 
 use super::icons::{Icon, Tone, icon};
-use super::search::{FIELD, Found, Hit, Listing, NOTES, SearchMessage};
+use super::matching::occurrences;
+use super::search::{FIELD, Found, Hit, Listing, NOTES, SearchMessage, split};
 use super::shell::COMMAND;
 use super::tag_actions::notes;
 use super::{App, Message};
@@ -58,6 +60,13 @@ impl App {
     /// closes it.
     pub(crate) fn search_panel(&self) -> Option<Element<'_, Message>> {
         let search = self.search.as_ref()?;
+        // What to mark: the words in lines, `#tag`s in tag lines.
+        let (words, tags) = split(&search.query);
+        let hashes: Vec<String> = tags
+            .iter()
+            .chain(&words)
+            .map(|tag| format!("#{tag}"))
+            .collect();
         let mut list = column![].spacing(1);
         let mut group = "";
         for (i, found) in search.found.iter().enumerate() {
@@ -79,33 +88,37 @@ impl App {
                     }),
                 );
             }
-            let (title, under, side) = match found {
-                Found::Note(title, meta, _) => (title.clone(), meta.clone(), String::new()),
+            // Each line with what matched marked.
+            let (title, title_marks, under, under_marks, side) = match found {
+                Found::Note(title, meta, _, marks) => (
+                    title.clone(),
+                    marks.clone(),
+                    meta.clone(),
+                    occurrences(meta, &hashes),
+                    String::new(),
+                ),
                 Found::Line {
                     title,
                     snippet,
                     number,
                     ..
-                } => (title.clone(), snippet.clone(), format!("line {number}")),
-                Found::Tag(tag, count) => (format!("#{tag}"), String::new(), notes(*count)),
+                } => (
+                    title.clone(),
+                    Vec::new(),
+                    snippet.clone(),
+                    occurrences(snippet, &words),
+                    format!("line {number}"),
+                ),
+                Found::Tag(tag, count) => {
+                    let name = format!("#{tag}");
+                    let marks = occurrences(&name, &hashes);
+                    (name, marks, String::new(), Vec::new(), notes(*count))
+                }
             };
             let on = i == search.selected;
-            let entry = column![
-                text(title)
-                    .size(14)
-                    .wrapping(Wrapping::None)
-                    .ellipsis(Ellipsis::End),
-            ]
-            .push((!under.is_empty()).then(|| {
-                text(under)
-                    .size(12)
-                    .wrapping(Wrapping::None)
-                    .ellipsis(Ellipsis::End)
-                    .style(move |theme: &Theme| text::Style {
-                        color: Some(row_text(theme, on).scale_alpha(0.65)),
-                    })
-            }))
-            .width(Length::Fill);
+            let entry = column![marked(title, &title_marks, 14.0, false, on)]
+                .push((!under.is_empty()).then(|| marked(under, &under_marks, 12.0, true, on)))
+                .width(Length::Fill);
             list = list.push(
                 button(
                     row![
@@ -161,12 +174,21 @@ impl App {
                 }
             )
         });
-        let footer = row![]
-            .push(enter.map(|said| text(said).size(11).style(text::secondary)))
-            .push(text("Up and Down choose").size(11).style(text::secondary))
-            .push(all.map(|said| text(said).size(11).style(text::secondary)))
-            .spacing(14)
-            .wrap();
+        // Nothing typed yet: how the search matches, instead.
+        let footer = if search.query.trim().is_empty() {
+            row![
+                text("Titles: words in any order, a typo forgiven. Text: every word as typed, any case. #tag narrows to a tag.")
+                    .size(11)
+                    .style(text::secondary)
+            ]
+        } else {
+            row![]
+                .push(enter.map(|said| text(said).size(11).style(text::secondary)))
+                .push(text("Up and Down choose").size(11).style(text::secondary))
+                .push(all.map(|said| text(said).size(11).style(text::secondary)))
+                .spacing(14)
+        }
+        .wrap();
         let panel = container(column![
             list,
             rule::horizontal(1),
@@ -191,7 +213,7 @@ impl App {
     pub(crate) fn listing_view<'a>(&'a self, listing: &'a Listing) -> Element<'a, Message> {
         let current = self.path.clone();
         lazy((listing.generation, current), move |(_, current)| {
-            results(&listing.hits, current.as_deref())
+            results(&listing.hits, current.as_deref(), &split(&listing.query).0)
         })
         .into()
     }
@@ -241,7 +263,11 @@ fn row_text(theme: &Theme, on: bool) -> iced::Color {
 
 /// The matches: each note's title, then its lines, every one a link to
 /// the match.
-fn results(hits: &[Hit], current: Option<&std::path::Path>) -> Element<'static, Message> {
+fn results(
+    hits: &[Hit],
+    current: Option<&std::path::Path>,
+    words: &[String],
+) -> Element<'static, Message> {
     let mut list = column![].spacing(2);
     for hit in hits {
         let first = hit.lines.first().map_or(0..0, |line| line.2.clone());
@@ -266,10 +292,13 @@ fn results(hits: &[Hit], current: Option<&std::path::Path>) -> Element<'static, 
                             .size(11)
                             .width(28)
                             .style(text::secondary),
-                        text(snippet.clone())
-                            .size(12)
-                            .wrapping(Wrapping::None)
-                            .ellipsis(Ellipsis::End),
+                        marked(
+                            snippet.clone(),
+                            &occurrences(snippet, words),
+                            12.0,
+                            false,
+                            false
+                        ),
                     ]
                     .spacing(4),
                 )
@@ -285,4 +314,54 @@ fn results(hits: &[Hit], current: Option<&std::path::Path>) -> Element<'static, 
         list = list.push(Space::new().height(4));
     }
     container(list).into()
+}
+
+/// The marker pen behind what matched.
+const MARK: iced::Color = iced::Color::from_rgba8(255, 214, 0, 0.38);
+
+/// `said` on one line, cut short with an ellipsis, its `marks` (byte ranges)
+/// on a marker-pen band; quieter when `quiet`, in a chosen row's colours
+/// when `on`.
+fn marked<'a>(
+    said: String,
+    marks: &[std::ops::Range<usize>],
+    size: f32,
+    quiet: bool,
+    on: bool,
+) -> Element<'a, Message> {
+    let mut spans: Vec<text::Span<'a, ()>> = Vec::new();
+    let mut at = 0;
+    for mark in marks {
+        let (start, end) = (mark.start.max(at), mark.end.min(said.len()));
+        if start >= end || !said.is_char_boundary(start) || !said.is_char_boundary(end) {
+            continue;
+        }
+        if start > at {
+            spans.push(span(said[at..start].to_owned()));
+        }
+        spans.push(
+            span(said[start..end].to_owned())
+                .background(MARK)
+                .border(iced::Border::default().rounded(2)),
+        );
+        at = end;
+    }
+    if at < said.len() {
+        spans.push(span(said[at..].to_owned()));
+    }
+    rich_text(spans)
+        .size(size)
+        .wrapping(Wrapping::None)
+        .ellipsis(Ellipsis::End)
+        .style(move |theme: &Theme| {
+            let color = row_text(theme, on);
+            text::Style {
+                color: Some(if quiet {
+                    color.scale_alpha(0.65)
+                } else {
+                    color
+                }),
+            }
+        })
+        .into()
 }

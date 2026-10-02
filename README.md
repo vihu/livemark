@@ -73,9 +73,12 @@ vault Ctrl+N asks for a title and makes `2026-10-02-lisbon-hotels.md`
 (the date, then the title in lowercase with hyphens; `-2` when taken) with
 front matter for its title, tags and date; the file keeps its name when
 the title changes. The search field in the toolbar's centre (Ctrl+P, or
-Ctrl+Shift+F) finds notes by part of their title (most recent first among
-equals), lines in the other notes with all the words (any case), and tags;
-`#travel` narrows to a tag. Up and Down choose; Enter opens a note (a line
+Ctrl+Shift+F) finds notes by the words of their title, in any order: each
+word typed is a title word, its start, a part of it (three letters or
+more), or a typo away from it (from four letters one letter added,
+dropped, changed or two swapped; from eight, two). It finds lines in the
+other notes with every word as typed (any case, no typos), and tags;
+`#travel` narrows to a tag. What matched is marked in each result. Up and Down choose; Enter opens a note (a line
 with its match selected) or shows a tag's notes; Escape closes; Ctrl+Enter
 lists every matching note in the sidebar, each with its lines, until Clear.
 Outside a vault it finds the recent files by name. Typing `[[` lists notes by title and puts in a

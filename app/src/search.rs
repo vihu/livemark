@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 use iced::{Task, keyboard};
 
+use super::matching::title_match;
 use super::vault::{Note, Vault};
 use super::{App, Message};
 
@@ -53,8 +54,9 @@ pub enum SearchMessage {
 /// One result in the drop-down.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Found {
-    /// A note by its title: the title, the line under it, its file.
-    Note(String, String, PathBuf),
+    /// A note by its title: the title, the line under it, its file, and
+    /// the title's stretches that matched.
+    Note(String, String, PathBuf, Vec<Range<usize>>),
     /// A line in a note: its title, the text around the match, the line's
     /// number, the file and the match's range in it.
     Line {
@@ -100,7 +102,7 @@ pub struct Listing {
 }
 
 /// The query's words and `#tag` prefixes, lowercase, `#` off.
-fn split(query: &str) -> (Vec<String>, Vec<String>) {
+pub(crate) fn split(query: &str) -> (Vec<String>, Vec<String>) {
     let (tags, words): (Vec<String>, Vec<String>) = query
         .split_whitespace()
         .map(str::to_lowercase)
@@ -123,29 +125,32 @@ fn tagged(note: &Note, tags: &[String]) -> bool {
 pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
     let (words, tags) = split(query);
     let wanted = words.join(" ");
-    let mut titles: Vec<(i32, usize, &Note)> = vault
+    let mut titles: Vec<(i32, usize, &Note, Vec<Range<usize>>)> = vault
         .notes
         .iter()
         .enumerate()
         .filter(|(_, note)| tagged(note, &tags))
-        .filter_map(|(rank, note)| Some((score(&note.title, &wanted)?, rank, note)))
+        .filter_map(|(rank, note)| {
+            let (score, marks) = title_match(&note.title, &wanted)?;
+            Some((score, rank, note, marks))
+        })
         .collect();
     titles.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     titles.truncate(if words.is_empty() { RECENT } else { TITLES });
     let mut found: Vec<Found> = titles
         .iter()
-        .map(|(_, _, note)| {
+        .map(|(_, _, note, marks)| {
             let meta = note.created.clone().unwrap_or_default();
             let meta = note.tags.iter().fold(meta, |line, tag| {
                 format!("{line}  #{tag}").trim_start().to_owned()
             });
-            Found::Note(note.title.clone(), meta, note.path.clone())
+            Found::Note(note.title.clone(), meta, note.path.clone(), marks.clone())
         })
         .collect();
     let (hits, count) = search(vault, query);
     let lines = hits
         .into_iter()
-        .filter(|hit| !titles.iter().any(|(_, _, note)| note.path == hit.path))
+        .filter(|hit| !titles.iter().any(|(_, _, note, _)| note.path == hit.path))
         .filter_map(|hit| {
             let (number, snippet, range) = hit.lines.into_iter().next()?;
             Some(Found::Line {
@@ -178,11 +183,11 @@ fn find_recent(recent: &[PathBuf], query: &str) -> Vec<Found> {
         let name = path
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        if let Some(score) = score(&name, query) {
+        if let Some((score, marks)) = title_match(&name, query) {
             let folder = path
                 .parent()
                 .map_or_else(String::new, |p| p.display().to_string());
-            found.push((score, rank, Found::Note(name, folder, path.clone())));
+            found.push((score, rank, Found::Note(name, folder, path.clone(), marks)));
         }
     }
     found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -273,33 +278,6 @@ fn around(line: &str, at: usize) -> String {
     )
 }
 
-/// How well `query` matches `title`, fuzzily: its characters in order,
-/// more for runs, word starts and the title's start; `None` when they are
-/// not all there. An empty query matches everything equally.
-pub fn score(title: &str, query: &str) -> Option<i32> {
-    let title: Vec<char> = title.to_lowercase().chars().collect();
-    let mut score = 0;
-    let mut at = 0;
-    let mut last: Option<usize> = None;
-    for wanted in query.to_lowercase().chars().filter(|c| !c.is_whitespace()) {
-        let found = (at..title.len()).find(|&i| title[i] == wanted)?;
-        score += 1;
-        if last.is_some_and(|last| last + 1 == found) {
-            score += 4;
-        }
-        if found == 0 || !title[found - 1].is_alphanumeric() {
-            score += 3;
-        }
-        if found == 0 {
-            score += 2;
-        }
-        score -= (found - at).min(5) as i32 / 2;
-        last = Some(found);
-        at = found + 1;
-    }
-    Some(score)
-}
-
 impl App {
     pub(crate) fn search_update(&mut self, message: SearchMessage) -> Task<Message> {
         match message {
@@ -339,7 +317,7 @@ impl App {
                 };
                 let chosen = search.found.into_iter().nth(at.unwrap_or(search.selected));
                 let task = match chosen {
-                    Some(Found::Note(_, _, path)) => self.update(Message::Opened(Some(path))),
+                    Some(Found::Note(_, _, path, _)) => self.update(Message::Opened(Some(path))),
                     Some(Found::Line { path, range, .. }) => {
                         return self.search_update(SearchMessage::Go(path, range));
                     }
@@ -403,7 +381,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{around, lines, score};
+    use super::{around, lines};
 
     #[test]
     fn matching_lines_carry_their_range_and_some_context() {
@@ -423,15 +401,5 @@ mod tests {
         // A line whose lowercase is longer: the whole line is the range.
         let text = "\u{130}stanbul hotel\n";
         assert_eq!(lines(text, &["hotel".to_owned()])[0].2, 0..text.len() - 1);
-    }
-
-    #[test]
-    fn fuzzy_matches_prefer_runs_and_word_starts() {
-        assert!(score("Lisbon hotels", "lh").is_some());
-        assert!(score("Lisbon hotels", "hl x").is_none());
-        // A run at a word's start beats letters scattered through.
-        assert!(score("Lisbon hotels", "hot") > score("Shopping in Oslo, Tallinn", "hot"));
-        assert!(score("Standup", "sta") > score("Lisbon status", "sta"));
-        assert_eq!(score("Anything", ""), Some(0));
     }
 }

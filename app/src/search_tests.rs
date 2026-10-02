@@ -134,3 +134,57 @@ fn ctrl_enter_lists_every_match_in_the_sidebar_until_cleared() {
     assert!(app.listing.is_none());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn titles_match_by_words_with_a_typo_and_say_what_matched() {
+    use crate::search::{Found, SearchMessage, find};
+    use crate::sidebar::VaultMessage;
+    let dir = std::env::temp_dir().join(format!("livemark-words-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    write(
+        &dir.join("boot.md"),
+        "# Secure Boot bring-up on the Utah bare-metal server\nkickloader\n",
+        0,
+    );
+    write(
+        &dir.join("trip.md"),
+        "# Lisbon travel\nTrains and travel plans.\n",
+        10,
+    );
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let vault = app.vault.as_ref().unwrap();
+    let titles = |query: &str| -> Vec<(String, Vec<String>)> {
+        find(vault, query)
+            .0
+            .into_iter()
+            .filter_map(|found| match found {
+                Found::Note(title, _, _, marks) => {
+                    let marked = marks.iter().map(|r| title[r.clone()].to_owned()).collect();
+                    Some((title, marked))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    // The letters of "travel" scattered through a title: no match.
+    assert_eq!(
+        titles("travel"),
+        [("Lisbon travel".to_owned(), vec!["travel".to_owned()])]
+    );
+    // A typo, and words in any order.
+    assert_eq!(titles("sevrer boot")[0].1, ["Boot", "server"]);
+    // The text's matches still come in their own group.
+    let lines: Vec<String> = find(vault, "kickloader")
+        .0
+        .into_iter()
+        .filter_map(|found| match found {
+            Found::Line { snippet, .. } => Some(snippet),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines, ["kickloader"]);
+    let _ = app.update(Message::Search(SearchMessage::Query("travel".into())));
+    let _ = app.view();
+    std::fs::remove_dir_all(&dir).unwrap();
+}

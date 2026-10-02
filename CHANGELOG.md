@@ -35,6 +35,9 @@
   `2026-10-02-the-title.md` with front matter.
 - One search field in the toolbar (Ctrl+P) finds notes by title, lines in
   notes and tags; Ctrl+Enter lists every match in the sidebar.
+- Search marks what matched in every result, and finds titles by their
+  words in any order, forgiving a typo; letters scattered through a title
+  no longer match.
 - Tags in the sidebar are a flat list, most used first; each one's menu
   renames, merges or deletes it across the vault, with Undo. Manage tags
   opens the tag manager: sort, merge or delete several at once, and tags
