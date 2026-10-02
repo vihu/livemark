@@ -1,9 +1,10 @@
 //! Syntax colors for fenced code (REFERENCE-001 section 9): iced's own
 //! highlighter (syntect through two-face) run over a block's lines and
 //! colored by the theme. Lines are parsed only as far down as they are
-//! drawn, and an edited block is parsed again from the snapshot (every 50
-//! lines, iced's) before its first changed line: a line's state depends
-//! only on the lines above it in the block (backlog 14).
+//! drawn, and an edited block (the one starting where it did) is parsed
+//! again from the snapshot (every 50 lines, iced's) before its first
+//! changed line: a line's state depends only on the lines above it in the
+//! block (backlog 14).
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 
@@ -27,6 +28,8 @@ const KEEP: usize = 32;
 /// A block parsed from its first line down.
 struct Parsed {
     language: String,
+    /// Where the block it was last used for starts.
+    start: usize,
     /// A hash of each of the block's lines.
     lines: Vec<u64>,
     parser: Parser,
@@ -109,14 +112,23 @@ impl Highlights {
                 .take_while(|(a, b)| a == b)
                 .count()
         };
+        // The parse of these very lines, else of this block before an edit
+        // inside it (same start): two blocks that only begin alike must not
+        // take each other's parse in turn on every frame.
+        let start = block.range.start;
+        let same = |p: &Parsed| p.language == language;
         let best = self
             .parsed
             .iter()
-            .enumerate()
-            .filter(|(_, p)| p.language == language)
-            .map(|(i, p)| (i, shared(p)))
-            .max_by_key(|&(_, n)| n)
-            .filter(|&(i, n)| n > 0 || self.parsed[i].lines.is_empty());
+            .position(|p| same(p) && p.lines == lines)
+            .map(|i| (i, lines.len()))
+            .or_else(|| {
+                let i = self
+                    .parsed
+                    .iter()
+                    .position(|p| same(p) && p.start == start)?;
+                Some((i, shared(&self.parsed[i])))
+            });
         let mut parsed = match best {
             Some((i, n)) => {
                 let mut parsed = self.parsed.remove(i);
@@ -132,6 +144,7 @@ impl Highlights {
                 }
                 Parsed {
                     language: language.to_owned(),
+                    start,
                     lines: Vec::new(),
                     parser: Parser::new(&Settings {
                         token: language.to_owned(),
@@ -141,6 +154,7 @@ impl Highlights {
             }
         };
         parsed.lines = lines;
+        parsed.start = start;
         self.parsed.push(parsed);
         self.parsed.last_mut().expect("just pushed")
     }
@@ -187,6 +201,16 @@ mod tests {
             colors[i] = highlights.tokens(text, &styled, range, &line, &Theme::Light);
         }
         colors
+    }
+
+    #[test]
+    fn blocks_that_begin_alike_keep_their_own_parses() {
+        let text = "```json\n{\n\"a\": 1\n}\n```\n\n```json\n{\n\"b\": 2\n}\n```\n";
+        let mut highlights = Highlights::default();
+        for _ in 0..3 {
+            let _ = colors(&mut highlights, text, &[1, 2, 3, 7, 8, 9]);
+        }
+        assert_eq!(highlights.parsed.len(), 2);
     }
 
     #[test]

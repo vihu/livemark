@@ -230,11 +230,16 @@ impl Styled {
     /// touch): the destination as written, `http://` before a `www.`
     /// link, `mailto:` before an email address.
     pub fn link_at(&self, offset: usize) -> Option<&str> {
+        self.link_span_at(offset).map(|(_, dest)| dest)
+    }
+
+    /// The source of the link at `offset`, with where it goes.
+    pub fn link_span_at(&self, offset: usize) -> Option<(Range<usize>, &str)> {
         let i = self.links.partition_point(|(r, _)| r.end < offset);
         self.links
             .get(i)
             .filter(|(r, _)| r.start <= offset)
-            .map(|(_, dest)| dest.as_str())
+            .map(|(r, dest)| (r.clone(), dest.as_str()))
     }
 
     /// The tables, in order; [`MarkKind::TableRow`] indexes them.

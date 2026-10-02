@@ -124,8 +124,9 @@ impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Editor(message) => {
-                if let Some(link) = message.link() {
-                    self.error = open_link(link).err();
+                // Only a failure is reported; an open or save error stays.
+                if let Some(Err(error)) = message.link().map(open_link) {
+                    self.error = Some(error);
                 }
                 return self.editor.update(message).map(Message::Editor);
             }

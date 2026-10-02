@@ -11,6 +11,7 @@ use iced::advanced::text::{self, Renderer as _};
 use iced::{Border, Color, Pixels, Point, Rectangle, Size, Vector, border};
 
 use super::lines::Shaped;
+use super::shape::cursor;
 use crate::style::{Mark, MarkKind};
 
 /// The colors marks are drawn in.
@@ -193,5 +194,11 @@ fn centered(x: f32, y: f32, width: f32, height: f32) -> Rectangle {
 /// Where source offset `at` of the line `shaped` is drawn, from the line's
 /// left edge (on its first row).
 pub(super) fn start_x(shaped: &Shaped, at: usize) -> f32 {
-    box_of(shaped, at..at).map_or(0.0, |(rect, _)| rect.x)
+    // An empty range has no highlight in cosmic-text: ask for the cursor.
+    let at = cursor(shaped.line.to_display(at));
+    shaped
+        .buffer
+        .layout_runs()
+        .find_map(|run| run.cursor_position(&at))
+        .unwrap_or(0.0)
 }

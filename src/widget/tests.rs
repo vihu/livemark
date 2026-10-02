@@ -65,6 +65,7 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_caret() {
             shift: false,
             clicks: 1,
             command: false,
+            alt: false,
         };
         let _ = editor.update(Message(press));
         let _ = editor.update(Message(Input::Release));
@@ -74,6 +75,17 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_caret() {
     assert_eq!(editor.selection().head, end, "the caret stays");
     click(&mut editor, at);
     assert_eq!(editor.text(), "- [ ] task\nnext");
+    // With Ctrl or Cmd it is an ordinary click (REFERENCE-001 section 8).
+    let press = Input::Press {
+        at,
+        shift: false,
+        clicks: 1,
+        command: true,
+        alt: false,
+    };
+    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(Input::Release));
+    assert_eq!(editor.text(), "- [ ] task\nnext", "not toggled");
     // On the task's text, a click places the caret.
     click(&mut editor, Point::new(at.x + 40.0, at.y));
     assert_eq!(editor.text(), "- [ ] task\nnext");
@@ -100,6 +112,7 @@ fn nothing_is_revealed_before_the_caret_is_first_placed() {
         shift: false,
         clicks: 1,
         command: false,
+        alt: false,
     };
     let _ = editor.update(super::Message(press));
     assert_eq!(
@@ -131,6 +144,7 @@ fn a_click_on_a_grid_cell_puts_the_caret_in_its_source() {
         shift: false,
         clicks: 1,
         command: false,
+        alt: false,
     }));
     let _ = editor.update(Message(Input::Release));
     let head = editor.selection().head;
@@ -146,6 +160,7 @@ fn a_click_on_a_grid_cell_puts_the_caret_in_its_source() {
         shift: false,
         clicks: 1,
         command: false,
+        alt: false,
     }));
     let _ = editor.update(Message(Input::Release));
     let head = editor.selection().head;
@@ -167,6 +182,7 @@ fn ctrl_click_and_alt_enter_hand_a_link_to_the_host() {
             shift: false,
             clicks: 1,
             command,
+            alt: false,
         })
     };
     // Ctrl+click on the link text (its markers hidden, the caret elsewhere).
@@ -183,6 +199,14 @@ fn ctrl_click_and_alt_enter_hand_a_link_to_the_host() {
     assert_eq!(editor.styled.link_at(8), Some("https://x.y/d"));
     assert_eq!(editor.styled.link_at(36), Some("http://www.a.b"));
     assert_eq!(editor.styled.link_at(1), None);
+    // Beside a line that ends with a link, which hits the link's end:
+    // nothing to follow there.
+    let mut ending = Editor::new("see [docs](https://x.y/d)\n".into());
+    ending.select(27, 27);
+    assert!(x_of(&ending, 25) < 500.0);
+    assert!(links(ending.update(press(iced::Point::new(500.0, 10.0), true))).is_empty());
+    let on = iced::Point::new(x_of(&ending, 6), 10.0);
+    assert_eq!(links(ending.update(press(on, true))), ["https://x.y/d"]);
     // A plain click places the caret, as before.
     let _ = editor.update(press(at, false));
     let _ = editor.update(Message(Input::Release));
@@ -204,4 +228,32 @@ fn outputs(task: iced::Task<super::Message>) -> Vec<super::Message> {
             _ => None,
         })
         .collect()
+}
+
+#[test]
+fn a_grid_starts_where_its_rows_source_starts() {
+    let text = "- | a |\n  | - |\n  | b |\n\nend";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    editor.with_lines(|lines, source| {
+        let shaped = lines.shaped(source, 0);
+        let x = super::marks::start_x(&shaped, 2);
+        assert!(x > 5.0, "after the bullet: {x}");
+    });
+}
+
+#[test]
+fn a_cached_grid_follows_a_link_definition_added_elsewhere() {
+    use super::{Input, Key, Message};
+    let mut editor = Editor::new("| [a] |\n| - |\n\n".into());
+    let cell = |editor: &Editor| {
+        editor.with_lines(|lines, source| lines.grid(source, 0).cells[1 - 1][0].line.text.clone())
+    };
+    let end = editor.text().len();
+    editor.select(end, end);
+    assert_eq!(cell(&editor), "[a]", "no definition: text");
+    for c in "[a]: http://x.y".chars() {
+        let _ = editor.update(Message(Input::Key(Key::Insert(c))));
+    }
+    assert_eq!(cell(&editor), "a", "a reference link now");
 }

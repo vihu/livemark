@@ -38,8 +38,12 @@ impl Editor {
                 side = self.side;
             }
             Input::Press {
-                at, shift, clicks, ..
-            } => side = self.press(at, shift, clicks),
+                at,
+                shift,
+                clicks,
+                command,
+                alt,
+            } => side = self.press(at, shift, clicks, !(shift || command || alt)),
             Input::Follow(_) => side = self.side,
             Input::Drag(at) => side = self.drag(at),
             Input::Release => {
@@ -143,7 +147,11 @@ impl Editor {
     /// Where the link under `at` goes, if one is there.
     pub(super) fn link_under(&self, at: Point) -> Option<String> {
         let (offset, _) = self.hit(at);
-        self.styled.link_at(offset).map(str::to_owned)
+        let (range, dest) = self.styled.link_span_at(offset)?;
+        // On the link's text, not in the space beside it, which hits its
+        // end too.
+        let over = self.with_lines(|lines, source| lines.covers(source, range, at.x, at.y));
+        over.then(|| dest.to_owned())
     }
 
     /// The source offset under `at`: in a table drawn as a grid, the
@@ -157,10 +165,11 @@ impl Editor {
 
     /// A press: a caret (Shift extends the selection), a word on a double
     /// click, a line on a triple click (REFERENCE-001 section 14).
-    fn press(&mut self, at: Point, shift: bool, clicks: u8) -> Affinity {
+    fn press(&mut self, at: Point, shift: bool, clicks: u8, plain: bool) -> Affinity {
         // A checkbox toggles its task and leaves the caret where it is
-        // (REFERENCE-001 section 8).
-        if clicks == 1 && !shift {
+        // (REFERENCE-001 section 8); with a modifier it is an ordinary
+        // click.
+        if clicks == 1 && plain {
             let task = self.with_lines(|lines, source| lines.task_at(source, at.x, at.y));
             if let Some(task) = task {
                 edit::format::toggle_task(&mut self.doc, task, self.started.elapsed());

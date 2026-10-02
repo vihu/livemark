@@ -82,8 +82,10 @@ pub struct Lines {
     pub source: bool,
     highlights: Highlights,
     cache: HashMap<u64, Cached>,
-    /// Tables as grids, by table text, width and colors.
+    /// Tables as grids, by table text and styling, width and colors, and
+    /// the keys used since the last frame ended (what `trim` keeps).
     grids: HashMap<u64, Arc<Grid>>,
+    grids_used: Vec<u64>,
 }
 
 impl Lines {
@@ -99,6 +101,7 @@ impl Lines {
             source: false,
             highlights: Highlights::default(),
             grids: HashMap::new(),
+            grids_used: Vec::new(),
             cache: HashMap::new(),
         }
     }
@@ -182,12 +185,20 @@ impl Lines {
         }
     }
 
-    /// Drops shaped lines not drawn lately, once the cache is large.
+    /// Drops shaped lines not drawn lately and grids not used this frame,
+    /// once their caches are large.
     pub fn trim(&mut self, keep: &[Shaped]) {
         if self.cache.len() > 4 * keep.len() + 256 {
             self.cache
                 .retain(|_, cached| keep.iter().any(|k| Arc::ptr_eq(&k.buffer, &cached.buffer)));
         }
+        // Grids go only between frames: a frame's text holds its buffers
+        // weakly until it is rendered.
+        if self.grids.len() > 32 {
+            let used = std::mem::take(&mut self.grids_used);
+            self.grids.retain(|key, _| used.contains(key));
+        }
+        self.grids_used.clear();
     }
 
     /// Scrolls by `dy` pixels (positive: further down the document),
@@ -374,6 +385,20 @@ impl Lines {
         let table = &source.styled.tables()[index];
         let mut hasher = DefaultHasher::new();
         source.doc.text()[table.range.clone()].hash(&mut hasher);
+        // Its styling too, relative to its start: a link reference
+        // definition elsewhere changes how its cells look.
+        let start = table.range.start;
+        let runs = source.styled.runs();
+        let first = runs.partition_point(|(r, _)| r.end <= start);
+        for (r, style) in runs[first..]
+            .iter()
+            .take_while(|(r, _)| r.start < table.range.end)
+        {
+            (r.start.saturating_sub(start), r.end - start, style).hash(&mut hasher);
+        }
+        for m in &table.markers {
+            (m.start - start, m.end - start).hash(&mut hasher);
+        }
         self.width.to_bits().hash(&mut hasher);
         for color in [
             self.colors.text,
@@ -384,11 +409,9 @@ impl Lines {
             color.into_rgba8().hash(&mut hasher);
         }
         let key = hasher.finish();
+        self.grids_used.push(key);
         if let Some(grid) = self.grids.get(&key) {
             return grid.clone();
-        }
-        if self.grids.len() >= 32 {
-            self.grids.clear();
         }
         let grid = Arc::new(Grid::new(
             source.doc.text(),
@@ -419,6 +442,29 @@ impl Lines {
         };
         let grid = self.grid(source, table);
         Some(grid.hit(&source.styled.tables()[table], row, x - start))
+    }
+
+    /// Whether `x`, `y` in the text area is on where source `range` is
+    /// drawn (in a table drawn as a grid: anywhere in the row).
+    pub fn covers(&mut self, source: &Source, range: Range<usize>, x: f32, y: f32) -> bool {
+        let (index, top) = self.line_at_y(source, y);
+        let line = source.doc.line_range(index);
+        let grid = marks_in(source.concealed, line.clone())
+            .any(|m| matches!(m.kind, MarkKind::TableRow(..)));
+        if grid {
+            return true;
+        }
+        let (start, end) = (range.start.max(line.start), range.end.min(line.end));
+        if start > end {
+            return false;
+        }
+        let shaped = self.shaped(source, index);
+        let display = shaped.line.to_display(start)..shaped.line.to_display(end);
+        let point = iced::Point::new(x, y - top);
+        shaped
+            .stretches(display)
+            .iter()
+            .any(|(rect, _)| rect.contains(point))
     }
 
     /// The concealed task box whose checkbox is at `x`, `y` in the text
