@@ -526,11 +526,17 @@ fn releasing_after_scrolling_away_keeps_the_view() {
         command: false,
         other: false,
     };
-    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(press.clone()));
     let _ = editor.update(Message(Input::Scroll(2000.0)));
     let anchor = editor.lines.borrow().anchor;
     let _ = editor.update(Message(Input::Release));
     assert_eq!(editor.lines.borrow().anchor, anchor);
+    // Less than two screens away too.
+    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(Input::Scroll(300.0)));
+    let anchor = editor.lines.borrow().anchor;
+    let _ = editor.update(Message(Input::Release));
+    assert_eq!(editor.lines.borrow().anchor, anchor, "a short scroll");
 }
 
 #[test]

@@ -77,7 +77,10 @@ impl Editor {
             // the caret out of view: it is brought back, unless it was out
             // of view already (scrolled away while the button was held).
             Input::Release => {
-                let shown = self.caret().is_some();
+                let height = self.lines.borrow().height;
+                let shown = self
+                    .caret()
+                    .is_some_and(|caret| caret.y >= 0.0 && caret.y + caret.height <= height);
                 let press = self.press.take();
                 keep_view = press.is_none() || !shown;
                 self.last_press = press.map(|press| (press, self.doc.version()));

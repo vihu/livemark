@@ -16,7 +16,7 @@ mod file;
 
 use std::path::PathBuf;
 
-use iced::keyboard::{self, key};
+use iced::keyboard;
 use iced::widget::{button, column, container, row, text};
 use iced::{Element, Length, Subscription, Task, Theme, window};
 use livemark::widget::{self, Editor};
@@ -70,14 +70,18 @@ struct App {
     stamp: Option<std::time::SystemTime>,
     /// The file changed on disk while there were unsaved changes.
     changed: bool,
+    /// The editor version whose unsaved changes the user chose to discard.
+    discarded: Option<u64>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum After {
     Close,
     Open,
     New,
+    /// This file, picked while the dialog was open over unsaved typing.
+    Load(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +124,7 @@ impl App {
             theme,
             pending: None,
             changed: false,
+            discarded: None,
         }
     }
 
@@ -193,18 +198,13 @@ impl App {
             Message::New => return self.new_note(),
             Message::Open if self.unsaved() => self.pending = Some(After::Open),
             Message::Open => return Task::perform(pick_file(), Message::Opened),
-            Message::Opened(Some(path)) => match file::load(&path) {
-                Ok(text) => {
-                    self.editor = Editor::new(text);
-                    self.saved = self.editor.version();
-                    self.stamp = file::modified(&path);
-                    self.changed = false;
-                    self.path = Some(path);
-                    self.error = None;
-                    return Editor::focus();
-                }
-                Err(error) => self.error = Some(error),
-            },
+            // Typing while the dialog was open is not dropped unasked.
+            Message::Opened(Some(path))
+                if self.unsaved() && self.discarded != Some(self.editor.version()) =>
+            {
+                self.pending = Some(After::Load(path));
+            }
+            Message::Opened(Some(path)) => return self.load(path),
             Message::Opened(None) => {}
             // Never over a file changed on disk since it was opened or
             // saved: ask first (Load it, Keep mine), then save again.
@@ -223,8 +223,13 @@ impl App {
                 self.changed = false;
                 self.path = Some(path);
                 self.saved = version;
+                // Typing while the save dialog was open: ask again.
                 if let Some(after) = self.pending.take() {
-                    return self.carry_on(after);
+                    if self.unsaved() {
+                        self.pending = Some(after);
+                    } else {
+                        return self.carry_on(after);
+                    }
                 }
             }
             Message::Saved(Ok(None), _) => self.pending = None,
@@ -236,6 +241,7 @@ impl App {
             Message::CloseRequested => return iced::exit(),
             Message::Unsaved(Some(true)) => return self.update(Message::Save { choose: false }),
             Message::Unsaved(Some(false)) => {
+                self.discarded = Some(self.editor.version());
                 if let Some(after) = self.pending.take() {
                     return self.carry_on(after);
                 }
@@ -257,6 +263,26 @@ impl App {
             After::Close => iced::exit(),
             After::Open => Task::perform(pick_file(), Message::Opened),
             After::New => self.new_note(),
+            After::Load(path) => self.load(path),
+        }
+    }
+
+    /// The file at `path` in place of the current note.
+    fn load(&mut self, path: PathBuf) -> Task<Message> {
+        match file::load(&path) {
+            Ok(text) => {
+                self.editor = Editor::new(text);
+                self.saved = self.editor.version();
+                self.stamp = file::modified(&path);
+                self.changed = false;
+                self.path = Some(path);
+                self.error = None;
+                Editor::focus()
+            }
+            Err(error) => {
+                self.error = Some(error);
+                Task::none()
+            }
         }
     }
 
@@ -309,26 +335,33 @@ impl App {
                 .as_ref()
                 .map(|error| text(error).style(text::danger).into())
         };
-        match bar {
-            Some(bar) => column![editor, container(bar).padding(12)].into(),
-            None => editor,
-        }
+        // Always a column, so the editor keeps its place in the widget tree
+        // (and its focus) when a bar comes or goes.
+        column![editor]
+            .push(bar.map(|bar| container(bar).padding(12)))
+            .into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
+        // By the letter on the key in the layout, as the editor reads its
+        // own shortcuts.
         let keys = keyboard::listen().filter_map(|event| {
             let keyboard::Event::KeyPressed {
-                physical_key: key::Physical::Code(code),
+                key,
+                physical_key,
                 modifiers,
                 ..
             } = event
             else {
                 return None;
             };
-            match code {
-                key::Code::KeyN if modifiers.command() => Some(Message::New),
-                key::Code::KeyO if modifiers.command() => Some(Message::Open),
-                key::Code::KeyS if modifiers.command() => Some(Message::Save {
+            if !modifiers.command() || modifiers.alt() {
+                return None;
+            }
+            match key.to_latin(physical_key)? {
+                'n' => Some(Message::New),
+                'o' => Some(Message::Open),
+                's' => Some(Message::Save {
                     choose: modifiers.shift(),
                 }),
                 _ => None,
@@ -439,10 +472,24 @@ mod tests {
         let _ = app.update(Message::Reload(false));
         let _ = app.update(Message::Save { choose: false });
         assert!(!app.changed, "saving");
+        // A file picked while there is unsaved typing waits for an answer;
+        // one picked after discarding loads.
+        let other = dir.join("other.md");
+        write(&other, "other\n", 0);
+        app.saved = u64::MAX;
+        let _ = app.update(Message::Opened(Some(other.clone())));
+        assert!(matches!(app.pending, Some(super::After::Load(_))));
+        assert_ne!(app.editor.text(), "other\n");
+        let _ = app.update(Message::Unsaved(None));
+        app.discarded = Some(app.editor.version());
+        let _ = app.update(Message::Opened(Some(other.clone())));
+        assert_eq!(app.editor.text(), "other\n");
+        std::fs::remove_file(&other).unwrap();
+        app.path = Some(path.clone());
         // Ctrl+N with unsaved changes asks first; discarding starts afresh.
         app.saved = u64::MAX;
         let _ = app.update(Message::New);
-        assert_eq!(app.editor.text(), "four\n", "asked first");
+        assert_eq!(app.editor.text(), "other\n", "asked first");
         let _ = app.update(Message::Unsaved(Some(false)));
         assert_eq!((app.editor.text(), app.path.is_none()), ("", true));
         std::fs::remove_file(&path).unwrap();

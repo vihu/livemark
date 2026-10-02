@@ -303,11 +303,10 @@ impl Editor {
     /// The editor, filling the space it is given, with the find bar under
     /// the text when it is open.
     pub fn view(&self) -> Element<'_, Message> {
+        // Always a column, so the surface keeps its state (focus, held
+        // modifiers, a preedit) when the find bar opens or closes.
         let surface = Element::new(surface::Surface { editor: self });
-        match self.find_bar() {
-            Some(bar) => iced::widget::column![surface, bar].into(),
-            None => surface,
-        }
+        iced::widget::column![surface].push(self.find_bar()).into()
     }
 
     /// A task that gives the editor keyboard focus.

@@ -462,3 +462,74 @@ fn a_failed_paste_does_not_take_a_later_read_meant_for_another_widget() {
     });
     assert_eq!(editor.text(), "one\ntwo\n");
 }
+
+#[test]
+fn the_editor_keeps_focus_when_the_find_bar_opens() {
+    use iced::advanced::renderer::Headless as _;
+    use iced_runtime::user_interface::{Cache, UserInterface};
+    // A widget tree kept from frame to frame, as in an app (the simulator
+    // builds a new one every round).
+    let backend = std::env::var("ICED_TEST_BACKEND").unwrap_or_else(|_| "tiny-skia".into());
+    let renderer = iced::Renderer::new(
+        iced::advanced::renderer::Settings::default(),
+        Some(&backend),
+    );
+    let mut renderer = iced::futures::executor::block_on(renderer).expect("a headless renderer");
+    let mut editor = Editor::new("one two\n".into());
+    let mut cache = Cache::default();
+    let mut frame = |editor: &mut Editor, cache: Cache, at: Point, events: &[Event]| {
+        let mut messages = iced::advanced::shell::Bus::<Message>::new();
+        let mut ui = UserInterface::build(
+            editor.view(),
+            iced::Size::new(800.0, 600.0),
+            cache,
+            &mut renderer,
+        );
+        let _ = ui.update(
+            &iced::window::Headless,
+            &iced::advanced::shell::Waker::noop(),
+            events,
+            mouse::Cursor::Available(at),
+            &mut renderer,
+            &mut messages,
+        );
+        let cache = ui.into_cache();
+        for message in messages {
+            let _ = editor.update(message);
+        }
+        cache
+    };
+    let at = Point::new(700.0, 20.0);
+    cache = frame(
+        &mut editor,
+        cache,
+        at,
+        &[
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+        ],
+    );
+    // Ctrl+F opens the bar (its field's focus is a task, not run here).
+    cache = frame(
+        &mut editor,
+        cache,
+        at,
+        &[press(
+            Key::Character("f".into()),
+            keyboard::Modifiers::COMMAND,
+        )],
+    );
+    let typed = Event::Keyboard(keyboard::Event::KeyPressed {
+        key: Key::Character("!".into()),
+        modified_key: Key::Character("!".into()),
+        physical_key: keyboard::key::Physical::Unidentified(
+            keyboard::key::NativeCode::Unidentified,
+        ),
+        location: keyboard::Location::Standard,
+        modifiers: keyboard::Modifiers::empty(),
+        text: Some("!".into()),
+        repeat: false,
+    });
+    let _ = frame(&mut editor, cache, at, &[typed]);
+    assert_eq!(editor.text(), "one two!\n", "the editor still had focus");
+}
