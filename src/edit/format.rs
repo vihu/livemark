@@ -44,30 +44,51 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         .iter()
         .filter(|c| c.syntax == syntax && c.range.start <= range.start && range.end <= c.range.end)
         .min_by_key(|c| c.range.len());
-    // Over several lines, off when each line's text is one such span (as
-    // the keys wrap them, line by line).
     let text = doc.text();
+    // Over several lines, line by line: each line's selected text that is
+    // inline text (not code, a table row, a rule or an underline, which
+    // stars would break); off when every one is in a span of this kind
+    // (between its markers and its text), else on for those that are not.
     if text[range.clone()].contains(['\n', '\r']) {
-        let start = text[..range.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
-        // Up to the end of the last line the selection has text on.
-        let last = if text[..range.end].ends_with(['\n', '\r']) {
-            range.end - 1
-        } else {
-            range.end
-        };
-        let end = last + text[last..].find(['\n', '\r']).unwrap_or(text.len() - last);
-        let spans: Option<Vec<_>> = content_lines(text, start..end)
-            .iter()
-            .map(|line| {
-                styled
-                    .constructs()
-                    .iter()
-                    .find(|c| c.syntax == syntax && c.range == *line)
+        let texts = inline_text(text);
+        let lines: Vec<_> = content_lines(text, range.clone())
+            .into_iter()
+            .filter(|line| {
+                let i = texts.partition_point(|t| t.end <= line.start);
+                texts.get(i).is_some_and(|t| t.start < line.end)
             })
             .collect();
-        if let Some(spans) = spans.filter(|s| !s.is_empty()) {
-            let mut cuts: Vec<_> = spans.iter().flat_map(|c| c.markers.clone()).collect();
+        // The line's text without marker characters at its ends (the
+        // parser can pair stars differently from how they were typed:
+        // `***a***` is italic around bold), inside a span's text.
+        let stars: &[char] = match format {
+            Format::Code => &['`'],
+            _ => &['*', '_'],
+        };
+        let span = |line: &std::ops::Range<usize>| {
+            let own = &text[line.clone()];
+            let start = line.start + own.len() - own.trim_start_matches(stars).len();
+            let end = start + own.trim_matches(stars).len();
+            styled
+                .constructs()
+                .iter()
+                .filter(|c| {
+                    c.syntax == syntax
+                        && start < end
+                        && c.markers[0].end <= start
+                        && end <= c.markers[1].start
+                })
+                .min_by_key(|c| c.range.len())
+        };
+        let spans: Vec<_> = lines.iter().map(span).collect();
+        if !spans.is_empty() && spans.iter().all(Option::is_some) {
+            let mut cuts: Vec<_> = spans
+                .iter()
+                .flatten()
+                .flat_map(|c| c.markers.clone())
+                .collect();
             cuts.sort_by_key(|c| c.start);
+            cuts.dedup();
             let map = |at: usize| {
                 at - cuts
                     .iter()
@@ -80,8 +101,12 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
             };
             let changes = cuts.into_iter().map(Change::delete).collect();
             doc.apply(changes, selection, Kind::Other, now);
-            return;
+        } else {
+            let plain = lines.iter().zip(&spans).filter(|(_, s)| s.is_none());
+            let segments: Vec<_> = plain.map(|(line, _)| line.clone()).collect();
+            wrap(doc, segments, format, now);
         }
+        return;
     }
     if let Some(construct) = inside {
         let [open, close] = construct.markers.clone();
@@ -113,16 +138,26 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         );
         return;
     }
-    // A selection is wrapped line by line, each without its spaces at
-    // either end and its block markup (`- `, `> `, `# `): `**- a\n**` would
-    // break the item and draw the stars.
+    // A selection without its spaces at either end or its block markup
+    // (`- `, `> `, `# `): `**- a\n**` would break the item and draw the
+    // stars. Nothing but those: nothing to wrap.
     let segments = if range.is_empty() {
         vec![strictly_in_word(doc, range.start).unwrap_or(range.clone())]
     } else {
-        Some(content_lines(text, range.clone()))
-            .filter(|lines| !lines.is_empty())
-            .unwrap_or_else(|| vec![range.clone()])
+        content_lines(text, range.clone())
     };
+    if segments.is_empty() {
+        return;
+    }
+    wrap(doc, segments, format, now);
+}
+
+/// Wraps each of `segments` (sorted) in `format`'s markers, as one undo
+/// step; a caret goes inside the pair, a selection stays on the text.
+fn wrap(doc: &mut Doc, segments: Vec<std::ops::Range<usize>>, format: Format, now: Duration) {
+    let text = doc.text();
+    let selection = doc.selection();
+    let range = selection.range();
     let marker = match format {
         Format::Bold => "**".to_owned(),
         Format::Italic => "*".to_owned(),
@@ -163,6 +198,23 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         })
         .collect();
     doc.apply(changes, selection, Kind::Other, now);
+}
+
+/// The text and code spans outside code blocks and tables: where the
+/// formatting keys wrap lines of a selection over several.
+fn inline_text(text: &str) -> Vec<std::ops::Range<usize>> {
+    use pulldown_cmark::{Event, Tag, TagEnd};
+    let mut depth = 0usize;
+    let mut texts = Vec::new();
+    for (event, range) in crate::parse::events(text) {
+        match event {
+            Event::Start(Tag::CodeBlock(_) | Tag::Table(_)) => depth += 1,
+            Event::End(TagEnd::CodeBlock | TagEnd::Table) => depth -= 1,
+            Event::Text(_) | Event::Code(_) if depth == 0 => texts.push(range),
+            _ => {}
+        }
+    }
+    texts
 }
 
 /// The lines `range` covers, each cut to `range`, without its block

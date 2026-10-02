@@ -147,10 +147,8 @@ fn a_selection_is_wrapped_line_by_line_without_markup_or_spaces() {
     // Two items, a heading in a quote.
     assert_eq!(apply("[- a\n- b]", Format::Italic), "[- *a*\n- *b]*");
     assert_eq!(apply("[> # Title]", Format::Bold), "[> # **Title]**");
-    assert_eq!(
-        apply("[1. `a`\n2. b]", Format::Code),
-        "[1. ```a```\n2. ``b]``"
-    );
+    // A line already in code stays as it is; the other is wrapped.
+    assert_eq!(apply("[1. `a`\n2. b]", Format::Code), "[1. `a`\n2. `b]`");
 }
 
 #[test]
@@ -181,4 +179,50 @@ fn a_hard_break_backslash_stays_outside_the_markers() {
     let styled = Styled::new(doc.text());
     toggle(&mut doc, &styled, Format::Bold, Duration::ZERO);
     assert_eq!(doc.text(), "**line** \\\n**next**");
+}
+
+/// `format` pressed twice over `anchor..head` of `text`: the text after
+/// each press.
+fn twice(text: &str, (anchor, head): (usize, usize), format: Format) -> [String; 2] {
+    let mut doc = Doc::new(text.into());
+    doc.set_selection(Selection { anchor, head });
+    [0, 1].map(|_| {
+        let styled = Styled::new(doc.text());
+        toggle(&mut doc, &styled, format, Duration::ZERO);
+        doc.text().to_owned()
+    })
+}
+
+#[test]
+fn twice_over_part_of_several_lines_gives_the_text_back() {
+    let text = "- buy milk\n- call bob";
+    for format in [Format::Bold, Format::Italic] {
+        assert_eq!(twice(text, (6, 17), format)[1], text, "{format:?}");
+    }
+    // From a line's end: that line is not touched.
+    assert_eq!(
+        twice("a\nb\nc", (1, 3), Format::Bold),
+        ["a\n**b**\nc", "a\nb\nc"]
+    );
+    assert_eq!(twice("**a**\n**b**", (5, 11), Format::Bold)[0], "**a**\nb");
+    // Bold over italic lines and back.
+    assert_eq!(twice("*a*\n*b*", (0, 7), Format::Bold)[1], "*a*\n*b*");
+}
+
+#[test]
+fn over_several_lines_only_inline_text_is_wrapped() {
+    let text = "para\n```\ncode\n```\n| a | b |\n| - | - |\n| c | d |\n---\nend";
+    let [once, _] = twice(text, (0, text.len()), Format::Bold);
+    assert_eq!(
+        once,
+        "**para**\n```\ncode\n```\n| a | b |\n| - | - |\n| c | d |\n---\n**end**"
+    );
+    let setext = "Title\n=====\nnext";
+    assert_eq!(
+        twice(setext, (0, setext.len()), Format::Bold)[0],
+        "**Title**\n=====\n**next**"
+    );
+    // Nothing but spaces or markup: nothing to wrap.
+    assert_eq!(twice("   \n  \n", (0, 6), Format::Bold)[0], "   \n  \n");
+    assert_eq!(twice("- \n> \n", (0, 6), Format::Bold)[0], "- \n> \n");
 }
