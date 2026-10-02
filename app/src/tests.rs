@@ -259,3 +259,33 @@ fn the_file_menu_opens_recent_notes_and_sets_the_theme() {
     std::fs::remove_file(&a).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn another_note_keeps_the_zoom_the_mode_and_the_divider() {
+    use livemark::widget::Mode;
+    let dir = std::env::temp_dir().join(format!("livemark-keep-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let other = dir.join("other.md");
+    write(&other, "other\n", 0);
+    let mut app = App::open(None, None);
+    app.editor.set_zoom(1.5);
+    app.editor.set_mode(Mode::Split);
+    app.editor.set_split_ratio(0.3);
+    let _ = app.update(Message::Opened(Some(other.clone())));
+    assert_eq!(app.editor.text(), "other\n");
+    assert_eq!(
+        (
+            app.editor.zoom(),
+            app.editor.mode(),
+            app.editor.split_ratio()
+        ),
+        (1.5, Mode::Split, 0.3)
+    );
+    let _ = app.update(Message::New);
+    assert_eq!(app.editor.zoom(), 1.5, "a new note too");
+    // The divider is kept with the settings.
+    let _ = app.update(Message::Zoom(1));
+    assert_eq!(app.settings.split, 0.3);
+    std::fs::remove_file(&other).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+}

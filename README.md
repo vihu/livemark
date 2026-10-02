@@ -54,8 +54,9 @@ A picture pasted with Ctrl+V is saved as `assets/<note>-<n>.png` next to the
 note and linked at the caret (a new note is saved first); a picture file
 dropped on the window is linked by its path, a dropped `.md` file opens.
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
-the theme (System, Light, Dark). The zoom, the window's size, the theme and
-the ten most recent files are kept in `~/.config/livemark/settings` (macOS:
+the theme (System, Light, Dark). The zoom, the window's size, the theme,
+where the divider between the Split panes was (drag it; a double click
+puts it back in the middle) and the ten most recent files are kept in `~/.config/livemark/settings` (macOS:
 `~/Library/Application Support/livemark/settings`), a `key = value` file.
 
 Keys in the editor (Cmd instead of Ctrl on macOS):
@@ -121,7 +122,8 @@ key's command. A paste with no text but a picture comes to the host as
 `Editor::insert_text`. `Editor::image_urls` lists where the note's images point; hand each
 picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn
 under its line while its markdown hides. `Editor::set_zoom` scales the
-text.
+text; `Editor::split_ratio` and `set_split_ratio` are the markdown's share
+of the width in Split mode, for a host to keep.
 
 [iced]: https://github.com/iced-rs/iced
 

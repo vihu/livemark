@@ -1,5 +1,6 @@
 //! What the app remembers between starts (PLAN-002): the zoom, the theme,
-//! the window's size and the most recent files. One `key = value` a line,
+//! the window's size, the most recent files and where the side by side
+//! divider was (PLAN-003). One `key = value` a line,
 //! parsed by hand (no crate for it); unknown, misspelled or broken lines are
 //! ignored, so a hand edit never stops the app from starting.
 use std::path::{Path, PathBuf};
@@ -24,6 +25,8 @@ pub struct Settings {
     pub window: Option<(f32, f32)>,
     /// Most recent first.
     pub recent: Vec<PathBuf>,
+    /// The markdown's share of the width side by side.
+    pub split: f32,
 }
 
 impl Default for Settings {
@@ -33,6 +36,7 @@ impl Default for Settings {
             theme: Theme::System,
             window: None,
             recent: Vec::new(),
+            split: 0.5,
         }
     }
 }
@@ -85,6 +89,13 @@ impl Settings {
                         settings.zoom = zoom;
                     }
                 }
+                "split" => {
+                    if let Ok(split) = value.parse::<f32>()
+                        && (0.2..=0.8).contains(&split)
+                    {
+                        settings.split = split;
+                    }
+                }
                 "theme" => {
                     settings.theme = match value {
                         "light" => Theme::Light,
@@ -118,6 +129,7 @@ impl Settings {
             Theme::Dark => "dark",
         };
         text += &format!("theme = {theme}\n");
+        text += &format!("split = {}\n", self.split);
         if let Some((width, height)) = self.window {
             text += &format!("window = {}x{}\n", width.round(), height.round());
         }
@@ -147,6 +159,7 @@ mod tests {
             theme: Theme::Dark,
             window: Some((1200.0, 800.0)),
             recent: Vec::new(),
+            split: 0.35,
         };
         settings.opened(std::path::Path::new("/notes/a.md"));
         settings.opened(std::path::Path::new("/notes/b.md"));
@@ -161,6 +174,7 @@ mod tests {
         let broken = Settings::parse("zoom = huge\ntheme = purple\nwindow = 10x\ncolor = red\n=\n");
         assert_eq!(broken, Settings::default());
         assert_eq!(Settings::parse("zoom = 9\n").zoom, 1.0);
+        assert_eq!(Settings::parse("split = 0.9\n").split, 0.5);
         // At most ten recent files.
         let mut many = Settings::default();
         for i in 0..15 {

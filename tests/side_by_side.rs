@@ -62,3 +62,43 @@ fn the_panes_scroll_together_and_a_click_on_the_right_places_the_caret() {
     let right = caret_line(&editor);
     assert!(right > 40 && right.abs_diff(left) <= 4, "{right} vs {left}");
 }
+
+#[test]
+fn the_divider_drags_within_a_fifth_and_a_double_click_centres_it() {
+    let mut editor = Editor::new("text\n".into());
+    editor.set_mode(Mode::Split);
+    assert_eq!(editor.split_ratio(), 0.5);
+    let drag = |editor: &mut Editor, from: f32, to: f32| {
+        run(editor, |ui| {
+            ui.point_at(Point::new(from, 300.0));
+            ui.simulate([Event::Mouse(mouse::Event::ButtonPressed(
+                mouse::Button::Left,
+            ))]);
+            ui.point_at(Point::new(to, 300.0));
+            ui.simulate([
+                Event::Mouse(mouse::Event::CursorMoved {
+                    position: Point::new(to, 300.0),
+                }),
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+            ]);
+        });
+    };
+    // The divider is in the middle of the row.
+    drag(&mut editor, 500.0, 700.0);
+    assert!(
+        (editor.split_ratio() - 0.7).abs() < 0.01,
+        "{}",
+        editor.split_ratio()
+    );
+    // Each pane keeps a fifth.
+    let at = editor.split_ratio() * (SIZE.0 - 9.0) + 4.5;
+    drag(&mut editor, at, 20.0);
+    assert_eq!(editor.split_ratio(), 0.2);
+    // A double click puts it back in the middle.
+    let at = 0.2 * (SIZE.0 - 9.0) + 4.5;
+    run(&mut editor, |ui| {
+        click(ui, Point::new(at, 300.0));
+        click(ui, Point::new(at, 300.0));
+    });
+    assert_eq!(editor.split_ratio(), 0.5);
+}

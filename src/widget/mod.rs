@@ -1,6 +1,7 @@
 //! The iced editor. [`Editor`] keeps the markdown, its styling and how it
 //! is drawn; [`Editor::view`] shows it and [`Editor::update`] takes back the
 //! messages the view produces (`input.rs`). Behaviour per REFERENCE-001.
+mod divider;
 mod draw;
 mod find;
 mod highlight;
@@ -87,6 +88,8 @@ pub struct Editor {
     pictures: HashMap<String, picture::Picture>,
     /// Split mode's rendered pane.
     preview: preview::Preview,
+    /// The share of the width the text takes in Split mode.
+    split_ratio: f32,
 }
 
 /// What live preview hides and draws over, and the document version and
@@ -188,6 +191,9 @@ enum Input {
     /// A pane's scroll bar thumb dragged or its track pressed: how far
     /// down its travel, from 0 to 1.
     ScrollTo(Pane, f32),
+    /// The divider dragged, or double-clicked (0.5): the text's share of
+    /// the width.
+    SplitRatio(f32),
     /// Ctrl/Cmd with the wheel: notches up (positive) or down, a tenth of
     /// the text size each, as the app's keys step.
     ZoomSteps(f32),
@@ -279,6 +285,7 @@ impl Editor {
             reveal: RefCell::new(None),
             pictures: HashMap::new(),
             preview: preview::Preview::new(BLACK),
+            split_ratio: 0.5,
         }
     }
 
@@ -349,6 +356,23 @@ impl Editor {
             self.lines.borrow_mut().pending_reveal = Some((self.doc.selection().head, self.side));
         }
         self.preview.leader.set(Pane::Text);
+    }
+
+    /// The share of the width the markdown takes beside the rendered note
+    /// (`Mode::Split`), 0.5 by default.
+    pub fn split_ratio(&self) -> f32 {
+        self.split_ratio
+    }
+
+    /// Sets the share of the width the markdown takes beside the rendered
+    /// note, from 0.2 to 0.8; the divider between them drags it, and a
+    /// double click on it puts it back to 0.5. A host keeps it between
+    /// starts.
+    pub fn set_split_ratio(&mut self, ratio: f32) {
+        let min = divider::MIN_SHARE;
+        if ratio.is_finite() {
+            self.split_ratio = ratio.clamp(min, 1.0 - min);
+        }
     }
 
     /// Supplies the picture for images pointing at `url` (as written in
@@ -444,15 +468,18 @@ impl Editor {
             editor: self,
             pane: Pane::Text,
         });
-        // In Split, the rendered pane beside it; always a row, so the
-        // surface keeps its place.
-        let preview = (self.mode == Mode::Split).then(|| {
+        // In Split, the divider and the rendered pane beside it; always a
+        // row, so the surface keeps its place.
+        let split = self.mode == Mode::Split;
+        let divider = split.then(|| Element::from(divider::Divider { editor: self }));
+        let preview = split.then(|| {
             Element::new(surface::Surface {
                 editor: self,
                 pane: Pane::Preview,
             })
         });
         let text = iced::widget::row![surface]
+            .push(divider)
             .push(preview)
             .height(iced::Length::Fill);
         iced::widget::column![text].push(self.find_bar()).into()

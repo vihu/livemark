@@ -115,11 +115,11 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
     }
 
     fn size(&self) -> Size<Length> {
-        Size::new(Length::Fill, Length::Fill)
+        Size::new(self.width(), Length::Fill)
     }
 
     fn layout(&mut self, tree: &mut Tree, _renderer: &iced::Renderer, limits: &layout::Limits) {
-        let size = limits.resolve(Length::Fill, Length::Fill, Size::ZERO);
+        let size = limits.resolve(self.width(), Length::Fill, Size::ZERO);
         let lines = match self.pane {
             Pane::Text => &self.editor.lines,
             Pane::Preview => &self.editor.preview.lines,
@@ -496,6 +496,17 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 }
 
 impl Surface<'_> {
+    /// Its share of the row: in Split, the text's split ratio (in
+    /// thousandths) or the rest.
+    fn width(&self) -> Length {
+        let text = (self.editor.split_ratio * 1000.0).round() as u16;
+        match self.pane {
+            _ if self.editor.mode != super::Mode::Split => Length::Fill,
+            Pane::Text => Length::FillPortion(text),
+            Pane::Preview => Length::FillPortion(1000 - text),
+        }
+    }
+
     /// Where the text goes in the widget's `bounds`.
     fn text_area(&self, bounds: Rectangle) -> Rectangle {
         text_area(bounds, self.editor.zoom())

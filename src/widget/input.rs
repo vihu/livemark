@@ -38,6 +38,7 @@ impl Editor {
             input,
             Input::Scroll(..)
                 | Input::ScrollTo(..)
+                | Input::SplitRatio(_)
                 | Input::ZoomSteps(_)
                 | Input::ZoomBy(_)
                 | Input::Shift(_)
@@ -113,6 +114,11 @@ impl Editor {
                 self.scroll_to(pane, t);
                 self.preview.leader.set(pane);
                 self.follow();
+                return Task::none();
+            }
+            // Each pane keeps its top line as the widths change.
+            Input::SplitRatio(ratio) => {
+                self.set_split_ratio(ratio);
                 return Task::none();
             }
             Input::ZoomSteps(steps) => {

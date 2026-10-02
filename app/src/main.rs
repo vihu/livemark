@@ -190,6 +190,7 @@ impl App {
         self.settings = settings;
         self.settings_file = file;
         self.editor.set_zoom(self.settings.zoom);
+        self.editor.set_split_ratio(self.settings.split);
         self.settings.recent.retain(|path| path.exists());
         if let Some(path) = self.path.clone() {
             self.settings.opened(&path);
@@ -198,12 +199,25 @@ impl App {
         self
     }
 
-    /// The editor's zoom remembered when it changed (keys, Ctrl+wheel).
+    /// The editor's zoom remembered when it changed (keys, Ctrl+wheel),
+    /// and where the side by side divider is: kept with the next write (at
+    /// the latest on closing), not once per step of a drag.
     fn remember_zoom(&mut self) {
+        self.settings.split = self.editor.split_ratio();
         if self.editor.zoom() != self.settings.zoom {
             self.settings.zoom = self.editor.zoom();
             self.remember();
         }
+    }
+
+    /// A new editor for `text`, drawn as the current one: its zoom, mode
+    /// and split ratio carried over.
+    fn editor_for(&self, text: String) -> Editor {
+        let mut editor = Editor::new(text);
+        editor.set_zoom(self.editor.zoom());
+        editor.set_mode(self.editor.mode());
+        editor.set_split_ratio(self.editor.split_ratio());
+        editor
     }
 
     /// Writes the settings, when there is a file for them; a failure only
@@ -253,10 +267,8 @@ impl App {
         match file::load(&path) {
             Ok(text) => {
                 let selection = self.editor.selection();
-                let mode = self.editor.mode();
-                self.editor = Editor::new(text);
+                self.editor = self.editor_for(text);
                 self.tried.clear();
-                self.editor.set_mode(mode);
                 self.editor.select(selection.anchor, selection.head);
                 self.saved = self.editor.version();
                 self.discarded = None;
@@ -425,7 +437,7 @@ impl App {
     fn load(&mut self, path: PathBuf) -> Task<Message> {
         match file::load(&path) {
             Ok(text) => {
-                self.editor = Editor::new(text);
+                self.editor = self.editor_for(text);
                 self.tried.clear();
                 self.saved = self.editor.version();
                 // Versions start again with a new editor.
@@ -449,7 +461,7 @@ impl App {
     /// An empty, untitled note in place of the current one.
     fn new_note(&mut self) -> Task<Message> {
         self.path = None;
-        self.editor = Editor::new(String::new());
+        self.editor = self.editor_for(String::new());
         self.tried.clear();
         self.saved = self.editor.version();
         self.discarded = None;
