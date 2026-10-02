@@ -14,7 +14,7 @@ use super::{App, Message, file};
 /// The sidebar's width.
 const WIDTH: f32 = 260.0;
 
-/// The most notes listed; Ctrl+P and search reach the rest.
+/// The most notes listed; the search (Ctrl+P) reaches the rest.
 const SHOWN: usize = 500;
 
 /// The tags listed before "All N tags".
@@ -96,6 +96,7 @@ impl App {
             },
             VaultMessage::Picked(None) => {}
             VaultMessage::Show(shown) => {
+                self.listing = None;
                 let again = matches!(shown, Shown::Tag(_)) && shown == self.shown;
                 self.shown = if again { Shown::All } else { shown };
             }
@@ -146,7 +147,7 @@ impl App {
     /// A `#tag` clicked in a note: the sidebar shows the notes with it.
     pub(crate) fn show_tag(&mut self, tag: &str) {
         if self.vault.is_some() {
-            self.search = None;
+            self.listing = None;
             self.shown = Shown::Tag(tag.to_lowercase());
         }
     }
@@ -242,27 +243,44 @@ impl App {
         .push(fold)
         .push(manage)
         .spacing(2);
+        // The notes shown, or every match the search listed (Ctrl+Enter).
+        let (said, clear, notes): (String, Option<Message>, Element<'_, Message>) =
+            match &self.listing {
+                Some(listing) => (
+                    super::search_view::listing_heading(listing),
+                    Some(Message::Search(super::search::SearchMessage::Clear)),
+                    self.listing_view(listing),
+                ),
+                None => {
+                    let current = self.path.clone();
+                    (
+                        self.shown.heading(),
+                        (self.shown != Shown::All)
+                            .then_some(Message::Vault(VaultMessage::Show(Shown::All))),
+                        lazy(
+                            (vault.generation, self.shown.clone(), current),
+                            |(_, shown, current)| notes(vault, shown, current.as_deref()),
+                        )
+                        .into(),
+                    )
+                }
+            };
         let heading = row![
-            text(self.shown.heading())
+            text(said)
                 .size(12)
                 .style(text::secondary)
                 .width(Length::Fill),
         ]
-        .push((self.shown != Shown::All).then(|| {
+        .push(clear.map(|clear| {
             button(text("Clear").size(12))
                 .padding([0, 4])
                 .style(|theme: &Theme, _| button::Style {
                     text_color: theme.palette().primary.base.color,
                     ..button::Style::default()
                 })
-                .on_press(Message::Vault(VaultMessage::Show(Shown::All)))
+                .on_press(clear)
         }))
         .align_y(iced::Center);
-        let current = self.path.clone();
-        let notes = lazy(
-            (vault.generation, self.shown.clone(), current),
-            |(_, shown, current)| notes(vault, shown, current.as_deref()),
-        );
         let header = row![
             text(vault.name()).size(15).font(iced::Font {
                 weight: iced::font::Weight::Bold,
@@ -274,22 +292,17 @@ impl App {
         ]
         .spacing(8)
         .align_y(iced::Center);
-        // While searching, the search in place of the tags and notes.
-        let body: Element<'_, Message> = match &self.search {
-            Some(search) => self.search_view(search),
-            None => column![
-                tags,
-                rule::horizontal(1),
-                heading,
-                scrollable(notes).height(Length::Fill)
-            ]
-            .push(
-                self.linked_from()
-                    .map(|linked| column![rule::horizontal(1), linked].spacing(8)),
-            )
-            .spacing(8)
-            .into(),
-        };
+        let body = column![
+            tags,
+            rule::horizontal(1),
+            heading,
+            scrollable(notes).height(Length::Fill)
+        ]
+        .push(
+            self.linked_from()
+                .map(|linked| column![rule::horizontal(1), linked].spacing(8)),
+        )
+        .spacing(8);
         // How much is not committed yet: the user's git keeps the vault.
         let status = vault.uncommitted().map(|count| {
             let line = match count {
@@ -368,7 +381,7 @@ fn notes(
         list = list.push(
             container(
                 text(format!(
-                    "{} more: Ctrl+P or search finds them",
+                    "{} more: the search (Ctrl+P) finds them",
                     count - SHOWN
                 ))
                 .size(11)

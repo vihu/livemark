@@ -126,14 +126,15 @@ impl App {
             });
         // The toolbar always on top (PLAN-002).
         let toolbar = container(
-            row![file, Space::new().width(8),]
-                .push(
-                    // No formatting the note while it is out of sight.
-                    self.manager
-                        .is_none()
-                        .then(|| self.editor.toolbar().map(Message::Editor)),
-                )
-                .align_y(iced::Center),
+            row![
+                file,
+                self.editor.toolbar_tools().map(Message::Editor),
+                // The search field centred between the halves.
+                self.search_field(),
+                self.editor.toolbar_modes().map(Message::Editor),
+            ]
+            .spacing(8)
+            .align_y(iced::Center),
         )
         .padding([6, 12]);
         // The open menu floats over the text; a press anywhere else closes
@@ -152,7 +153,7 @@ impl App {
         let sidebar = self
             .sidebar()
             .unwrap_or_else(|| Space::new().width(0).into());
-        let quick = self.quick_view();
+        let search = self.search_panel();
         // The Undo after a tag edit, low over the note.
         let toast = self.undo_toast().map(|toast| {
             container(toast)
@@ -169,7 +170,7 @@ impl App {
             toolbar,
             stack![row![sidebar, editor]]
                 .push(menu)
-                .push(quick)
+                .push(search)
                 .push(toast)
         ]
         .push(bar.map(|bar| container(bar).padding(12)))
@@ -292,10 +293,8 @@ impl App {
             match key.to_latin(physical_key)? {
                 'n' => Some(Message::New),
                 'o' => Some(Message::Open),
-                'p' => Some(Message::Quick(super::quick::QuickMessage::Open)),
-                'f' if modifiers.shift() => {
-                    Some(Message::Search(super::search::SearchMessage::Open))
-                }
+                // Ctrl+Shift+F as well, as the sidebar's search had it.
+                'p' | 'f' => Some(Message::Search(super::search::SearchMessage::Open)),
                 's' => Some(Message::Save {
                     choose: modifiers.shift(),
                 }),
@@ -312,32 +311,25 @@ impl App {
             window::Event::FileDropped(file) => Some(Message::Dropped(file)),
             _ => None,
         });
-        // Quick open's keys: its field leaves Up, Down and Escape alone.
-        let quick = self.quick.is_some().then(|| {
-            use super::quick::QuickMessage;
-            keyboard::listen().filter_map(|event| {
-                let keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(named),
-                    ..
-                } = event
-                else {
-                    return None;
-                };
-                match named {
-                    keyboard::key::Named::ArrowUp => Some(Message::Quick(QuickMessage::Move(-1))),
-                    keyboard::key::Named::ArrowDown => Some(Message::Quick(QuickMessage::Move(1))),
-                    keyboard::key::Named::Escape => Some(Message::Quick(QuickMessage::Close)),
-                    _ => None,
-                }
-            })
-        });
-        // Escape in the search field (it leaves Escape alone) closes it.
-        let search = (self.search.is_some() && self.quick.is_none()).then(|| {
+        // The search's keys: its field leaves Up, Down and Escape alone,
+        // and the modifiers say whether Enter lists.
+        let search = self.search.is_some().then(|| {
+            use super::search::SearchMessage;
             keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                    key: keyboard::Key::Named(named),
                     ..
-                } => Some(Message::Search(super::search::SearchMessage::Close)),
+                } => match named {
+                    keyboard::key::Named::ArrowUp => Some(Message::Search(SearchMessage::Move(-1))),
+                    keyboard::key::Named::ArrowDown => {
+                        Some(Message::Search(SearchMessage::Move(1)))
+                    }
+                    keyboard::key::Named::Escape => Some(Message::Search(SearchMessage::Close)),
+                    _ => None,
+                },
+                keyboard::Event::ModifiersChanged(modifiers) => {
+                    Some(Message::Search(SearchMessage::Modifiers(modifiers)))
+                }
                 _ => None,
             })
         });
@@ -365,7 +357,6 @@ impl App {
         Subscription::batch(
             [keys, close, focus, rename]
                 .into_iter()
-                .chain(quick)
                 .chain(search)
                 .chain(asking),
         )

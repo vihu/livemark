@@ -1,5 +1,5 @@
 //! The vault's flows, without a window (PLAN-004): opening one, new
-//! notes, quick open, search, tags and links.
+//! notes, tags and links (the search field's in `search_tests.rs`).
 use super::tests::write;
 use super::{App, Message};
 
@@ -122,127 +122,8 @@ fn ctrl_n_in_a_vault_names_a_note_and_opens_it_ready_to_type() {
 }
 
 #[test]
-fn quick_open_finds_notes_by_title_and_tag_and_opens_one() {
-    use crate::quick::QuickMessage;
-    use crate::sidebar::VaultMessage;
-    let dir = std::env::temp_dir().join(format!("livemark-quick-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    write(
-        &dir.join("a.md"),
-        "---\ntitle: Lisbon hotels\ntags: [travel]\n---\n",
-        0,
-    );
-    write(
-        &dir.join("b.md"),
-        "---\ntitle: Lisbon conference\ntags: [work]\n---\n",
-        10,
-    );
-    write(&dir.join("c.md"), "# Standup\n", 20);
-    let mut app = App::open(None, None);
-    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
-    let quick = |app: &mut App, message| {
-        let _ = app.update(Message::Quick(message));
-    };
-    let titles = |app: &App| -> Vec<String> {
-        app.quick
-            .as_ref()
-            .unwrap()
-            .results
-            .iter()
-            .map(|r| r.0.clone())
-            .collect()
-    };
-    quick(&mut app, QuickMessage::Open);
-    assert_eq!(
-        titles(&app),
-        ["Standup", "Lisbon conference", "Lisbon hotels"],
-        "recent first"
-    );
-    let _ = app.view();
-    quick(&mut app, QuickMessage::Query("lis".into()));
-    assert_eq!(titles(&app), ["Lisbon conference", "Lisbon hotels"]);
-    quick(&mut app, QuickMessage::Query("lis #trav".into()));
-    assert_eq!(titles(&app), ["Lisbon hotels"]);
-    quick(&mut app, QuickMessage::Query("lis".into()));
-    quick(&mut app, QuickMessage::Move(1));
-    quick(&mut app, QuickMessage::Move(5));
-    assert_eq!(app.quick.as_ref().unwrap().selected, 1, "stays on the last");
-    quick(&mut app, QuickMessage::Choose(None));
-    assert!(app.quick.is_none());
-    assert_eq!(
-        app.editor.text(),
-        "---\ntitle: Lisbon hotels\ntags: [travel]\n---\n"
-    );
-    // Escape closes without opening anything.
-    quick(&mut app, QuickMessage::Open);
-    quick(&mut app, QuickMessage::Close);
-    assert!(app.quick.is_none());
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
-fn search_finds_notes_by_their_words_and_opens_at_the_match() {
-    use crate::search::SearchMessage;
-    use crate::sidebar::VaultMessage;
-    let dir = std::env::temp_dir().join(format!("livemark-search-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    write(
-        &dir.join("a.md"),
-        "---\ntitle: Lisbon hotels\ntags: [travel]\n---\nThe hotel near Alfama.\nBook the HOTEL by Friday.\n",
-        0,
-    );
-    write(
-        &dir.join("b.md"),
-        "# Conference\nThe hotel is paid by work. #work\n",
-        10,
-    );
-    write(&dir.join("c.md"), "# Standup\nnothing here\n", 20);
-    let mut app = App::open(None, None);
-    let search = |app: &mut App, message| {
-        let _ = app.update(Message::Search(message));
-    };
-    // Outside a vault there is nothing to search.
-    search(&mut app, SearchMessage::Open);
-    assert!(app.search.is_none());
-    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
-    search(&mut app, SearchMessage::Open);
-    search(&mut app, SearchMessage::Query("hotel".into()));
-    let found = |app: &App| -> Vec<(String, usize)> {
-        let search = app.search.as_ref().unwrap();
-        search
-            .hits
-            .iter()
-            .map(|h| (h.title.clone(), h.lines.len()))
-            .collect()
-    };
-    // The title in its front matter is a line too.
-    assert_eq!(
-        found(&app),
-        [
-            ("Conference".to_owned(), 1),
-            ("Lisbon hotels".to_owned(), 3)
-        ]
-    );
-    let _ = app.view();
-    // Every word, and a tag.
-    search(&mut app, SearchMessage::Query("hotel friday".into()));
-    assert_eq!(found(&app), [("Lisbon hotels".to_owned(), 3)]);
-    search(&mut app, SearchMessage::Query("hotel #wo".into()));
-    assert_eq!(found(&app), [("Conference".to_owned(), 1)]);
-    // Enter: the first match, selected.
-    search(&mut app, SearchMessage::Query("friday".into()));
-    search(&mut app, SearchMessage::First);
-    assert_eq!(
-        app.editor.text()[app.editor.selection().range()].to_owned(),
-        "Friday"
-    );
-    search(&mut app, SearchMessage::Close);
-    assert!(app.search.is_none());
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
 fn a_tag_clicked_in_a_note_filters_the_sidebar() {
+    use crate::search::SearchMessage;
     use crate::sidebar::VaultMessage;
     let dir = std::env::temp_dir().join(format!("livemark-tag-click-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -252,10 +133,18 @@ fn a_tag_clicked_in_a_note_filters_the_sidebar() {
     app.show_tag("travel");
     assert_eq!(app.shown, crate::sidebar::Shown::All);
     let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
-    let _ = app.update(Message::Search(crate::search::SearchMessage::Open));
+    // Matches listed in the sidebar (Ctrl+Enter) give way to the tag's notes.
+    for message in [
+        SearchMessage::Query("plans".into()),
+        SearchMessage::Modifiers(iced::keyboard::Modifiers::COMMAND),
+        SearchMessage::Choose(None),
+    ] {
+        let _ = app.update(Message::Search(message));
+    }
+    assert!(app.listing.is_some());
     app.show_tag("Travel");
     assert_eq!(app.shown, crate::sidebar::Shown::Tag("travel".into()));
-    assert!(app.search.is_none(), "back to the notes");
+    assert!(app.listing.is_none(), "back to the notes");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

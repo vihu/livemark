@@ -27,8 +27,8 @@ mod manager_view;
 mod note;
 mod opening;
 mod pictures;
-mod quick;
 mod search;
+mod search_view;
 mod settings;
 mod sidebar;
 mod tag_actions;
@@ -153,10 +153,10 @@ struct App {
     kept_apart: Vec<(String, String)>,
     /// The title being typed for a new note in the vault.
     naming: Option<String>,
-    /// Quick open (Ctrl+P), while it is open.
-    quick: Option<quick::Quick>,
-    /// Search across the vault (Ctrl+Shift+F), while it is open.
+    /// The search field's results (Ctrl+P), while they show.
     search: Option<search::Search>,
+    /// Every match listed in the sidebar (Ctrl+Enter), until cleared.
+    listing: Option<search::Listing>,
     /// What the editor was completing when choices were last offered.
     completing: Option<livemark::widget::Completing>,
 }
@@ -206,13 +206,11 @@ enum Message {
     Theme(settings::Theme),
     /// The vault and its sidebar.
     Vault(sidebar::VaultMessage),
-    /// Quick open.
-    Quick(quick::QuickMessage),
     /// A tag's menu and what it does.
     Tag(tag_actions::TagMessage),
     /// The tag manager.
     Manager(manager::ManagerMessage),
-    /// Search across the vault.
+    /// The search field.
     Search(search::SearchMessage),
 }
 
@@ -255,8 +253,8 @@ impl App {
             manager: None,
             kept_apart: Vec::new(),
             naming: None,
-            quick: None,
             search: None,
+            listing: None,
             completing: None,
         }
         .with_images()
@@ -340,12 +338,14 @@ impl App {
             self.menu = false;
         }
         match message {
+            // The note is out of sight behind the tag manager: its toolbar
+            // does nothing meanwhile.
+            Message::Editor(_) if self.manager.is_some() => {}
             Message::Editor(message) if message.pasted_image().is_some() => {
                 return self.paste_picture(message.pasted_image().unwrap_or_default());
             }
             Message::Dropped(file) => return self.dropped(file),
             Message::Vault(message) => return self.vault_update(message),
-            Message::Quick(message) => return self.quick_update(message),
             Message::Tag(message) => return self.tag_update(message),
             Message::Manager(message) => return self.manager_update(message),
             Message::Search(message) => return self.search_update(message),
@@ -517,6 +517,8 @@ fn open_link(link: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod manager_tests;
+#[cfg(test)]
+mod search_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

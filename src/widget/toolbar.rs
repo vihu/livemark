@@ -2,7 +2,7 @@
 //! groups, and the modes as a switch at the right edge, named and
 //! explained in their tooltips. Each button runs its key's command and
 //! gives the keyboard back to the text. A host shows it where it likes,
-//! with its own items around it.
+//! with its own items around it, or its two halves with its own between.
 use iced::widget::{Space, button, container, row, text, tooltip};
 use iced::{Background, Border, Element, Length, Theme};
 
@@ -17,6 +17,18 @@ impl Editor {
     /// width it is given. Opt-in: nothing shows it unless the host puts it
     /// in its view.
     pub fn toolbar(&self) -> Element<'_, Message> {
+        row![
+            self.toolbar_tools(),
+            Space::new().width(Length::Fill),
+            self.toolbar_modes()
+        ]
+        .width(Length::Fill)
+        .align_y(iced::Center)
+        .into()
+    }
+
+    /// The toolbar's left half: the formatting and line prefix groups.
+    pub fn toolbar_tools(&self) -> Element<'_, Message> {
         let tool = |glyph: Glyph, hint: &'static str, key: Key| {
             tip(
                 button(icon(glyph, false))
@@ -50,6 +62,11 @@ impl Editor {
             tool(Glyph::Task, "Task list", Key::Block(Block::Task)),
             tool(Glyph::Quote, "Quote", Key::Block(Block::Quote)),
         ]);
+        row![format, blocks].spacing(8).align_y(iced::Center).into()
+    }
+
+    /// The toolbar's right half: the mode switch.
+    pub fn toolbar_modes(&self) -> Element<'_, Message> {
         let mode = |glyph: Glyph, label: &'static str, hint: &'static str, mode: Mode| {
             let on = self.mode == mode;
             tip(
@@ -64,7 +81,7 @@ impl Editor {
                 hint,
             )
         };
-        let modes = group(vec![
+        group(vec![
             mode(
                 Glyph::Live,
                 "Live preview",
@@ -83,12 +100,7 @@ impl Editor {
                 "Markdown on the left, the rendered note on the right, scrolled together (Ctrl+Shift+E)",
                 Mode::Split,
             ),
-        ]);
-        row![format, blocks, Space::new().width(Length::Fill), modes]
-            .spacing(8)
-            .width(Length::Fill)
-            .align_y(iced::Center)
-            .into()
+        ])
     }
 }
 

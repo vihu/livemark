@@ -83,7 +83,7 @@ pub(crate) fn link_choices(vault: &Vault, from: &Path, query: &str) -> Vec<Choic
         .iter()
         .enumerate()
         .filter(|(_, note)| note.path != from)
-        .filter_map(|(rank, note)| Some((crate::quick::score(&note.title, query)?, rank, note)))
+        .filter_map(|(rank, note)| Some((crate::search::score(&note.title, query)?, rank, note)))
         .collect();
     found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     found

@@ -62,12 +62,13 @@ notes in about 0.1 s) and read again when the window comes back. In a
 vault Ctrl+N asks for a title and makes `2026-10-02-lisbon-hotels.md`
 (the date, then the title in lowercase with hyphens; `-2` when taken) with
 front matter for its title, tags and date; the file keeps its name when
-the title changes. Ctrl+P opens a note by typing part of its title (most
-recent first; `#travel` narrows to a tag; Up, Down, Enter, Escape);
-outside a vault it lists the recent files. Ctrl+Shift+F searches every
-note in the sidebar: all the words, in any case, `#tag` to narrow; each
-note with its matching lines, a click opening it with the match selected
-(Enter: the first one). Typing `[[` lists notes by title and puts in a
+the title changes. The search field in the toolbar's centre (Ctrl+P, or
+Ctrl+Shift+F) finds notes by part of their title (most recent first among
+equals), lines in the other notes with all the words (any case), and tags;
+`#travel` narrows to a tag. Up and Down choose; Enter opens a note (a line
+with its match selected) or shows a tag's notes; Escape closes; Ctrl+Enter
+lists every matching note in the sidebar, each with its lines, until Clear.
+Outside a vault it finds the recent files by name. Typing `[[` lists notes by title and puts in a
 normal markdown link to the one chosen (`[Lisbon hotels](2026-10-02-lisbon-hotels.md)`,
 so links work in the git web UI too); typing `#` and a letter lists the
 vault's tags. Ctrl+click on a link to a note opens it here, and the
@@ -111,6 +112,8 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | Double, triple click | Selects a word, a line; dragging extends by words or lines |
 | Ctrl+click on a link, Alt+Enter in one | Opens it (web and mail links) |
 | Ctrl+click on a `#tag`, Alt+Enter in one | Shows the vault's notes with that tag |
+| Ctrl+P (or Ctrl+Shift+F) | The app's search field: notes, lines and tags; Ctrl+Enter there lists every match in the sidebar |
+| F2 | In the app, renames the tag the sidebar shows |
 | Click on a checkbox | Checks or clears the task |
 
 Markers (`**`, `#`, `[`, `](url)`) stay hidden until the caret touches
@@ -186,7 +189,8 @@ edits; `Editor::version` changes on every edit and comes back with undo, so
 compare it with the value from the last save to know when to autosave.
 `Editor::toolbar` is a row of buttons (bold, italic, code, link, heading,
 list, task, quote, the mode) to show where the host likes; each runs its
-key's command. A paste with no text but a picture comes to the host as
+key's command. `Editor::toolbar_tools` and `Editor::toolbar_modes` are its
+two halves, for a host that puts its own items between them. A paste with no text but a picture comes to the host as
 `Message::pasted_image` (PNG bytes); keep it and answer with
 `Editor::insert_text`. `Message::tag` is a `#tag` the user Ctrl+clicked (drawn as a pill), for the
 host to show. `Editor::completing` says what is typed after `[[` or a tag's `#`;

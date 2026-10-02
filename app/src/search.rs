@@ -1,37 +1,83 @@
-//! Search across the vault (PLAN-004 answer 5): Ctrl+Shift+F, in the
-//! sidebar. Every word must be in a note (any case); `#tag` words narrow
-//! to notes with a tag starting so. Each note with its matching lines; a
-//! click opens it with the match selected. No index: the notes are in
-//! memory, a lowercase copy of each kept for this.
+//! Search (PLAN-005): one field in the toolbar's centre, Ctrl+P. Results
+//! drop down in three groups: notes whose title matches (fuzzily, the most
+//! recent first among equals), lines in other notes with every word, and
+//! tags. `#tag` words narrow to notes with a tag starting so. Up and Down
+//! choose; Enter opens a note (a line with its match selected) or shows a
+//! tag's notes in the sidebar; Escape closes; Ctrl+Enter lists every
+//! matching note in the sidebar, with its lines, in place of the notes.
+//! Outside a vault the field finds the recent files by name. No index: the
+//! notes are in memory, a lowercase copy of each kept for this.
 use std::ops::Range;
 use std::path::PathBuf;
 
-use iced::widget::text::{Ellipsis, Wrapping};
-use iced::widget::{Space, button, column, container, lazy, row, scrollable, text, text_input};
-use iced::{Element, Length, Task, Theme};
+use iced::{Task, keyboard};
 
-use super::vault::Vault;
+use super::vault::{Note, Vault};
 use super::{App, Message};
 
-/// The field's id, focused when search opens.
-const FIELD: iced::widget::Id = iced::widget::Id::new("livemark-search");
+/// The field's id, focused by Ctrl+P.
+pub(crate) const FIELD: iced::widget::Id = iced::widget::Id::new("livemark-search");
 
-/// The most notes listed, and lines a note.
-const NOTES: usize = 200;
+/// The most notes listed in the sidebar, and lines a note.
+pub(crate) const NOTES: usize = 200;
 const LINES: usize = 5;
+
+/// What the drop-down shows of each group; notes when nothing is typed.
+const TITLES: usize = 5;
+const IN_TEXT: usize = 5;
+const TAGS: usize = 4;
+const RECENT: usize = 8;
 
 /// What is shown around a match, in characters each side.
 const AROUND: usize = 40;
 
 #[derive(Debug, Clone)]
 pub enum SearchMessage {
+    /// Ctrl+P: the field focused, the results shown.
     Open,
     Query(String),
+    /// Up (-1) or Down (1).
+    Move(i32),
+    /// Enter (with Ctrl held, the list in the sidebar), or this result
+    /// clicked.
+    Choose(Option<usize>),
+    /// The modifiers held, while the results show.
+    Modifiers(keyboard::Modifiers),
     /// Open this note with this range selected.
     Go(PathBuf, Range<usize>),
-    /// Enter: the first match.
-    First,
     Close,
+    /// The sidebar's list of matches gone, the notes back.
+    Clear,
+}
+
+/// One result in the drop-down.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Found {
+    /// A note by its title: the title, the line under it, its file.
+    Note(String, String, PathBuf),
+    /// A line in a note: its title, the text around the match, the line's
+    /// number, the file and the match's range in it.
+    Line {
+        title: String,
+        snippet: String,
+        number: usize,
+        path: PathBuf,
+        range: Range<usize>,
+    },
+    /// A tag and how many notes have it.
+    Tag(String, usize),
+}
+
+/// The drop-down, while it shows.
+#[derive(Debug, Default)]
+pub struct Search {
+    pub query: String,
+    pub selected: usize,
+    pub found: Vec<Found>,
+    /// How many notes have every word and tag (Ctrl+Enter lists them).
+    pub count: usize,
+    /// Ctrl (Cmd on macOS) held: Enter lists.
+    command: bool,
 }
 
 /// A note that matched: its title, file and lines (number, the text
@@ -43,33 +89,117 @@ pub struct Hit {
     pub lines: Vec<(usize, String, Range<usize>)>,
 }
 
-#[derive(Debug, Default)]
-pub struct Search {
+/// Every match, listed in the sidebar (Ctrl+Enter) until cleared.
+#[derive(Debug)]
+pub struct Listing {
     pub query: String,
     pub hits: Vec<Hit>,
-    /// How many notes matched, past the ones listed too.
     pub count: usize,
-    /// Changes with every query, for the cached view.
-    generation: u64,
+    /// A new one for every listing, for the cached view.
+    pub generation: u64,
 }
 
-/// The notes of `vault` matching `query`, most recent first.
-pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
+/// The query's words and `#tag` prefixes, lowercase, `#` off.
+fn split(query: &str) -> (Vec<String>, Vec<String>) {
     let (tags, words): (Vec<String>, Vec<String>) = query
         .split_whitespace()
         .map(str::to_lowercase)
         .partition(|word| word.starts_with('#'));
+    let tags = tags
+        .into_iter()
+        .map(|tag| tag.trim_start_matches('#').to_owned())
+        .collect();
+    (words, tags)
+}
+
+/// Whether `note` has a tag starting with each of `tags`.
+fn tagged(note: &Note, tags: &[String]) -> bool {
+    tags.iter()
+        .all(|tag| note.tags.iter().any(|t| t.starts_with(tag.as_str())))
+}
+
+/// The drop-down's results for `query`, in its groups, and how many notes
+/// match.
+pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
+    let (words, tags) = split(query);
+    let wanted = words.join(" ");
+    let mut titles: Vec<(i32, usize, &Note)> = vault
+        .notes
+        .iter()
+        .enumerate()
+        .filter(|(_, note)| tagged(note, &tags))
+        .filter_map(|(rank, note)| Some((score(&note.title, &wanted)?, rank, note)))
+        .collect();
+    titles.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    titles.truncate(if words.is_empty() { RECENT } else { TITLES });
+    let mut found: Vec<Found> = titles
+        .iter()
+        .map(|(_, _, note)| {
+            let meta = note.created.clone().unwrap_or_default();
+            let meta = note.tags.iter().fold(meta, |line, tag| {
+                format!("{line}  #{tag}").trim_start().to_owned()
+            });
+            Found::Note(note.title.clone(), meta, note.path.clone())
+        })
+        .collect();
+    let (hits, count) = search(vault, query);
+    let lines = hits
+        .into_iter()
+        .filter(|hit| !titles.iter().any(|(_, _, note)| note.path == hit.path))
+        .filter_map(|hit| {
+            let (number, snippet, range) = hit.lines.into_iter().next()?;
+            Some(Found::Line {
+                title: hit.title,
+                snippet,
+                number,
+                path: hit.path,
+                range,
+            })
+        })
+        .take(IN_TEXT);
+    found.extend(lines);
+    let prefixes: Vec<&String> = words.iter().chain(&tags).collect();
+    if !prefixes.is_empty() {
+        let names = vault
+            .tags()
+            .into_iter()
+            .filter(|(tag, _)| prefixes.iter().any(|p| tag.starts_with(p.as_str())))
+            .take(TAGS)
+            .map(|(tag, count)| Found::Tag(tag, count));
+        found.extend(names);
+    }
+    (found, count)
+}
+
+/// The recent files whose names match `query`, outside a vault.
+fn find_recent(recent: &[PathBuf], query: &str) -> Vec<Found> {
+    let mut found: Vec<(i32, usize, Found)> = Vec::new();
+    for (rank, path) in recent.iter().enumerate() {
+        let name = path
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        if let Some(score) = score(&name, query) {
+            let folder = path
+                .parent()
+                .map_or_else(String::new, |p| p.display().to_string());
+            found.push((score, rank, Found::Note(name, folder, path.clone())));
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    found.into_iter().take(RECENT).map(|(_, _, f)| f).collect()
+}
+
+/// The notes of `vault` with every word and tag in `query`, most recent
+/// first, and how many there are.
+pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
+    let (words, tags) = split(query);
     if words.is_empty() && tags.is_empty() {
         return (Vec::new(), 0);
     }
     let mut hits = Vec::new();
     let mut count = 0;
     for note in &vault.notes {
-        let tagged = tags.iter().all(|tag| {
-            let tag = tag.trim_start_matches('#');
-            note.tags.iter().any(|t| t.starts_with(tag))
-        });
-        if !tagged || !words.iter().all(|word| note.lower.contains(word.as_str())) {
+        if !tagged(note, &tags) || !words.iter().all(|word| note.lower.contains(word.as_str())) {
             continue;
         }
         count += 1;
@@ -143,38 +273,87 @@ fn around(line: &str, at: usize) -> String {
     )
 }
 
+/// How well `query` matches `title`, fuzzily: its characters in order,
+/// more for runs, word starts and the title's start; `None` when they are
+/// not all there. An empty query matches everything equally.
+pub fn score(title: &str, query: &str) -> Option<i32> {
+    let title: Vec<char> = title.to_lowercase().chars().collect();
+    let mut score = 0;
+    let mut at = 0;
+    let mut last: Option<usize> = None;
+    for wanted in query.to_lowercase().chars().filter(|c| !c.is_whitespace()) {
+        let found = (at..title.len()).find(|&i| title[i] == wanted)?;
+        score += 1;
+        if last.is_some_and(|last| last + 1 == found) {
+            score += 4;
+        }
+        if found == 0 || !title[found - 1].is_alphanumeric() {
+            score += 3;
+        }
+        if found == 0 {
+            score += 2;
+        }
+        score -= (found - at).min(5) as i32 / 2;
+        last = Some(found);
+        at = found + 1;
+    }
+    Some(score)
+}
+
 impl App {
     pub(crate) fn search_update(&mut self, message: SearchMessage) -> Task<Message> {
         match message {
             SearchMessage::Open => {
-                if self.vault.is_none() {
-                    return Task::none();
-                }
                 self.menu = false;
-                self.quick = None;
-                if self.search.is_none() {
-                    self.search = Some(Search::default());
-                }
+                let query = self.search.take().map(|s| s.query).unwrap_or_default();
+                self.search = Some(Search {
+                    query,
+                    ..Search::default()
+                });
+                self.find();
                 return iced::widget::operation::focus(FIELD);
             }
             SearchMessage::Query(query) => {
-                if let (Some(search), Some(vault)) = (&mut self.search, &self.vault) {
-                    (search.hits, search.count) = self::search(vault, &query);
-                    search.query = query;
-                    search.generation += 1;
+                let search = self.search.get_or_insert_with(Search::default);
+                search.query = query;
+                search.selected = 0;
+                self.find();
+            }
+            SearchMessage::Move(step) => {
+                if let Some(search) = &mut self.search {
+                    let last = search.found.len().saturating_sub(1) as i32;
+                    search.selected = (search.selected as i32 + step).clamp(0, last) as usize;
                 }
             }
-            SearchMessage::First => {
-                let first = self.search.as_ref().and_then(|search| {
-                    let hit = search.hits.first()?;
-                    let range = hit.lines.first().map_or(0..0, |line| line.2.clone());
-                    Some((hit.path.clone(), range))
-                });
-                if let Some((path, range)) = first {
-                    return self.search_update(SearchMessage::Go(path, range));
+            SearchMessage::Modifiers(modifiers) => {
+                if let Some(search) = &mut self.search {
+                    search.command = modifiers.command();
                 }
+            }
+            SearchMessage::Choose(None) if self.search.as_ref().is_some_and(|s| s.command) => {
+                return self.list();
+            }
+            SearchMessage::Choose(at) => {
+                let Some(search) = self.search.take() else {
+                    return Task::none();
+                };
+                let chosen = search.found.into_iter().nth(at.unwrap_or(search.selected));
+                let task = match chosen {
+                    Some(Found::Note(_, _, path)) => self.update(Message::Opened(Some(path))),
+                    Some(Found::Line { path, range, .. }) => {
+                        return self.search_update(SearchMessage::Go(path, range));
+                    }
+                    Some(Found::Tag(tag, _)) => {
+                        self.listing = None;
+                        self.shown = super::sidebar::Shown::Tag(tag);
+                        Task::none()
+                    }
+                    None => Task::none(),
+                };
+                return Task::batch([task, livemark::widget::Editor::focus()]);
             }
             SearchMessage::Go(path, range) => {
+                self.search = None;
                 let task = self.update(Message::Opened(Some(path.clone())));
                 if self.path.as_ref() == Some(&path) {
                     self.editor.select(range.start, range.end);
@@ -185,97 +364,46 @@ impl App {
                 self.search = None;
                 return livemark::widget::Editor::focus();
             }
+            SearchMessage::Clear => self.listing = None,
         }
         Task::none()
     }
 
-    /// The sidebar while searching: the field and the matches.
-    pub(crate) fn search_view<'a>(&'a self, search: &'a Search) -> Element<'a, Message> {
-        let field = row![
-            text_input("Search notes, #tag to narrow", &search.query)
-                .id(FIELD)
-                .on_input(|query| Message::Search(SearchMessage::Query(query)))
-                .on_submit(Message::Search(SearchMessage::First))
-                .padding([6, 8]),
-            button(text("\u{d7}").size(16))
-                .padding([2, 8])
-                .style(button::text)
-                .on_press(Message::Search(SearchMessage::Close)),
-        ]
-        .spacing(4)
-        .align_y(iced::Center);
-        let summary = match (search.query.trim().is_empty(), search.count) {
-            (true, _) => String::new(),
-            (false, 0) => "No note matches".into(),
-            (false, 1) => "1 note".into(),
-            (false, n) if n > NOTES => format!("{n} notes, the {NOTES} most recent shown"),
-            (false, n) => format!("{n} notes"),
+    /// The drop-down's results for its query.
+    fn find(&mut self) {
+        let Some(search) = &mut self.search else {
+            return;
         };
-        let current = self.path.clone();
-        let hits = lazy((search.generation, current), move |(_, current)| {
-            results(&search.hits, current.as_deref())
-        });
-        column![
-            field,
-            text(summary).size(11).style(text::secondary),
-            scrollable(hits).height(Length::Fill),
-        ]
-        .spacing(8)
-        .into()
+        (search.found, search.count) = match &self.vault {
+            Some(vault) => find(vault, &search.query),
+            None => (find_recent(&self.settings.recent, &search.query), 0),
+        };
+        search.selected = search.selected.min(search.found.len().saturating_sub(1));
     }
-}
 
-/// The matches: each note's title, then its lines, every one a link to
-/// the match.
-fn results(hits: &[Hit], current: Option<&std::path::Path>) -> Element<'static, Message> {
-    let mut list = column![].spacing(2);
-    for hit in hits {
-        let first = hit.lines.first().map_or(0..0, |line| line.2.clone());
-        let on = current == Some(hit.path.as_path());
-        list = list.push(
-            button(
-                text(hit.title.clone())
-                    .size(14)
-                    .wrapping(Wrapping::None)
-                    .ellipsis(Ellipsis::End),
-            )
-            .width(Length::Fill)
-            .padding([4, 8])
-            .style(move |theme: &Theme, status| super::sidebar::choice(theme, status, on))
-            .on_press(Message::Search(SearchMessage::Go(hit.path.clone(), first))),
-        );
-        for (number, snippet, range) in &hit.lines {
-            list = list.push(
-                button(
-                    row![
-                        text(number.to_string())
-                            .size(11)
-                            .width(28)
-                            .style(text::secondary),
-                        text(snippet.clone())
-                            .size(12)
-                            .wrapping(Wrapping::None)
-                            .ellipsis(Ellipsis::End),
-                    ]
-                    .spacing(4),
-                )
-                .width(Length::Fill)
-                .padding([2, 8])
-                .style(|theme: &Theme, status| super::sidebar::choice(theme, status, false))
-                .on_press(Message::Search(SearchMessage::Go(
-                    hit.path.clone(),
-                    range.clone(),
-                ))),
-            );
+    /// Ctrl+Enter: every match listed in the sidebar.
+    fn list(&mut self) -> Task<Message> {
+        if self.vault.is_none() {
+            return Task::none();
         }
-        list = list.push(Space::new().height(4));
+        let (Some(search), Some(vault)) = (self.search.take(), &self.vault) else {
+            return Task::none();
+        };
+        let (hits, count) = self::search(vault, &search.query);
+        let generation = self.listing.as_ref().map_or(0, |l| l.generation + 1);
+        self.listing = Some(Listing {
+            query: search.query,
+            hits,
+            count,
+            generation,
+        });
+        livemark::widget::Editor::focus()
     }
-    container(list).into()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{around, lines};
+    use super::{around, lines, score};
 
     #[test]
     fn matching_lines_carry_their_range_and_some_context() {
@@ -295,5 +423,15 @@ mod tests {
         // A line whose lowercase is longer: the whole line is the range.
         let text = "\u{130}stanbul hotel\n";
         assert_eq!(lines(text, &["hotel".to_owned()])[0].2, 0..text.len() - 1);
+    }
+
+    #[test]
+    fn fuzzy_matches_prefer_runs_and_word_starts() {
+        assert!(score("Lisbon hotels", "lh").is_some());
+        assert!(score("Lisbon hotels", "hl x").is_none());
+        // A run at a word's start beats letters scattered through.
+        assert!(score("Lisbon hotels", "hot") > score("Shopping in Oslo, Tallinn", "hot"));
+        assert!(score("Standup", "sta") > score("Lisbon status", "sta"));
+        assert_eq!(score("Anything", ""), Some(0));
     }
 }
