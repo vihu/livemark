@@ -130,8 +130,10 @@ struct App {
     menu: bool,
     /// The vault open, if any (PLAN-004).
     vault: Option<vault::Vault>,
-    /// The tag the sidebar's notes are filtered by.
-    tag: Option<String>,
+    /// Which notes the sidebar lists.
+    shown: sidebar::Shown,
+    /// Whether the sidebar lists every tag, not only the top eight.
+    all_tags: bool,
     /// The title being typed for a new note in the vault.
     naming: Option<String>,
     /// Quick open (Ctrl+P), while it is open.
@@ -222,7 +224,8 @@ impl App {
             waiting_picture: None,
             menu: false,
             vault: None,
-            tag: None,
+            shown: sidebar::Shown::All,
+            all_tags: false,
             naming: None,
             quick: None,
             search: None,

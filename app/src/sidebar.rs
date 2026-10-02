@@ -1,6 +1,7 @@
-//! The vault's sidebar (PLAN-004): its tags with counts, a click filtering
-//! the notes by one, and its notes, most recently changed first, a click
-//! opening one.
+//! The vault's sidebar (PLAN-004, PLAN-005): all notes, the untagged ones
+//! and the tags, a flat list, most used first (the top eight, then all),
+//! a click showing only their notes; the notes, most recently changed
+//! first, a click opening one.
 use std::path::PathBuf;
 
 use iced::widget::text::{Ellipsis, Wrapping};
@@ -16,6 +17,41 @@ const WIDTH: f32 = 260.0;
 /// The most notes listed; Ctrl+P and search reach the rest.
 const SHOWN: usize = 500;
 
+/// The tags listed before "All N tags".
+const TOP: usize = 8;
+
+/// A tag row's height, for the list's scrolling height.
+const ROW: f32 = 30.0;
+
+/// Which notes the sidebar lists.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub enum Shown {
+    #[default]
+    All,
+    /// The notes with this tag.
+    Tag(String),
+    /// The notes with no tag.
+    Untagged,
+}
+
+impl Shown {
+    fn keeps(&self, note: &super::vault::Note) -> bool {
+        match self {
+            Shown::All => true,
+            Shown::Tag(tag) => note.tags.iter().any(|t| t == tag),
+            Shown::Untagged => note.tags.is_empty(),
+        }
+    }
+
+    fn heading(&self) -> String {
+        match self {
+            Shown::All => "Notes".into(),
+            Shown::Tag(tag) => format!("Notes tagged #{tag}"),
+            Shown::Untagged => "Notes with no tag".into(),
+        }
+    }
+}
+
 /// What the vault's parts of the window ask for.
 #[derive(Debug, Clone)]
 pub enum VaultMessage {
@@ -23,9 +59,10 @@ pub enum VaultMessage {
     Open,
     /// The folder picked (`None`: the dialog was cancelled).
     Picked(Option<PathBuf>),
-    /// Show only the notes with this tag; the same again, or `None`, shows
-    /// all.
-    Tag(Option<String>),
+    /// Show these notes; the same tag again shows all.
+    Show(Shown),
+    /// "All N tags", or back to the top eight.
+    AllTags,
     /// Ctrl+N in a vault: ask for the new note's title.
     NewNote,
     /// The title typed so far.
@@ -53,14 +90,16 @@ impl App {
                     self.settings.vault = Some(vault.root.clone());
                     self.remember();
                     self.vault = Some(vault);
-                    self.tag = None;
+                    self.shown = Shown::All;
                 }
                 Err(error) => self.error = Some(error.to_string()),
             },
             VaultMessage::Picked(None) => {}
-            VaultMessage::Tag(tag) => {
-                self.tag = if tag == self.tag { None } else { tag };
+            VaultMessage::Show(shown) => {
+                let again = matches!(shown, Shown::Tag(_)) && shown == self.shown;
+                self.shown = if again { Shown::All } else { shown };
             }
+            VaultMessage::AllTags => self.all_tags = !self.all_tags,
             VaultMessage::NewNote => {
                 self.menu = false;
                 self.naming = Some(String::new());
@@ -108,7 +147,7 @@ impl App {
     pub(crate) fn show_tag(&mut self, tag: &str) {
         if self.vault.is_some() {
             self.search = None;
-            self.tag = Some(tag.to_lowercase());
+            self.shown = Shown::Tag(tag.to_lowercase());
         }
     }
 
@@ -122,42 +161,101 @@ impl App {
     /// The sidebar, when a vault is open.
     pub(crate) fn sidebar(&self) -> Option<Element<'_, Message>> {
         let vault = self.vault.as_ref()?;
-        let chip = |label: String, tag: Option<String>, on: bool| {
-            button(text(label).size(12))
-                .padding([3, 8])
-                .style(move |theme: &Theme, status| choice(theme, status, on))
-                .on_press(Message::Vault(VaultMessage::Tag(tag)))
-                .into()
+        let item = |mark: &'static str, name: String, count: usize, shown: Shown| {
+            let on = self.shown == shown;
+            button(
+                row![
+                    text(mark).size(14).width(16).style(text::secondary),
+                    text(name)
+                        .size(14)
+                        .width(Length::Fill)
+                        .wrapping(Wrapping::None)
+                        .ellipsis(Ellipsis::End),
+                    text(count.to_string()).size(12).style(text::secondary),
+                ]
+                .spacing(4)
+                .align_y(iced::Center),
+            )
+            .width(Length::Fill)
+            .padding([5, 8])
+            .style(move |theme: &Theme, status| choice(theme, status, on))
+            .on_press(Message::Vault(VaultMessage::Show(shown)))
         };
-        let mut chips: Vec<Element<'_, Message>> = vec![chip(
-            format!("All {}", vault.notes.len()),
-            None,
-            self.tag.is_none(),
-        )];
-        for (tag, count) in vault.tags() {
-            let on = self.tag.as_deref() == Some(tag.as_str());
-            chips.push(chip(format!("#{tag} {count}"), Some(tag), on));
-        }
-        // A few rows of tags; past about a dozen, they scroll.
-        let many = chips.len() > 12;
-        let tags = scrollable(row(chips).spacing(4).wrap().vertical_spacing(4)).height(if many {
-            Length::Fixed(132.0)
+        let untagged = vault.notes.iter().filter(|n| n.tags.is_empty()).count();
+        let all = vault.tags();
+        let listed = if self.all_tags {
+            all.len()
+        } else {
+            all.len().min(TOP)
+        };
+        let rows =
+            column(all[..listed].iter().map(|(tag, count)| {
+                item("#", tag.clone(), *count, Shown::Tag(tag.clone())).into()
+            }));
+        // All of them past the top eight scroll in eight rows' room.
+        let rows = scrollable(rows).height(if listed > TOP {
+            Length::Fixed(TOP as f32 * ROW)
         } else {
             Length::Shrink
         });
+        let fold = (all.len() > TOP).then(|| {
+            let label = if self.all_tags {
+                "Fewer tags".to_owned()
+            } else {
+                format!("All {} tags", all.len())
+            };
+            button(text(label).size(12).style(text::secondary))
+                .padding([4, 8])
+                .style(button::text)
+                .on_press(Message::Vault(VaultMessage::AllTags))
+        });
+        let tags = column![
+            item(" ", "All notes".into(), vault.notes.len(), Shown::All),
+            item(" ", "Untagged".into(), untagged, Shown::Untagged),
+            text("Tags").size(12).style(text::secondary),
+            rows,
+        ]
+        .push(fold)
+        .spacing(2);
+        let heading = row![
+            text(self.shown.heading())
+                .size(12)
+                .style(text::secondary)
+                .width(Length::Fill),
+        ]
+        .push((self.shown != Shown::All).then(|| {
+            button(text("Clear").size(12))
+                .padding([0, 4])
+                .style(|theme: &Theme, _| button::Style {
+                    text_color: theme.palette().primary.base.color,
+                    ..button::Style::default()
+                })
+                .on_press(Message::Vault(VaultMessage::Show(Shown::All)))
+        }))
+        .align_y(iced::Center);
         let current = self.path.clone();
-        let filter = self.tag.clone();
         let notes = lazy(
-            (vault.generation, filter, current),
-            |(_, filter, current)| notes(vault, filter.as_deref(), current.as_deref()),
+            (vault.generation, self.shown.clone(), current),
+            |(_, shown, current)| notes(vault, shown, current.as_deref()),
         );
-        let header = text(vault.name()).size(13).style(text::secondary);
+        let header = row![
+            text(vault.name()).size(15).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::new(livemark::fonts::PROSE)
+            }),
+            text(format!("{} notes", vault.notes.len()))
+                .size(12)
+                .style(text::secondary),
+        ]
+        .spacing(8)
+        .align_y(iced::Center);
         // While searching, the search in place of the tags and notes.
         let body: Element<'_, Message> = match &self.search {
             Some(search) => self.search_view(search),
             None => column![
                 tags,
                 rule::horizontal(1),
+                heading,
                 scrollable(notes).height(Length::Fill)
             ]
             .push(
@@ -193,13 +291,10 @@ impl App {
 /// The note list: titles and dates, the open note marked.
 fn notes(
     vault: &Vault,
-    tag: Option<&str>,
+    shown: &Shown,
     current: Option<&std::path::Path>,
 ) -> Element<'static, Message> {
-    let shown = vault
-        .notes
-        .iter()
-        .filter(|note| tag.is_none_or(|tag| note.tags.iter().any(|t| t == tag)));
+    let shown = vault.notes.iter().filter(|note| shown.keeps(note));
     let mut list = column![].spacing(1);
     let mut count = 0;
     for note in shown {

@@ -25,11 +25,12 @@ fn a_vault_opens_lists_its_notes_and_filters_by_tag() {
     assert!(app.sidebar().is_some());
     let _ = app.view();
     // A tag filters; the same tag again shows all.
-    let _ = app.update(Message::Vault(VaultMessage::Tag(Some("travel".into()))));
-    assert_eq!(app.tag.as_deref(), Some("travel"));
+    let travel = crate::sidebar::Shown::Tag("travel".into());
+    let _ = app.update(Message::Vault(VaultMessage::Show(travel.clone())));
+    assert_eq!(app.shown, travel);
     let _ = app.view();
-    let _ = app.update(Message::Vault(VaultMessage::Tag(Some("travel".into()))));
-    assert_eq!(app.tag, None);
+    let _ = app.update(Message::Vault(VaultMessage::Show(travel)));
+    assert_eq!(app.shown, crate::sidebar::Shown::All);
     // A note made elsewhere shows up when the window comes back.
     write(&dir.join("2026-10-03-agent.md"), "# From an agent\n", 20);
     let _ = app.update(Message::Focused);
@@ -249,11 +250,11 @@ fn a_tag_clicked_in_a_note_filters_the_sidebar() {
     let mut app = App::open(None, None);
     // Outside a vault, nothing to show.
     app.show_tag("travel");
-    assert_eq!(app.tag, None);
+    assert_eq!(app.shown, crate::sidebar::Shown::All);
     let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
     let _ = app.update(Message::Search(crate::search::SearchMessage::Open));
     app.show_tag("Travel");
-    assert_eq!(app.tag.as_deref(), Some("travel"));
+    assert_eq!(app.shown, crate::sidebar::Shown::Tag("travel".into()));
     assert!(app.search.is_none(), "back to the notes");
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -310,4 +311,54 @@ fn links_between_notes_are_offered_opened_and_listed_back() {
     assert_eq!(app.note_link("https://x.org/a.md"), None);
     assert_eq!(app.note_link("missing.md"), None);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_sidebar_lists_tags_flat_and_filters_untagged_notes() {
+    use crate::sidebar::{Shown, VaultMessage};
+    let dir = std::env::temp_dir().join(format!("livemark-flat-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for i in 0..10 {
+        write(
+            &dir.join(format!("t{i}.md")),
+            &format!("#tag{i} #common\n"),
+            i,
+        );
+    }
+    write(&dir.join("plain.md"), "no tags here\n", 20);
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let vault = app.vault.as_ref().unwrap();
+    assert_eq!(
+        vault.tags()[0],
+        ("common".to_owned(), 10),
+        "most used first"
+    );
+    let _ = app.view();
+    let _ = app.update(Message::Vault(VaultMessage::AllTags));
+    assert!(app.all_tags);
+    let _ = app.view();
+    let _ = app.update(Message::Vault(VaultMessage::Show(Shown::Untagged)));
+    assert_eq!(app.shown, Shown::Untagged);
+    let untagged: Vec<_> = vault_notes(&app);
+    assert_eq!(untagged, ["plain"], "titled by its file name");
+    // Clear: all again.
+    let _ = app.update(Message::Vault(VaultMessage::Show(Shown::All)));
+    assert_eq!(app.shown, Shown::All);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The titles of the notes the sidebar lists now.
+fn vault_notes(app: &App) -> Vec<String> {
+    let vault = app.vault.as_ref().unwrap();
+    vault
+        .notes
+        .iter()
+        .filter(|note| match &app.shown {
+            crate::sidebar::Shown::All => true,
+            crate::sidebar::Shown::Tag(tag) => note.tags.contains(tag),
+            crate::sidebar::Shown::Untagged => note.tags.is_empty(),
+        })
+        .map(|note| note.title.clone())
+        .collect()
 }
