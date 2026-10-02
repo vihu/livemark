@@ -7,6 +7,7 @@ pub mod find;
 pub mod format;
 pub mod lines;
 pub mod markup;
+pub mod properties;
 
 use std::ops::Range;
 use std::time::Duration;

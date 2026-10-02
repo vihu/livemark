@@ -13,6 +13,7 @@ use iced::{Rectangle, Theme};
 
 use super::highlight::{Highlights, Token};
 use super::picture::{self, Picture};
+use super::properties::{Block, folded};
 use super::shape::{Cached, Colors, cursor, heading_level, shape};
 use super::table::Grid;
 use crate::doc::Doc;
@@ -188,6 +189,9 @@ pub struct Lines {
     /// the keys used since the last frame ended (what `trim` keeps).
     grids: HashMap<u64, Arc<Grid>>,
     grids_used: Vec<u64>,
+    /// The front matter as properties, by its text, the inline tags,
+    /// width, colors and zoom (`properties.rs`).
+    pub(super) block: Option<(u64, Arc<Block>)>,
 }
 
 impl Lines {
@@ -209,6 +213,7 @@ impl Lines {
             highlights: Highlights::default(),
             grids: HashMap::new(),
             grids_used: Vec::new(),
+            block: None,
             cache: HashMap::new(),
         }
     }
@@ -219,6 +224,17 @@ impl Lines {
         let mut shaped = self.shaped_text(source, index);
         if !self.source {
             self.place_pictures(source, index, &mut shaped);
+            // Concealed front matter: its first line as the properties, the
+            // rest folded away.
+            if let Some(front) = folded(source)
+                && source.doc.line_range(index).start <= front.end
+            {
+                shaped.height = if index == 0 {
+                    self.block(source).height
+                } else {
+                    0.0
+                };
+            }
         }
         shaped
     }

@@ -4,6 +4,7 @@
 //! every edit: 0.4 ms for 5,000 lines (PLAN-001 decisions log), so no
 //! incremental parser is needed.
 mod autolink;
+pub mod properties;
 
 use std::collections::VecDeque;
 use std::iter::Peekable;

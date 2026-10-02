@@ -472,9 +472,17 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 self.editor.link_under(self.pane, at).is_some()
                     || self.editor.tag_under(self.pane, at).is_some()
             });
+        // A cross or "+ tag" on the properties (PLAN-005).
+        let on_control = self.pane == Pane::Text
+            && cursor.position_over(text).is_some_and(|at| {
+                let at = at - Vector::new(text.x, text.y);
+                self.editor
+                    .with_lines(|lines, source| lines.block_hit(source, at.x, at.y))
+                    .is_some_and(|(control, _)| control.is_some())
+            });
         if self.thumb_at(layout.bounds(), cursor).is_some() {
             mouse::Interaction::default()
-        } else if on_link {
+        } else if on_link || on_control {
             mouse::Interaction::Pointer
         } else if cursor.is_over(layout.bounds()) && self.pane == Pane::Text {
             mouse::Interaction::Text

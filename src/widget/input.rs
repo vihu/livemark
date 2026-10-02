@@ -173,6 +173,7 @@ impl Editor {
                     edit::format::toggle(&mut self.doc, &self.styled, format, now);
                 }
                 Key::Link => edit::format::link(&mut self.doc, now),
+                Key::AddTag => edit::properties::add_tag(&mut self.doc, &self.styled, now),
                 Key::Block(block) => edit::blocks::toggle(&mut self.doc, block, now),
                 Key::SetMode(mode) => self.set_mode(mode),
                 Key::MoveLines(down) => edit::lines::move_lines(&mut self.doc, down, now),
@@ -284,6 +285,10 @@ impl Editor {
     /// the cell's (REFERENCE-001 section 10).
     pub(super) fn hit(&self, pane: Pane, at: Point) -> (usize, Affinity) {
         self.with_pane(pane, |lines, source| {
+            // On the properties: into the YAML, which then shows.
+            if let Some((_, offset)) = lines.block_hit(source, at.x, at.y) {
+                return (offset, Affinity::After);
+            }
             match lines.table_hit(source, at.x, at.y) {
                 Some(offset) => (offset, Affinity::After),
                 None => lines.hit(source, at.x, at.y),
@@ -296,6 +301,24 @@ impl Editor {
     /// Returns the side the caret is drawn on, or `None` when a checkbox
     /// was ticked and the caret stayed.
     fn press(&mut self, at: Point, shift: bool, clicks: u8, plain: bool) -> Option<Affinity> {
+        // A tag's cross on the properties takes it out, the caret staying;
+        // "+ tag" puts the caret where a new one goes (PLAN-005).
+        let control = (plain && clicks == 1)
+            .then(|| self.with_lines(|lines, source| lines.block_hit(source, at.x, at.y)))
+            .flatten()
+            .and_then(|(control, _)| control);
+        let now = self.started.elapsed();
+        match control {
+            Some(super::properties::Hit::Remove(chip)) => {
+                edit::properties::remove_tag(&mut self.doc, &self.styled, &chip, now);
+                return None;
+            }
+            Some(super::properties::Hit::Add) => {
+                edit::properties::add_tag(&mut self.doc, &self.styled, now);
+                return Some(Affinity::After);
+            }
+            None => {}
+        }
         // A checkbox toggles its task and leaves the caret where it is
         // (REFERENCE-001 section 8), each click of a quick pair too; with a
         // modifier it is an ordinary click.
@@ -439,6 +462,16 @@ impl Editor {
             // to the next line, up from a line to the one above's last row.
             let shaped = lines.shaped(source, index);
             let last_row = row_top + row_height >= shaped.text_bottom() - 0.5;
+            // Up from the first line under concealed front matter: onto
+            // its closing fence, which shows the YAML (PLAN-005).
+            if matches!(direction, Vertical::Up)
+                && row_top < 0.5
+                && let Some(i) = index.checked_sub(1)
+                && super::properties::folded(source)
+                    .is_some_and(|front| source.doc.line_range(i).start <= front.end)
+            {
+                return (x, (source.doc.line_range(i).end, Affinity::After));
+            }
             let above = index.checked_sub(1).map(|i| {
                 (
                     top - lines.shaped(source, i).height,

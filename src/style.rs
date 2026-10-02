@@ -134,6 +134,10 @@ pub enum MarkKind {
     TableRow(usize, usize),
     /// The delimiter row of table `.0`: the line under the grid's header.
     TableRule(usize),
+    /// The front matter's first line, touched by the whole block: the
+    /// properties (title, date, tags) drawn in its place, the block's other
+    /// lines folded away (PLAN-005).
+    Properties,
 }
 
 /// A column's alignment, from the delimiter row.
@@ -193,12 +197,28 @@ pub struct Styled {
     images: Vec<(Range<usize>, String)>,
     /// Inline `#tags` (`#` included) with their names, in order.
     tags: Vec<(Range<usize>, String)>,
+    /// The front matter's title, date and tags list.
+    properties: Option<crate::parse::properties::Properties>,
 }
 
 impl Styled {
     /// Styles `text`.
     pub fn new(text: &str) -> Self {
-        walk::walk(text)
+        Self {
+            properties: crate::parse::properties::properties(text),
+            ..walk::walk(text)
+        }
+    }
+
+    /// The front matter's title, date and tags list, if it has front
+    /// matter.
+    pub fn properties(&self) -> Option<&crate::parse::properties::Properties> {
+        self.properties.as_ref()
+    }
+
+    /// The inline `#tags` (`#` included) with their names, in order.
+    pub fn tags(&self) -> &[(Range<usize>, String)] {
+        &self.tags
     }
 
     /// Styled runs, in order, not overlapping; text outside them is plain

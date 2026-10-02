@@ -9,7 +9,15 @@
   commit.
 - Ctrl+N in a vault names a new note and makes it as
   `2026-10-02-the-title.md` with front matter.
-- Ctrl+P opens a note by its title; Ctrl+Shift+F searches every note.
+- One search field in the toolbar (Ctrl+P) finds notes by title, lines in
+  notes and tags; Ctrl+Enter lists every match in the sidebar.
+- Tags in the sidebar are a flat list, most used first; each one's menu
+  renames, merges or deletes it across the vault, with Undo. Manage tags
+  opens the tag manager: sort, merge or delete several at once, and tags
+  that look alike are suggested for merging.
+- Front matter is drawn as the note's properties: its title, its date and
+  its tags as chips with a cross; "+ tag" or Ctrl+T adds one, with the
+  vault's tags offered.
 - `#tags` are drawn as tags; Ctrl+click on one shows its notes.
 - Typing `[[` picks a note and puts in a normal markdown link to it;
   links to notes open in the app, and the sidebar lists the notes linking

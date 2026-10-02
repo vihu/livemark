@@ -105,7 +105,8 @@ pub(super) fn draw<'a>(
                 }
             }
             MarkKind::Underline => {}
-            MarkKind::TableRow(..) | MarkKind::TableRule(_) => {}
+            // Drawn by the grid, and by `properties.rs`.
+            MarkKind::TableRow(..) | MarkKind::TableRule(_) | MarkKind::Properties => {}
             MarkKind::Rule => {
                 let thickness = (size / 12.0).max(1.0).round();
                 let rule = Rectangle::new(

@@ -47,6 +47,14 @@ const PIECES: &[&str] = &[
     "| a | b |\n| - | - |\n| c | d |\n",
 ];
 
+/// Front matter half the documents start with: folded into properties
+/// until the caret goes in (PLAN-005).
+const FRONT: &[&str] = &[
+    "---\ntitle: Note\ntags: [a, b]\ncreated: 2026-10-02\n---\n",
+    "---\r\ntags:\r\n  - a\r\nby: x\r\n---\r\n",
+    "---\ntitle: x\n---\n# x\n",
+];
+
 const NAMED: &[Named] = &[
     Named::ArrowLeft,
     Named::ArrowRight,
@@ -64,13 +72,19 @@ const NAMED: &[Named] = &[
 ];
 
 /// Letters pressed with Ctrl/Cmd, and with Shift some of the time.
-const LETTERS: &[&str] = &["a", "b", "i", "e", "k", "z", "y", "c", "x", "f", "h", "g"];
+const LETTERS: &[&str] = &[
+    "a", "b", "i", "e", "k", "z", "y", "c", "x", "f", "h", "g", "t",
+];
 
 #[test]
 fn random_widget_sessions_keep_the_text_whole() {
     for seed in common::seeds(SEEDS) {
         let mut rng = Rng(seed);
-        let text: String = (0..20 + rng.below(60)).map(|_| *rng.pick(PIECES)).collect();
+        let body: String = (0..20 + rng.below(60)).map(|_| *rng.pick(PIECES)).collect();
+        let text = match rng.below(2) {
+            0 => format!("{}{body}", rng.pick(FRONT)),
+            _ => body,
+        };
         let mut editor = Editor::new(text.clone());
         // Images pointing at `p.png` have a picture: lines grow under them.
         editor.set_image("p.png", &picture());

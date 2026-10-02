@@ -1,5 +1,7 @@
 //! Completion the host fills (PLAN-004, PLAN-001 L3b part 2): after `[[`
-//! (a link) or a `#` starting a tag, the editor says what is being typed
+//! (a link) or a `#` starting a tag, or in the front matter's `tags` list
+//! (PLAN-005, where the `#` of a chosen tag is left out: YAML would read
+//! it as a comment), the editor says what is being typed
 //! ([`Editor::completing`]); the host answers with choices
 //! ([`Editor::set_choices`]), shown in a list under the caret. Up and
 //! Down choose, Enter or Tab (or a click) puts the choice's text in place
@@ -18,7 +20,8 @@ use crate::doc::{Change, Kind, Selection};
 pub enum Complete {
     /// After `[[`: a link to another note.
     Link,
-    /// After `#` at a word's start: a tag.
+    /// After `#` at a word's start, or in the front matter's `tags`
+    /// list: a tag.
     Tag,
 }
 
@@ -28,7 +31,8 @@ pub enum Complete {
 pub struct Completing {
     /// A link or a tag.
     pub kind: Complete,
-    /// What was typed after `[[` or `#`.
+    /// What was typed after `[[` or `#` (in the `tags` list, of the
+    /// item, which may be empty).
     pub query: String,
 }
 
@@ -49,6 +53,8 @@ pub(super) struct Completion {
     kind: Option<Complete>,
     /// Where its trigger starts, and the caret.
     range: Range<usize>,
+    /// In the front matter's `tags` list: no `#` typed or put in.
+    listed: bool,
     choices: Vec<Choice>,
     selected: usize,
     /// Escape closed it: shown again only for another trigger.
@@ -81,6 +87,7 @@ impl Editor {
         let typed = &self.doc.text()[completion.range.clone()];
         let trigger = match kind {
             Complete::Link => 2,
+            Complete::Tag if completion.listed => 0,
             Complete::Tag => 1,
         };
         Some(Completing {
@@ -111,6 +118,7 @@ impl Editor {
     /// keeps its choices and Escape; another starts over.
     pub(super) fn refresh_completion(&mut self) {
         let found = self.trigger();
+        let listed = self.listed_tag().is_some();
         let completion = &mut self.completion;
         match found {
             Some((kind, range))
@@ -122,6 +130,7 @@ impl Editor {
                 *completion = Completion {
                     kind: Some(kind),
                     range,
+                    listed,
                     ..Completion::default()
                 };
             }
@@ -135,6 +144,9 @@ impl Editor {
         let selection = self.doc.selection();
         if !selection.range().is_empty() {
             return None;
+        }
+        if let Some(range) = self.listed_tag() {
+            return Some((Complete::Tag, range));
         }
         let head = selection.head;
         let text = self.doc.text();
@@ -164,6 +176,17 @@ impl Editor {
             .then(|| (Complete::Tag, line_start + hash..head))
     }
 
+    /// The tag being typed at the caret in the front matter's `tags` list.
+    fn listed_tag(&self) -> Option<Range<usize>> {
+        let selection = self.doc.selection();
+        let properties = self.styled.properties()?;
+        (selection.range().is_empty() && selection.head <= properties.block.end)
+            .then(|| {
+                crate::parse::properties::tag_item_at(properties, self.doc.text(), selection.head)
+            })
+            .flatten()
+    }
+
     /// Whether `offset` is in inline code or a code block.
     fn in_code(&self, offset: usize) -> bool {
         let runs = self.styled.runs();
@@ -184,9 +207,12 @@ impl Editor {
             CompleteInput::Dismiss => self.completion.dismissed = true,
             CompleteInput::Accept(at) => {
                 let at = at.unwrap_or(self.completion.selected);
-                let Some(choice) = self.completion.choices.get(at).cloned() else {
+                let Some(mut choice) = self.completion.choices.get(at).cloned() else {
                     return;
                 };
+                if self.completion.listed {
+                    choice.insert = choice.insert.trim_start_matches('#').to_owned();
+                }
                 let range = self.completion.range.clone();
                 let caret = range.start + choice.insert.len();
                 self.doc.apply(
@@ -202,6 +228,7 @@ impl Editor {
                 self.completion = Completion {
                     kind: self.completion.kind,
                     range: range.start..caret,
+                    listed: self.completion.listed,
                     dismissed: true,
                     ..Completion::default()
                 };

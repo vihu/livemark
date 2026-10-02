@@ -13,6 +13,7 @@ mod lines;
 mod marks;
 mod picture;
 mod preview;
+mod properties;
 mod scrollbar;
 mod shape;
 mod surface;
@@ -245,6 +246,9 @@ enum Key {
     Format(Format),
     /// Ctrl/Cmd+K.
     Link,
+    /// Ctrl/Cmd+T: the caret where a new tag goes in the front matter's
+    /// list (PLAN-005).
+    AddTag,
     /// Ctrl/Cmd+Shift+E: live preview or source mode (the user's pick).
     ToggleMode,
     /// Alt+Up, or Alt+Down with `true`: move the selected lines.
@@ -600,6 +604,8 @@ impl Editor {
     }
 }
 
+#[cfg(test)]
+mod properties_tests;
 #[cfg(test)]
 mod split_tests;
 #[cfg(test)]

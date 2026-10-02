@@ -97,6 +97,20 @@ impl Editor {
                 let origin = area.position() + Vector::new(0.0, top);
                 let at = |r: Rectangle| Rectangle::new(origin + Vector::new(r.x, r.y), r.size());
                 let range = source.doc.line_range(index);
+                // Concealed front matter: the properties on its first line,
+                // its other lines folded away (PLAN-005).
+                if let Some(front) = super::properties::folded(source)
+                    && range.start <= front.end
+                {
+                    if index == 0 {
+                        let block = lines.block(source);
+                        block.draw(renderer, origin, area, palette.primary.base.color);
+                    }
+                    top += shaped.height;
+                    index += 1;
+                    drawn.push(shaped);
+                    continue;
+                }
                 // A code block is a band across the text area, fences
                 // included; inline code sits on a box of the same color.
                 if source.styled.code_block_at(range.clone()).is_some() {

@@ -243,6 +243,14 @@ impl Walk<'_> {
             // font, fences and all (REFERENCE-001 section 11).
             Event::Start(Tag::MetadataBlock(_)) => {
                 self.in_meta = true;
+                let first = self.text[range.clone()]
+                    .find(['\n', '\r'])
+                    .map_or(range.end, |at| range.start + at);
+                self.marks.push(Mark {
+                    range: range.start..first,
+                    touch: range.clone(),
+                    kind: MarkKind::Properties,
+                });
                 self.toggles.push((range, Flag::Meta));
             }
             Event::End(TagEnd::MetadataBlock(_)) => self.in_meta = false,
@@ -613,6 +621,7 @@ impl Walk<'_> {
             task_bullets: self.task_bullets,
             images: self.images,
             tags: self.tags,
+            properties: None,
         }
     }
 }

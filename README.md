@@ -12,7 +12,8 @@ emphasis, links, escapes, lists (bullets as dots), task lists (clickable
 checkboxes), quotes, rules, code (syntax colors in fenced blocks, fences
 hidden) and tables (grids until the caret enters); list-aware editing;
 formatting keys; line commands; find and replace; a source mode; zoom;
-YAML front matter and `==highlight==`; images drawn under their line from
+YAML front matter (drawn as its title, date and tags, the tags as chips
+with a cross and "+ tag", until the caret enters) and `==highlight==`; images drawn under their line from
 bytes the host supplies; a toolbar; three modes, Live preview, Markdown (as written) and Side by
 side (the rendered note beside the markdown, the two scrolled together). Targets Linux (Wayland) and macOS. It is both a library for
 iced apps and a standalone editor (the `livemark` app).
@@ -96,6 +97,7 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | --- | --- |
 | Ctrl+B, Ctrl+I, Ctrl+E | Bold, italic, inline code: on the selection or the word, off inside one |
 | Ctrl+K | A link: `[text]()` around the selection, `[](url)` around a URL |
+| Ctrl+T | A new tag: the caret at the end of the front matter's `tags` list (made when missing), the host's tags offered |
 | Ctrl+Shift+E | The next mode: Live preview, Markdown (as written), Side by side (the rendered note beside the markdown, scrolled together; a click there puts the caret at that place) |
 | Ctrl+F, Ctrl+H | Find, find and replace; Enter, F3 or Ctrl+G for the next match, with Shift the previous; Tab to the next field; Escape closes |
 | Enter | Continues a list item (next number, unchecked box) or quote; on an empty item, one level less |

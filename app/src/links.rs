@@ -40,7 +40,7 @@ impl App {
                     .filter(|(tag, _)| tag.starts_with(&query) && *tag != query)
                     .map(|(tag, count)| Choice {
                         label: format!("#{tag}"),
-                        detail: format!("{count} notes"),
+                        detail: crate::tag_actions::notes(count),
                         insert: format!("#{tag}"),
                     })
                     .collect()

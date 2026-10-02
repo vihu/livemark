@@ -1,7 +1,8 @@
 //! Shortcuts the surface handles before iced's text bindings: formatting
 //! (REFERENCE-001 section 12), source mode (section 17), the document's
 //! start and end (section 13), and the line commands of CodeMirror's
-//! default keymap (`edit::lines`). Letters are
+//! default keymap (`edit::lines`), and Ctrl/Cmd+T for a new tag
+//! (PLAN-005). Letters are
 //! read from the key whatever the layout; with Alt they are left alone, so
 //! AltGr letters still type.
 use iced::keyboard::{self, Modifiers, key::Named};
@@ -68,6 +69,7 @@ pub(super) fn shortcut(
             'i' => Some(Key::Format(Format::Italic)),
             'e' => Some(Key::Format(Format::Code)),
             'k' => Some(Key::Link),
+            't' => Some(Key::AddTag),
             _ => None,
         },
         _ => None,
