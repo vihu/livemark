@@ -251,3 +251,56 @@ fn point(rng: &mut Rng) -> Point {
         rng.below(SIZE.1 as u64) as f32,
     )
 }
+
+/// The user's own notes, or any directory of markdown, named by
+/// `LIVEMARK_EXTRA_FIXTURES` (skipped when unset): each file opens, draws,
+/// takes clicks, typing and scrolling, and undoes back to itself.
+#[test]
+fn extra_fixtures_draw_and_edit() {
+    let Ok(dir) = std::env::var("LIVEMARK_EXTRA_FIXTURES") else {
+        return;
+    };
+    let mut files = Vec::new();
+    markdown_files(std::path::Path::new(&dir), &mut files);
+    for path in &files {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let mut rng = Rng(text.len() as u64);
+        let mut editor = Editor::new(text.clone());
+        for _ in 0..6 {
+            let events: Vec<Vec<Event>> = (0..3).map(|_| event(&mut rng)).collect();
+            run(&mut editor, true, |ui| {
+                for event in events {
+                    for e in event {
+                        if let Event::Mouse(mouse::Event::CursorMoved { position }) = e {
+                            ui.point_at(position);
+                        }
+                        ui.simulate([e]);
+                    }
+                }
+            });
+        }
+        run(&mut editor, true, |ui| {
+            ui.simulate([press(
+                Key::Named(Named::Escape),
+                keyboard::Modifiers::empty(),
+            )]);
+            let undo = press(Key::Character("z".into()), keyboard::Modifiers::COMMAND);
+            ui.simulate(std::iter::repeat_n(undo, 200));
+        });
+        assert_eq!(editor.text(), text, "{}", path.display());
+    }
+    eprintln!("{} files drawn and edited", files.len());
+}
+
+fn markdown_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            markdown_files(&path, files);
+        } else if path.extension().is_some_and(|e| e == "md") {
+            files.push(path);
+        }
+    }
+}

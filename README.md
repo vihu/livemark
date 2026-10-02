@@ -5,10 +5,12 @@ in place as you type, like Obsidian's Live Preview. The markdown text is the
 document. Nothing else is stored, so other tools edit the same file.
 
 Status: working towards v0.1.0, not on crates.io. Live preview of headings,
-emphasis, links, lists, quotes, task lists, code (syntax colors in fenced
-blocks) and tables (in the code font); list-aware editing; formatting keys;
-find and replace; a source mode. Targets Linux (Wayland) and macOS. It is
-both a library for iced apps and a standalone editor (the `livemark` app).
+emphasis, links, escapes, lists (bullets as dots), task lists (clickable
+checkboxes), quotes, rules, code (syntax colors in fenced blocks, fences
+hidden) and tables (grids until the caret enters); list-aware editing;
+formatting keys; line commands; find and replace; a source mode. Images are
+not drawn yet. Targets Linux (Wayland) and macOS. It is both a library for
+iced apps and a standalone editor (the `livemark` app).
 
 ## The app
 
