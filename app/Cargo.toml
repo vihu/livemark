@@ -18,3 +18,4 @@ iced     = { workspace = true }
 livemark = { path = ".." }
 # Open and save dialogs (XDG portal on Linux).
 rfd      = "0.17"
+strsim = "0.11"

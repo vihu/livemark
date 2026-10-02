@@ -74,11 +74,16 @@ fn word_match(wanted: &[char], word: &[char], original: &str) -> Option<(i32, Ra
         4..=7 => 1,
         _ => 2,
     };
-    // The whole word, or its start as far as typed.
-    if near(wanted, word, most) {
+    // The whole word, or its start as far as typed: optimal string
+    // alignment, so two letters swapped are one typo.
+    let text = |chars: &[char]| chars.iter().collect::<String>();
+    let near = |to: &[char]| {
+        n.abs_diff(to.len()) <= most && strsim::osa_distance(&text(wanted), &text(to)) <= most
+    };
+    if near(word) {
         return Some((40, span(0, len)));
     }
-    if len > n && near(wanted, &word[..n], most) {
+    if len > n && near(&word[..n]) {
         return Some((30, span(0, n)));
     }
     None
@@ -100,44 +105,6 @@ fn words_of(title: &str) -> Vec<(Range<usize>, Vec<char>)> {
         }
     }
     words
-}
-
-/// Whether `a` and `b` are at most `most` typos apart: a letter added,
-/// dropped or changed, or two next to each other swapped.
-fn near(a: &[char], b: &[char], most: usize) -> bool {
-    if a.len().abs_diff(b.len()) > most {
-        return false;
-    }
-    let (n, m) = (a.len(), b.len());
-    // Row 0 counts insertions, column 0 deletions.
-    let mut d: Vec<Vec<usize>> = (0..=n)
-        .map(|i| {
-            (0..=m)
-                .map(|j| {
-                    if i == 0 {
-                        j
-                    } else if j == 0 {
-                        i
-                    } else {
-                        0
-                    }
-                })
-                .collect()
-        })
-        .collect();
-    for i in 1..=n {
-        for j in 1..=m {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
-            let mut best = (d[i - 1][j] + 1)
-                .min(d[i][j - 1] + 1)
-                .min(d[i - 1][j - 1] + cost);
-            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-                best = best.min(d[i - 2][j - 2] + 1);
-            }
-            d[i][j] = best;
-        }
-    }
-    d[n][m] <= most
 }
 
 /// Where any of `words` (lowercase) sits in `text`, any case: byte ranges

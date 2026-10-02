@@ -243,29 +243,7 @@ fn alike(a: &str, b: &str) -> bool {
         5..=7 => 1,
         _ => 2,
     };
-    digits(a) == digits(b) && within(a, b, most)
-}
-
-/// Whether `a` and `b` are at most `most` letters added, dropped or
-/// changed apart.
-fn within(a: &str, b: &str, most: usize) -> bool {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    if a.len().abs_diff(b.len()) > most {
-        return false;
-    }
-    let mut before: Vec<usize> = (0..=b.len()).collect();
-    for (i, x) in a.iter().enumerate() {
-        let mut now = vec![i + 1];
-        for (j, y) in b.iter().enumerate() {
-            let step = (before[j] + usize::from(x != y))
-                .min(before[j + 1] + 1)
-                .min(now[j] + 1);
-            now.push(step);
-        }
-        before = now;
-    }
-    before[b.len()] <= most
+    digits(a) == digits(b) && strsim::levenshtein(a, b) <= most
 }
 
 #[cfg(test)]
