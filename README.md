@@ -90,7 +90,8 @@ runs git, so committing, signing and pushing stay yours).
 The sidebar runs to the window's top: its head is the vault menu (New,
 Open, Open vault, the recent files, Save, Save as, the theme, Quit with
 Ctrl+Q), "+" for a new note, and the button that hides the sidebar
-(Ctrl+\; then the menu sits in the note's bar). The note's bar has the
+(Ctrl+\; then the menu sits in the note's bar); drag its edge to make it
+wider or narrower (a double click puts it back). The note's bar has the
 formatting buttons, the search field, whether the note is saved (Saved,
 Unsaved with a dot, or Not in the vault for a file from elsewhere) and the
 mode. Without a vault the sidebar offers to open one and lists the recent

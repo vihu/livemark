@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 /// How many recent files are kept.
 const RECENT: usize = 10;
 
+/// The sidebar's width, and how far its edge drags.
+pub const SIDEBAR_WIDTH: f32 = 260.0;
+pub const SIDEBAR_WIDTHS: std::ops::RangeInclusive<f32> = 200.0..=480.0;
+
 /// The theme: as the system is (between a light and a dark one picked),
 /// or one of iced's (PLAN-006).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -98,6 +102,8 @@ pub struct Settings {
     pub vault: Option<PathBuf>,
     /// Whether the sidebar shows (Ctrl+\ hides it, PLAN-006).
     pub sidebar: bool,
+    /// The sidebar's width, its edge dragged (PLAN-006).
+    pub sidebar_width: f32,
 }
 
 impl Default for Settings {
@@ -113,6 +119,7 @@ impl Default for Settings {
             split: 0.5,
             vault: None,
             sidebar: true,
+            sidebar_width: SIDEBAR_WIDTH,
         }
     }
 }
@@ -198,6 +205,13 @@ impl Settings {
                 }
                 "vault" if !value.is_empty() => settings.vault = Some(PathBuf::from(value)),
                 "sidebar" => settings.sidebar = value != "hidden",
+                "sidebar width" => {
+                    if let Ok(width) = value.parse::<f32>()
+                        && SIDEBAR_WIDTHS.contains(&width)
+                    {
+                        settings.sidebar_width = width;
+                    }
+                }
                 "recent" if !value.is_empty() && settings.recent.len() < RECENT => {
                     settings.recent.push(PathBuf::from(value));
                 }
@@ -226,6 +240,7 @@ impl Settings {
         if !self.sidebar {
             text += "sidebar = hidden\n";
         }
+        text += &format!("sidebar width = {}\n", self.sidebar_width.round());
         for path in &self.recent {
             text += &format!("recent = {}\n", path.display());
         }
@@ -258,6 +273,7 @@ mod tests {
             split: 0.35,
             vault: Some("/notes".into()),
             sidebar: false,
+            sidebar_width: 320.0,
         };
         settings.opened(std::path::Path::new("/notes/a.md"));
         settings.opened(std::path::Path::new("/notes/b.md"));

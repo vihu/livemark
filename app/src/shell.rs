@@ -8,14 +8,26 @@ use std::path::Path;
 
 use iced::widget::text::{Ellipsis, Wrapping};
 use iced::widget::{
-    Space, button, column, container, responsive, row, rule, scrollable, text, tooltip,
+    Space, button, column, container, mouse_area, responsive, row, rule, scrollable, text, tooltip,
 };
-use iced::{Element, Length, Theme};
+use iced::{Element, Length, Theme, mouse};
 
 use super::appearance::AppearanceMessage;
 use super::icons::{Icon, Tone, icon};
-use super::sidebar::{VaultMessage, WIDTH, choice};
+use super::settings::{SIDEBAR_WIDTH, SIDEBAR_WIDTHS};
+use super::sidebar::{VaultMessage, choice};
 use super::{App, Message};
+
+/// The sidebar's edge dragged.
+#[derive(Debug, Clone, Copy)]
+pub enum Resize {
+    Start,
+    /// The pointer at this x, the sidebar's width to be.
+    To(f32),
+    End,
+    /// A double click: the width it starts with.
+    Reset,
+}
 
 /// The note's state as its bar shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,7 +78,7 @@ impl App {
         .align_y(iced::Center);
         let body = self.vault_body().unwrap_or_else(|| self.no_vault());
         let side = container(column![head, body])
-            .width(WIDTH)
+            .width(self.settings.sidebar_width)
             .height(Length::Fill)
             .padding(iced::Padding {
                 top: 0.0,
@@ -78,7 +90,62 @@ impl App {
                 background: Some(theme.palette().background.weakest.color.into()),
                 ..container::Style::default()
             });
-        row![side, rule::vertical(1)].into()
+        // Its edge: dragged to resize, a double click back to the start.
+        let resizing = self.resizing;
+        let line = container(
+            Space::new()
+                .width(if resizing { 2 } else { 1 })
+                .height(Length::Fill),
+        )
+        .style(move |theme: &Theme| container::Style {
+            background: Some(
+                if resizing {
+                    theme.palette().primary.base.color
+                } else {
+                    theme.palette().background.strong.color
+                }
+                .into(),
+            ),
+            ..container::Style::default()
+        });
+        let edge = mouse_area(
+            row![line, Space::new().width(if resizing { 3 } else { 4 })].height(Length::Fill),
+        )
+        .interaction(mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::Resize(Resize::Start))
+        .on_double_click(Message::Resize(Resize::Reset));
+        row![side, edge].into()
+    }
+
+    /// While the edge is dragged: a layer over the window that follows the
+    /// pointer until the button is let go.
+    pub(crate) fn resize_layer(&self) -> Option<Element<'_, Message>> {
+        self.resizing.then(|| {
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                .interaction(mouse::Interaction::ResizingHorizontally)
+                .on_move(|at| Message::Resize(Resize::To(at.x)))
+                .on_release(Message::Resize(Resize::End))
+                .into()
+        })
+    }
+
+    pub(crate) fn resize_update(&mut self, resize: Resize) {
+        match resize {
+            Resize::Start => self.resizing = true,
+            Resize::To(x) => {
+                self.settings.sidebar_width =
+                    x.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
+            }
+            Resize::End => {
+                self.resizing = false;
+                self.remember();
+            }
+            Resize::Reset => {
+                self.resizing = false;
+                self.settings.sidebar_width = SIDEBAR_WIDTH;
+                self.remember();
+            }
+        }
     }
 
     /// The button that hides the sidebar, or brings it back.

@@ -11,9 +11,6 @@ use iced::{Element, Length, Task, Theme};
 use super::vault::Vault;
 use super::{App, Message, file};
 
-/// The sidebar's width.
-pub(crate) const WIDTH: f32 = 260.0;
-
 /// The most notes listed; the search (Ctrl+P) reaches the rest.
 const SHOWN: usize = 500;
 

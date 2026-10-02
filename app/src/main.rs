@@ -127,6 +127,8 @@ struct App {
     system_mode: iced::theme::Mode,
     /// The Appearance panel, in the note's place while it is open.
     appearance: bool,
+    /// The sidebar's edge is being dragged.
+    resizing: bool,
     /// What waits on an answer about unsaved changes.
     pending: Option<After>,
     /// The file's modification time when last opened or saved.
@@ -215,6 +217,8 @@ enum Message {
     Menu(bool),
     /// Ctrl+\: the sidebar hidden, or shown again.
     Sidebar,
+    /// The sidebar's edge dragged.
+    Resize(shell::Resize),
     /// A recent note picked in the File menu.
     Recent(PathBuf),
     /// The Appearance panel and what it sets.
@@ -251,6 +255,7 @@ impl App {
             theme,
             system_mode: iced::theme::Mode::None,
             appearance: false,
+            resizing: false,
             pending: None,
             changed: false,
             discarded: None,
@@ -485,6 +490,7 @@ impl App {
                 self.remember();
             }
             Message::Recent(path) => return self.update(Message::Opened(Some(path))),
+            Message::Resize(resize) => self.resize_update(resize),
             Message::Sidebar => {
                 self.settings.sidebar = !self.settings.sidebar;
                 self.remember();

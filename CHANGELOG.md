@@ -5,7 +5,7 @@
 - A calmer window: the sidebar runs to the top with the vault menu in
   File's place; the note's bar has the formatting buttons without boxes,
   the search, whether the note is saved, and the mode as three icons.
-  Ctrl+\ hides the sidebar; Ctrl+Q quits.
+  Ctrl+\ hides the sidebar, its edge drags to resize it; Ctrl+Q quits.
 - Appearance: Kanagawa Wave and Lotus, Solarized, Gruvbox and Catppuccin
   Mocha and Frappe themes besides Light and Dark, System following the
   system between a light and a dark pick; Ctrl+= and Ctrl+- scale the

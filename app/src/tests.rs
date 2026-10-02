@@ -366,3 +366,26 @@ fn appearance_picks_themes_follows_the_system_and_scales_the_interface() {
     assert!(!app.appearance);
     assert_eq!(app.editor.text(), before);
 }
+
+#[test]
+fn the_sidebars_edge_drags_between_bounds_and_a_double_click_resets_it() {
+    use crate::shell::Resize;
+    let mut app = App::open(None, None);
+    let drag = |app: &mut App, resize| {
+        let _ = app.update(Message::Resize(resize));
+        let _ = app.view();
+    };
+    assert_eq!(app.settings.sidebar_width, 260.0);
+    drag(&mut app, Resize::Start);
+    assert!(app.resizing, "a layer follows the pointer");
+    drag(&mut app, Resize::To(350.0));
+    assert_eq!(app.settings.sidebar_width, 350.0);
+    drag(&mut app, Resize::To(2000.0));
+    assert_eq!(app.settings.sidebar_width, 480.0);
+    drag(&mut app, Resize::To(10.0));
+    assert_eq!(app.settings.sidebar_width, 200.0);
+    drag(&mut app, Resize::End);
+    assert!(!app.resizing);
+    drag(&mut app, Resize::Reset);
+    assert_eq!(app.settings.sidebar_width, 260.0);
+}

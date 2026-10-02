@@ -107,7 +107,10 @@ impl App {
             stack![editor].push(self.search_panel()).push(toast)
         ]
         .push(bar.map(|bar| container(bar).padding(12)));
-        stack![row![self.sidebar_column(), note]].push(menu).into()
+        stack![row![self.sidebar_column(), note]]
+            .push(menu)
+            .push(self.resize_layer())
+            .into()
     }
 
     pub(crate) fn subscription(&self) -> Subscription<Message> {
