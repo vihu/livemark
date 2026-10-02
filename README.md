@@ -59,9 +59,11 @@ paths); the app makes no network requests, so web images stay as markdown.
 A picture pasted with Ctrl+V is saved as `assets/<note>-<n>.png` next to the
 note and linked at the caret (a new note is saved first); a picture file
 dropped on the window is linked by its path, a dropped `.md` file opens.
-The vault menu (the name at the sidebar's top) lists the vaults you have
-opened, a click switching to one (it opens with the note last open in it,
-nothing of the other vault left over); Open vault picks a folder of notes (a vault, kept in your own git
+The vault menu (the name at the sidebar's top) is short: New note, Open
+file, Open recent and Switch vault (each a list beside it, on hover),
+Save, Save as, Appearance, zoom and Quit. Switch vault lists the vaults
+you have opened, a click switching to one (it opens with the note last
+open in it, nothing of the other vault left over); Open vault picks a folder of notes (a vault, kept in your own git
 repository; the app never runs git): a sidebar lists its notes, most
 recently changed first, and their tags (front matter `tags: [work,
 travel]` and inline `#tags`) with counts, a click on one showing only its

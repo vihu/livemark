@@ -8,7 +8,8 @@
   Ctrl+\ hides the sidebar, its edge drags to resize it; Ctrl+Q quits.
 - Right-click menus float where you click, on notes, tags and the text
   (Cut, Copy, Paste, Select all), and close on any click elsewhere.
-- Vaults: the vault menu lists the vaults opened, one click away; a vault
+- Vaults: the vault menu's Switch vault lists the vaults opened, one click
+  away (Open recent beside it, recent notes by title); a vault
   opens with the note last open in it and nothing of the last vault left
   over; a note of another vault opened from the recent files brings its
   vault; Close vault.

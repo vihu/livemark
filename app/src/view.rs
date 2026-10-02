@@ -3,7 +3,7 @@
 //! errors under the note. And the keys and window events the app listens
 //! to.
 use iced::keyboard;
-use iced::widget::{Space, button, column, container, mouse_area, opaque, row, stack, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, stack, text};
 use iced::{Element, Length, Subscription, window};
 
 use super::{App, Message};
@@ -84,7 +84,7 @@ impl App {
             stack![
                 mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
                     .on_press(Message::Menu(false)),
-                container(opaque(self.vault_menu())).padding(iced::Padding {
+                container(self.vault_menu()).padding(iced::Padding {
                     top: super::shell::BAR - 4.0,
                     left: 8.0,
                     ..iced::Padding::ZERO

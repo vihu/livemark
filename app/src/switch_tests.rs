@@ -138,3 +138,30 @@ fn a_vault_comes_in_fresh_with_its_note_and_is_one_press_away_after() {
     assert!(!app.settings.vaults.contains(&root_a));
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn the_menus_lists_fly_out_and_name_recent_notes_by_title() {
+    use crate::menu::Submenu;
+    let (base, a, b) = two_vaults("submenus");
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(b.clone()))));
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(a.clone()))));
+    let _ = app.update(Message::Menu(true));
+    let _ = app.update(Message::Submenu(Some(Submenu::Recent)));
+    let _ = app.view();
+    // Recent notes: in the open vault by title and folder, in another by
+    // name and vault.
+    let root_a = app.vault.as_ref().unwrap().root.clone();
+    let three = app.settings.vaults[1].join("three.md");
+    let (title, place) = app.recent_label(&root_a.join("two.md"));
+    assert_eq!((title.as_str(), place.as_str()), ("Two", "a"));
+    let (title, place) = app.recent_label(&three);
+    assert_eq!((title.as_str(), place.as_str()), ("three", "b"));
+    let _ = app.update(Message::Submenu(Some(Submenu::Vaults)));
+    let _ = app.view();
+    // Closed with the menu; opened again, nothing beside it.
+    let _ = app.update(Message::Menu(false));
+    let _ = app.update(Message::Menu(true));
+    assert_eq!(app.submenu, None);
+    std::fs::remove_dir_all(&base).unwrap();
+}

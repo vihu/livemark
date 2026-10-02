@@ -160,8 +160,9 @@ struct App {
     settings_file: Option<PathBuf>,
     /// A picture pasted into a note not saved yet: kept once it is.
     waiting_picture: Option<Vec<u8>>,
-    /// Whether the File menu is open.
+    /// Whether the vault menu is open, and the list open beside it.
     menu: bool,
+    submenu: Option<menu::Submenu>,
     /// The vault open, if any (PLAN-004).
     vault: Option<vault::Vault>,
     /// Which notes the sidebar lists.
@@ -236,6 +237,8 @@ enum Message {
     Dropped(PathBuf),
     /// Opens (true) or closes the vault menu.
     Menu(bool),
+    /// The list beside the vault menu, or none.
+    Submenu(Option<menu::Submenu>),
     /// Ctrl+\: the sidebar hidden, or shown again.
     Sidebar,
     /// The sidebar's edge dragged.
@@ -311,6 +314,7 @@ impl App {
             settings_file: None,
             waiting_picture: None,
             menu: false,
+            submenu: None,
             vault: None,
             shown: sidebar::Shown::All,
             all_tags: false,

@@ -159,8 +159,10 @@ impl App {
                     .set_zoom(if step == 0 { 1.0 } else { tenths / 10.0 });
                 self.remember_zoom();
             }
+            Message::Submenu(submenu) => self.submenu = submenu,
             Message::Menu(open) => {
                 self.menu = open;
+                self.submenu = None;
                 // Notes moved or deleted since are not offered.
                 let count = self.settings.recent.len();
                 self.settings.recent.retain(|path| path.exists());

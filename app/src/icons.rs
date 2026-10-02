@@ -12,6 +12,7 @@ pub enum Icon {
     /// The sidebar, shown or hidden.
     Panel,
     Chevron,
+    ChevronRight,
     Plus,
     Minus,
     Search,
@@ -107,6 +108,9 @@ impl<M> canvas::Program<M> for Glyph {
             }
             Icon::Chevron => {
                 frame.stroke(&line(&[(6.0, 8.0), (10.0, 12.0), (14.0, 8.0)]), stroke(2.0))
+            }
+            Icon::ChevronRight => {
+                frame.stroke(&line(&[(8.0, 6.0), (12.0, 10.0), (8.0, 14.0)]), stroke(2.0))
             }
             Icon::Plus => {
                 frame.stroke(&line(&[(10.0, 4.0), (10.0, 16.0)]), stroke(2.0));
