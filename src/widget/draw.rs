@@ -4,6 +4,7 @@ use std::ops::Range;
 
 use iced::advanced::graphics::text::Raw;
 use iced::advanced::graphics::text::Renderer as _;
+use iced::advanced::image::{self, Renderer as _};
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Color, Point, Rectangle, Size, Theme, Vector};
 
@@ -206,6 +207,10 @@ impl Editor {
                     Size::new(area.width + lines.room, area.height),
                 );
                 draw_text(renderer, &shaped, origin, clip, text);
+                for (handle, rect) in &shaped.pictures {
+                    let bounds = Rectangle::new(origin + Vector::new(rect.x, rect.y), rect.size());
+                    renderer.draw_image(image::Image::new(handle.clone()), bounds, area);
+                }
                 // A table outside the selection: its grid over the rows.
                 for mark in marks_in(source.concealed, range.clone()) {
                     let (MarkKind::TableRow(table, _) | MarkKind::TableRule(table)) = mark.kind

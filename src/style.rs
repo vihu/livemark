@@ -187,6 +187,8 @@ pub struct Styled {
     /// Task items' bullets with the spaces up to the box, and the box's
     /// opening bracket, with the range a selection must touch to show them.
     task_bullets: Vec<(Range<usize>, Range<usize>)>,
+    /// Images (`![alt](url)`), in order, and where each points.
+    images: Vec<(Range<usize>, String)>,
 }
 
 impl Styled {
@@ -255,6 +257,12 @@ impl Styled {
             .get(i)
             .filter(|(r, _)| r.start <= offset)
             .map(|(r, dest)| (r.clone(), dest.as_str()))
+    }
+
+    /// The images (`![alt](url)`), in order: the source of each and its
+    /// destination as written.
+    pub fn images(&self) -> &[(Range<usize>, String)] {
+        &self.images
     }
 
     /// The tables, in order; [`MarkKind::TableRow`] indexes them.

@@ -118,3 +118,37 @@ fn zoom_keys_step_by_a_tenth_and_reset() {
     }
     assert_eq!(app.editor.zoom(), 0.5, "no smaller than half");
 }
+
+#[test]
+fn pictures_next_to_the_note_are_handed_to_the_editor() {
+    let dir = std::env::temp_dir().join(format!("livemark-images-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("assets")).unwrap();
+    // The editor decodes; here only which bytes are read matters.
+    let png = b"picture bytes".to_vec();
+    std::fs::write(dir.join("assets").join("my pic.png"), &png).unwrap();
+    let note = dir.join("note.md");
+    write(
+        &note,
+        "![a](assets/my%20pic.png)\n![web](https://example.com/x.png)\n",
+        0,
+    );
+    let app = App::open(Some(note.clone()), None);
+    assert!(app.tried.contains("assets/my%20pic.png"));
+    assert_eq!(
+        crate::file::image_bytes(&note, "assets/my%20pic.png"),
+        Some(png)
+    );
+    assert_eq!(
+        crate::file::image_bytes(&note, "https://example.com/x.png"),
+        None,
+        "no network"
+    );
+    assert_eq!(
+        crate::file::image_bytes(&note, "data:image/png;base64,AA"),
+        None
+    );
+    std::fs::remove_file(dir.join("assets").join("my pic.png")).unwrap();
+    std::fs::remove_dir(dir.join("assets")).unwrap();
+    std::fs::remove_file(&note).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+}

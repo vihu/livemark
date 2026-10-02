@@ -7,10 +7,12 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 use std::sync::Arc;
 
-use iced::Theme;
 use iced::advanced::graphics::text::cosmic_text;
+use iced::widget::image::Handle;
+use iced::{Rectangle, Theme};
 
 use super::highlight::{Highlights, Token};
+use super::picture::{self, Picture};
 use super::shape::{Cached, Colors, cursor, heading_level, shape};
 use super::table::Grid;
 use crate::doc::Doc;
@@ -100,6 +102,9 @@ pub struct Shaped {
     pub lead: f32,
     /// Where the first row ends.
     pub first_row: f32,
+    /// Pictures of the line's images, under its text (REFERENCE-001
+    /// section 5), in the line's coordinates.
+    pub pictures: Vec<(Handle, Rectangle)>,
 }
 
 impl Shaped {
@@ -135,6 +140,8 @@ pub struct Source<'a> {
     pub hidden: &'a [Range<usize>],
     /// Marks drawn as something else (`draw.rs`), sorted.
     pub concealed: &'a [Mark],
+    /// Pictures for images, by destination (`Editor::set_image`).
+    pub pictures: &'a HashMap<String, Picture>,
 }
 
 /// Shaped lines and the scroll position.
@@ -197,6 +204,46 @@ impl Lines {
     /// Line `index` shaped, from the cache when its text, styling, width
     /// and colors are unchanged.
     pub fn shaped(&mut self, source: &Source, index: usize) -> Shaped {
+        let mut shaped = self.shaped_text(source, index);
+        if !self.source {
+            self.place_pictures(source, index, &mut shaped);
+        }
+        shaped
+    }
+
+    /// The pictures of the images on line `index` under its text, the
+    /// line made taller by them; a line with no text left but them (its
+    /// image markdown hidden) collapses to them.
+    fn place_pictures(&mut self, source: &Source, index: usize, shaped: &mut Shaped) {
+        let range = source.doc.line_range(index);
+        let images = source.styled.images();
+        let first = images.partition_point(|(r, _)| r.start < range.start);
+        // Shown while the markdown shows too: touching the image only
+        // brings its source back above it.
+        let shown: Vec<_> = images[first..]
+            .iter()
+            .take_while(|(r, _)| r.start < range.end)
+            .filter_map(|(_, url)| source.pictures.get(url))
+            .collect();
+        if shown.is_empty() {
+            return;
+        }
+        let top = if shaped.line.text.trim().is_empty() {
+            -picture::GAP
+        } else {
+            shaped.height
+        };
+        let (rects, bottom) =
+            picture::stack(&shown, top, self.width, picture::MAX_HEIGHT * self.zoom);
+        shaped.height = bottom;
+        shaped.pictures = shown
+            .iter()
+            .zip(rects)
+            .map(|(picture, rect)| (picture.handle.clone(), rect))
+            .collect();
+    }
+
+    fn shaped_text(&mut self, source: &Source, index: usize) -> Shaped {
         let range = source.doc.line_range(index);
         // A lazy line in a quote lines up with the quoted line's text, and
         // a later line of a list item with the item's text (not in source
@@ -341,6 +388,7 @@ impl Lines {
             hanging: rest.is_some() || cached.hang > 0.0,
             lead,
             first_row: cached.first_row,
+            pictures: Vec::new(),
         }
     }
 

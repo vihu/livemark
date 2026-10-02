@@ -20,7 +20,7 @@ version      = "0.1.0"
 # Pinned iced master, the same rev as roughdraft: a host shows both editors,
 # and two revs cannot share `Element`s. Bump both repos together, at
 # milestone boundaries.
-iced = { git = "https://github.com/iced-rs/iced", rev = "90dec30cc7368c3fbaac69790e43a4b08a21691d", features = ["advanced", "highlighter"] }
+iced = { git = "https://github.com/iced-rs/iced", rev = "90dec30cc7368c3fbaac69790e43a4b08a21691d", features = ["advanced", "highlighter", "image"] }
 
 [dependencies]
 iced           = { workspace = true }
@@ -29,6 +29,9 @@ iced           = { workspace = true }
 pulldown-cmark = { version = "0.13.4", default-features = false }
 # Grapheme steps for the caret (already in the tree through cosmic-text).
 unicode-segmentation = "1"
+# Decoding pictures for `![alt](url)` (REFERENCE-001 section 5): the same
+# version and formats as roughdraft, so a host with both builds it once.
+image          = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 
 [dev-dependencies]
 # Headless rendering for widget tests and the snapshot example; same rev as iced.

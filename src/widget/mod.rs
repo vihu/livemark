@@ -8,12 +8,14 @@ mod input;
 mod keys;
 mod lines;
 mod marks;
+mod picture;
 mod scrollbar;
 mod shape;
 mod surface;
 mod table;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Instant;
@@ -75,6 +77,8 @@ pub struct Editor {
     /// The last `reveal` worked out, by document version and selection:
     /// several calls per frame ask for it (backlog 12).
     reveal: RefCell<Option<RevealFor>>,
+    /// Pictures the host supplied, by image destination (`set_image`).
+    pictures: HashMap<String, picture::Picture>,
 }
 
 /// What live preview hides and draws over, and the document version and
@@ -226,6 +230,7 @@ impl Editor {
                 link: Color::BLACK,
             })),
             reveal: RefCell::new(None),
+            pictures: HashMap::new(),
         }
     }
 
@@ -288,6 +293,30 @@ impl Editor {
         }
         self.mode = mode;
         self.keep_caret_row(|lines| lines.source = mode == Mode::Source);
+    }
+
+    /// Supplies the picture for images pointing at `url` (as written in
+    /// `![alt](url)`): encoded bytes, PNG, JPEG, GIF or WebP. The picture is
+    /// drawn under the image's line while its markdown hides (REFERENCE-001
+    /// section 5); bytes that do not decode are ignored and the markdown
+    /// stays.
+    pub fn set_image(&mut self, url: &str, bytes: &[u8]) {
+        if let Some(picture) = picture::decode(bytes) {
+            self.pictures.insert(url.to_owned(), picture);
+            *self.reveal.borrow_mut() = None;
+        }
+    }
+
+    /// Where the images in the text point, each once, in order: what a
+    /// host loads and hands to [`Editor::set_image`].
+    pub fn image_urls(&self) -> Vec<String> {
+        let mut urls: Vec<String> = Vec::new();
+        for (_, url) in self.styled.images() {
+            if !urls.contains(url) {
+                urls.push(url.clone());
+            }
+        }
+        urls
     }
 
     /// The text size as a share of the default, 1.0 for 100%.
@@ -362,8 +391,27 @@ impl Editor {
         match &*cache {
             Some((v, s, reveal)) if *v == version && *s == selection => reveal.clone(),
             _ => {
+                // An image with its picture hides all its markdown while
+                // untouched (REFERENCE-001 section 5).
+                let mut hidden = self.styled.hidden(selection.clone());
+                let touches =
+                    |r: &Range<usize>| selection.start <= r.end && r.start <= selection.end;
+                let images = self.styled.images().iter();
+                hidden.extend(
+                    images
+                        .filter(|(r, url)| self.pictures.contains_key(url) && !touches(r))
+                        .map(|(r, _)| r.clone()),
+                );
+                hidden.sort_by_key(|h| h.start);
+                let mut merged: Vec<Range<usize>> = Vec::with_capacity(hidden.len());
+                for h in hidden {
+                    match merged.last_mut() {
+                        Some(last) if h.start <= last.end => last.end = last.end.max(h.end),
+                        _ => merged.push(h),
+                    }
+                }
                 let reveal: Reveal = (
-                    self.styled.hidden(selection.clone()).into(),
+                    merged.into(),
                     self.styled.concealed(selection.clone()).into(),
                 );
                 *cache = Some((version, selection, reveal.clone()));
@@ -379,6 +427,7 @@ impl Editor {
             styled: &self.styled,
             hidden: &hidden,
             concealed: &concealed,
+            pictures: &self.pictures,
         };
         let mut lines = self.lines.borrow_mut();
         lines.anchor = lines.anchor.min(self.doc.line_count() - 1);

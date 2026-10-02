@@ -221,3 +221,73 @@ fn a_revealed_heading_run_hangs_left_and_the_text_stays() {
         assert!(offset < title, "{text:?}: {offset}");
     }
 }
+
+/// A `width` by `height` PNG.
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image::RgbaImage::new(width, height)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    bytes
+}
+
+#[test]
+fn an_image_with_its_picture_hides_its_markdown_and_draws_under_its_line() {
+    let text = "para\n\n![alt](pic.png)\n\nsee ![b](pic.png) here\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(0, 0);
+    assert_eq!(editor.image_urls(), ["pic.png"]);
+    let line = |editor: &Editor, index: usize| {
+        editor.with_lines(|lines, source| {
+            let shaped = lines.shaped(source, index);
+            (
+                shaped.height,
+                shaped.pictures.len(),
+                shaped.line.text.clone(),
+            )
+        })
+    };
+    let (row, none, shown) = line(&editor, 2);
+    assert_eq!(
+        (none, shown.as_str()),
+        (0, "![alt](pic.png)"),
+        "no picture yet"
+    );
+    editor.set_image("pic.png", b"not an image");
+    assert_eq!(line(&editor, 2).1, 0, "undecodable bytes change nothing");
+    editor.set_image("pic.png", &png(40, 20));
+    // Alone on its line: the line is the picture.
+    assert_eq!(line(&editor, 2), (20.0, 1, String::new()));
+    // With text: the text's row, then the picture.
+    let (height, pictures, text_left) = line(&editor, 4);
+    assert_eq!((pictures, text_left.as_str()), (1, "see  here"));
+    assert!(
+        (height - (row + super::picture::GAP + 20.0)).abs() < 0.5,
+        "{height}"
+    );
+    // Touched, the markdown shows above the picture.
+    editor.select(9, 9);
+    assert_eq!(line(&editor, 2).2, "![alt](pic.png)");
+    assert_eq!(line(&editor, 2).1, 1);
+}
+
+#[test]
+fn a_wide_picture_fits_the_text_and_a_tall_one_is_capped() {
+    let (wide, _) = super::picture::stack(
+        &[&super::picture::decode(&png(2000, 100)).unwrap()],
+        0.0,
+        500.0,
+        480.0,
+    );
+    assert_eq!((wide[0].width, wide[0].height), (500.0, 25.0));
+    let (tall, _) = super::picture::stack(
+        &[&super::picture::decode(&png(100, 2000)).unwrap()],
+        0.0,
+        500.0,
+        480.0,
+    );
+    assert_eq!((tall[0].width, tall[0].height), (24.0, 480.0));
+}

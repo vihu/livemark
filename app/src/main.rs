@@ -72,6 +72,9 @@ struct App {
     changed: bool,
     /// The editor version whose unsaved changes the user chose to discard.
     discarded: Option<u64>,
+    /// Image destinations already looked for next to the note, for this
+    /// editor and path.
+    tried: std::collections::HashSet<String>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -132,6 +135,28 @@ impl App {
             pending: None,
             changed: false,
             discarded: None,
+            tried: std::collections::HashSet::new(),
+        }
+        .with_images()
+    }
+
+    fn with_images(mut self) -> Self {
+        self.load_images();
+        self
+    }
+
+    /// Hands the editor the pictures its images point to, from files next
+    /// to the note (REFERENCE-001 section 5), each destination once.
+    fn load_images(&mut self) {
+        let Some(note) = self.path.clone() else {
+            return;
+        };
+        for url in self.editor.image_urls() {
+            if self.tried.insert(url.clone())
+                && let Some(bytes) = file::image_bytes(&note, &url)
+            {
+                self.editor.set_image(&url, &bytes);
+            }
         }
     }
 
@@ -170,12 +195,14 @@ impl App {
                 let selection = self.editor.selection();
                 let mode = self.editor.mode();
                 self.editor = Editor::new(text);
+                self.tried.clear();
                 self.editor.set_mode(mode);
                 self.editor.select(selection.anchor, selection.head);
                 self.saved = self.editor.version();
                 self.discarded = None;
                 self.stamp = file::modified(&path);
                 self.error = None;
+                self.load_images();
             }
             Err(error) => self.error = Some(error),
         }
@@ -202,7 +229,9 @@ impl App {
                 if let Some(Err(error)) = message.link().map(open_link) {
                     self.error = Some(error);
                 }
-                return self.editor.update(message).map(Message::Editor);
+                let task = self.editor.update(message).map(Message::Editor);
+                self.load_images();
+                return task;
             }
             Message::New if self.unsaved() => self.pending = Some(After::New),
             Message::New => return self.new_note(),
@@ -231,8 +260,13 @@ impl App {
                 self.error = None;
                 self.stamp = file::modified(&path);
                 self.changed = false;
+                // Saved somewhere new: its images are looked for there.
+                if self.path.as_ref() != Some(&path) {
+                    self.tried.clear();
+                }
                 self.path = Some(path);
                 self.saved = version;
+                self.load_images();
                 // Typing while the save dialog was open: ask again.
                 if let Some(after) = self.pending.take() {
                     if self.unsaved() {
@@ -292,6 +326,7 @@ impl App {
         match file::load(&path) {
             Ok(text) => {
                 self.editor = Editor::new(text);
+                self.tried.clear();
                 self.saved = self.editor.version();
                 // Versions start again with a new editor.
                 self.discarded = None;
@@ -299,6 +334,7 @@ impl App {
                 self.changed = false;
                 self.path = Some(path);
                 self.error = None;
+                self.load_images();
                 Editor::focus()
             }
             Err(error) => {
@@ -312,6 +348,7 @@ impl App {
     fn new_note(&mut self) -> Task<Message> {
         self.path = None;
         self.editor = Editor::new(String::new());
+        self.tried.clear();
         self.saved = self.editor.version();
         self.discarded = None;
         self.stamp = None;

@@ -8,8 +8,9 @@ Status: working towards v0.1.0, not on crates.io. Live preview of headings,
 emphasis, links, escapes, lists (bullets as dots), task lists (clickable
 checkboxes), quotes, rules, code (syntax colors in fenced blocks, fences
 hidden) and tables (grids until the caret enters); list-aware editing;
-formatting keys; line commands; find and replace; a source mode. Images are
-not drawn yet. Targets Linux (Wayland) and macOS. It is both a library for
+formatting keys; line commands; find and replace; a source mode; zoom;
+YAML front matter and `==highlight==`; images drawn under their line from
+bytes the host supplies. Targets Linux (Wayland) and macOS. It is both a library for
 iced apps and a standalone editor (the `livemark` app).
 
 ## The app
@@ -25,7 +26,8 @@ Ctrl+Shift+S saves as; Ctrl+= and Ctrl+- make the text bigger or smaller
 title marks unsaved changes; closing or opening another file then asks.
 When the window comes back into focus and the file changed on disk (git,
 another editor), it is loaded again; with unsaved changes the app asks
-which to keep.
+which to keep. Images are read from files next to the note (relative
+paths); the app makes no network requests, so web images stay as markdown.
 
 Keys in the editor (Cmd instead of Ctrl on macOS):
 
@@ -83,6 +85,10 @@ fn view(editor: &Editor) -> Element<'_, Message> {
 `Editor::text` is the markdown to save, byte for byte as loaded plus the
 edits; `Editor::version` changes on every edit and comes back with undo, so
 compare it with the value from the last save to know when to autosave.
+`Editor::image_urls` lists where the note's images point; hand each
+picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn
+under its line while its markdown hides. `Editor::set_zoom` scales the
+text.
 
 [iced]: https://github.com/iced-rs/iced
 

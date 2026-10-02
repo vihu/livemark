@@ -44,6 +44,21 @@ pub fn save(path: &Path, text: &str) -> std::io::Result<()> {
     written
 }
 
+/// The bytes of the picture an image in the note at `note` points to:
+/// a path relative to the note's folder (`%20` read as a space) or an
+/// absolute one, at most 32 MB. Nothing with a scheme (`https:`, `data:`):
+/// the app makes no network requests.
+pub fn image_bytes(note: &Path, url: &str) -> Option<Vec<u8>> {
+    if url.contains(':') || url.starts_with('#') || url.is_empty() {
+        return None;
+    }
+    let path = note.parent()?.join(url.replace("%20", " "));
+    let size = std::fs::metadata(&path).ok()?.len();
+    (size <= 32 << 20)
+        .then(|| std::fs::read(&path).ok())
+        .flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

@@ -34,6 +34,7 @@ pub(super) fn walk(text: &str) -> Styled {
         inner_quotes: Vec::new(),
         nest: Vec::new(),
         highlight: None,
+        images: Vec::new(),
         continuations: Vec::new(),
         task_bullets: Vec::new(),
         scanned: None,
@@ -92,6 +93,8 @@ struct Walk<'a> {
     nest: Vec<Open>,
     /// An `==` waiting for its closing `==` in the same block.
     highlight: Option<usize>,
+    /// Images, in order, and where each points.
+    images: Vec<(Range<usize>, String)>,
     /// Lines of paragraphs in list items after the item's first line, and
     /// where the item's text starts.
     continuations: Vec<(Range<usize>, usize)>,
@@ -164,8 +167,13 @@ impl Walk<'_> {
                 self.links.push((range.clone(), dest));
                 self.span_start(range, link_type, false);
             }
-            Event::Start(Tag::Image { link_type, .. }) => {
+            Event::Start(Tag::Image {
+                link_type,
+                dest_url,
+                ..
+            }) => {
                 self.content(&range);
+                self.images.push((range.clone(), dest_url.into_string()));
                 self.span_start(range, link_type, true);
             }
             Event::End(TagEnd::Link | TagEnd::Image) => self.span_end(),
@@ -557,6 +565,7 @@ impl Walk<'_> {
             lazies: self.lazies,
             continuations: self.continuations,
             task_bullets: self.task_bullets,
+            images: self.images,
         }
     }
 }

@@ -20,6 +20,7 @@ const SIZE: (f32, f32) = (500.0, 300.0);
 /// Markdown in pieces, long enough to wrap and to scroll.
 const PIECES: &[&str] = &[
     "==",
+    "![a](p.png)",
     "# ",
     "## ",
     "- ",
@@ -69,6 +70,8 @@ fn random_widget_sessions_keep_the_text_whole() {
         let mut rng = Rng(seed);
         let text: String = (0..20 + rng.below(60)).map(|_| *rng.pick(PIECES)).collect();
         let mut editor = Editor::new(text.clone());
+        // Images pointing at `p.png` have a picture: lines grow under them.
+        editor.set_image("p.png", &picture());
         let mut edited = false;
         for round in 0..ROUNDS {
             let events: Vec<Vec<Event>> = (0..1 + rng.below(4)).map(|_| event(&mut rng)).collect();
@@ -308,4 +311,16 @@ fn markdown_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
             files.push(path);
         }
     }
+}
+
+/// A small PNG, 120 by 60.
+fn picture() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image::RgbaImage::new(120, 60)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    bytes
 }

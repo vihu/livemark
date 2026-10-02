@@ -29,6 +29,15 @@ fn main() {
         Some((a.parse().ok()?, b.parse().ok()?))
     });
     let mut editor = Editor::new(std::fs::read_to_string(file).expect("the markdown file"));
+    // Pictures next to the file, as the app finds them.
+    let folder = std::path::Path::new(file)
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
+    for url in editor.image_urls() {
+        if let Ok(bytes) = std::fs::read(folder.join(&url)) {
+            editor.set_image(&url, &bytes);
+        }
+    }
     let end = editor.text().len();
     let (anchor, head) = caret.unwrap_or((end, end));
     editor.select(anchor, head);
