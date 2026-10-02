@@ -9,7 +9,9 @@
 //! Ctrl+O opens, Ctrl+S saves (asking where for a new file), Ctrl+Shift+S
 //! saves as. Ctrl+click on a web or mail link (or Alt+Enter in it) opens it
 //! in the system's browser or mail program. The title shows `*` while there are unsaved changes; closing
-//! the window or opening another file then asks first.
+//! the window or opening another file then asks first. When the window
+//! comes back into focus and the file changed on disk, it is loaded again,
+//! or with unsaved changes the app asks which to keep.
 mod file;
 
 use std::path::PathBuf;
@@ -64,6 +66,10 @@ struct App {
     theme: Option<Theme>,
     /// What waits on an answer about unsaved changes.
     pending: Option<After>,
+    /// The file's modification time when last opened or saved.
+    stamp: Option<std::time::SystemTime>,
+    /// The file changed on disk while there were unsaved changes.
+    changed: bool,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -87,6 +93,11 @@ enum Message {
     CloseRequested,
     /// The answer to "unsaved changes": save first, or discard them.
     Unsaved(Option<bool>),
+    /// The window came into focus: the file may have changed on disk.
+    Focused,
+    /// The answer to "changed on disk": load it (discarding the unsaved
+    /// changes) or keep the text here.
+    Reload(bool),
 }
 
 impl App {
@@ -97,13 +108,52 @@ impl App {
             None => (String::new(), None),
         };
         let editor = Editor::new(text);
+        let path = path.filter(|_| error.is_none());
         Self {
-            path: path.filter(|_| error.is_none()),
+            stamp: path.as_deref().and_then(file::modified),
+            path,
             saved: editor.version(),
             editor,
             error,
             theme,
             pending: None,
+            changed: false,
+        }
+    }
+
+    /// Loads the file again if it changed on disk; with unsaved changes,
+    /// asks first.
+    fn check_disk(&mut self) {
+        let Some(path) = &self.path else {
+            return;
+        };
+        let stamp = file::modified(path);
+        if stamp.is_none() || stamp == self.stamp {
+            return;
+        }
+        if self.unsaved() {
+            self.changed = true;
+        } else {
+            self.reload();
+        }
+    }
+
+    /// The file's text from disk, the selection kept where it fits.
+    fn reload(&mut self) {
+        self.changed = false;
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        match file::load(&path) {
+            Ok(text) => {
+                let selection = self.editor.selection();
+                self.editor = Editor::new(text);
+                self.editor.select(selection.anchor, selection.head);
+                self.saved = self.editor.version();
+                self.stamp = file::modified(&path);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
         }
     }
 
@@ -136,6 +186,8 @@ impl App {
                 Ok(text) => {
                     self.editor = Editor::new(text);
                     self.saved = self.editor.version();
+                    self.stamp = file::modified(&path);
+                    self.changed = false;
                     self.path = Some(path);
                     self.error = None;
                     return Editor::focus();
@@ -153,6 +205,8 @@ impl App {
             }
             Message::Saved(Ok(Some(path)), version) => {
                 self.error = None;
+                self.stamp = file::modified(&path);
+                self.changed = false;
                 self.path = Some(path);
                 self.saved = version;
                 if let Some(after) = self.pending.take() {
@@ -173,6 +227,13 @@ impl App {
                 }
             }
             Message::Unsaved(None) => self.pending = None,
+            Message::Focused => self.check_disk(),
+            Message::Reload(true) => self.reload(),
+            Message::Reload(false) => {
+                // Keep this text; saving will replace the file's.
+                self.changed = false;
+                self.stamp = self.path.as_deref().and_then(file::modified);
+            }
         }
         Task::none()
     }
@@ -186,7 +247,22 @@ impl App {
 
     fn view(&self) -> Element<'_, Message> {
         let editor = self.editor.view().map(Message::Editor);
-        let bar: Option<Element<'_, Message>> = if self.pending.is_some() {
+        let bar: Option<Element<'_, Message>> = if self.changed {
+            Some(
+                row![
+                    text("The file changed on disk.").width(Length::Fill),
+                    button("Load it")
+                        .style(button::danger)
+                        .on_press(Message::Reload(true)),
+                    button("Keep mine")
+                        .style(button::secondary)
+                        .on_press(Message::Reload(false)),
+                ]
+                .spacing(8)
+                .align_y(iced::Center)
+                .into(),
+            )
+        } else if self.pending.is_some() {
             Some(
                 row![
                     text("Unsaved changes.").width(Length::Fill),
@@ -232,7 +308,10 @@ impl App {
             }
         });
         let close = window::close_requests().map(|_| Message::CloseRequested);
-        Subscription::batch([keys, close])
+        let focus = window::events().filter_map(|(_, event)| {
+            matches!(event, window::Event::Focused).then_some(Message::Focused)
+        });
+        Subscription::batch([keys, close, focus])
     }
 }
 
@@ -283,4 +362,49 @@ async fn save_file(path: Option<PathBuf>, text: String) -> Result<Option<PathBuf
     };
     file::save(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(Some(path))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, SystemTime};
+
+    use super::{App, Message};
+
+    /// Writes `text` to `path` with a modification time `secs` from now.
+    fn write(path: &std::path::Path, text: &str, secs: u64) {
+        std::fs::write(path, text).unwrap();
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(secs))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_file_changed_on_disk_loads_on_focus_or_asks_with_edits() {
+        let dir = std::env::temp_dir().join(format!("livemark-focus-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("note.md");
+        write(&path, "one\n", 0);
+        let mut app = App::open(Some(path.clone()), None);
+        let _ = app.update(Message::Focused);
+        assert_eq!(app.editor.text(), "one\n", "unchanged");
+        write(&path, "two\n", 10);
+        let _ = app.update(Message::Focused);
+        assert_eq!(app.editor.text(), "two\n", "loaded again");
+        assert!(!app.unsaved());
+        // With unsaved changes it asks; keeping them stops the asking.
+        app.saved = u64::MAX;
+        write(&path, "three\n", 20);
+        let _ = app.update(Message::Focused);
+        assert!(app.changed);
+        assert_eq!(app.editor.text(), "two\n");
+        let _ = app.update(Message::Reload(false));
+        let _ = app.update(Message::Focused);
+        assert!(!app.changed, "kept");
+        write(&path, "four\n", 30);
+        let _ = app.update(Message::Focused);
+        let _ = app.update(Message::Reload(true));
+        assert_eq!(app.editor.text(), "four\n", "loaded, edits dropped");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
+    }
 }

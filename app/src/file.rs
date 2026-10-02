@@ -10,6 +10,11 @@ pub fn load(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// When the file at `path` was last modified, if it can be read.
+pub fn modified(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
 /// Writes `text` to `path` through a temporary file in the same directory,
 /// then renames it over the original, so the file holds either the old or
 /// the new text. A symlink is followed (its target is replaced, not the
