@@ -47,8 +47,16 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
     let col = pos - line_start;
     let ending = line_ending(text);
     if blocks.fenced.iter().any(|f| f.start < pos && pos < f.end) {
-        let indent = &line[..line.len() - line.trim_start_matches([' ', '\t']).len()];
-        let insert = format!("{ending}{indent}");
+        // The quote markers too: a line without them would end the quote,
+        // and the code block with it (REFERENCE-001 section 9).
+        let quotes = blocks
+            .containers
+            .iter()
+            .filter(|c| c.list.is_none() && c.range.start <= pos && pos <= c.range.end)
+            .count();
+        let at = quote_prefix(line, quotes);
+        let blank = line[at..].len() - line[at..].trim_start_matches([' ', '\t']).len();
+        let insert = format!("{ending}{}", &line[..at + blank]);
         let caret = pos + insert.len();
         doc.apply(
             vec![Change::insert(pos, insert)],
@@ -142,8 +150,8 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
         .count();
     if !continued {
         // The item starts on this line: its new sibling repeats the line
-        // up to it (quote markers, tabs and all), then a fresh marker.
-        insert += &line[..offset(0, line, inner.from)];
+        // up to it, then a fresh marker.
+        insert += &lead(&blocks, &contexts, line, line_start);
         insert += &inner.marker(text, &blocks, 1);
     } else if markup >= inner.to {
         let last = contexts.len() - 1;
@@ -176,6 +184,49 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
     changes.sort_by_key(|c| c.range.start);
     doc.apply(changes, Selection::caret(caret), Kind::Other, now);
     true
+}
+
+/// The line at `line_start` up to its innermost markup, for a new line
+/// under it: quote markers and indentation kept (tabs too), the markers of
+/// the items around it that start on this line turned to spaces.
+fn lead(blocks: &Blocks, contexts: &[context::Context], line: &str, line_start: usize) -> String {
+    let Some((inner, outer)) = contexts.split_last() else {
+        return String::new();
+    };
+    let mut lead = line[..offset(0, line, inner.from)].to_owned();
+    for context in outer {
+        if context.item.is_some() && inner_starts_here(blocks, context, line_start) {
+            let end = context.to.min(lead.len());
+            let start = (context.from + context.space_before.len()).min(end);
+            if lead.is_char_boundary(start) && lead.is_char_boundary(end) {
+                lead.replace_range(start..end, &" ".repeat(end - start));
+            }
+        }
+    }
+    lead
+}
+
+/// The length of up to `depth` quote markers (`>` with the indentation
+/// before it, which can be a list item's, and one space after) at the start
+/// of `line`.
+fn quote_prefix(line: &str, depth: usize) -> usize {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    for _ in 0..depth {
+        let mut i = at;
+        while matches!(bytes.get(i), Some(b' ' | b'\t')) {
+            i += 1;
+        }
+        if bytes.get(i) != Some(&b'>') {
+            break;
+        }
+        i += 1;
+        if bytes.get(i) == Some(&b' ') {
+            i += 1;
+        }
+        at = i;
+    }
+    at
 }
 
 /// Whether `context`'s container starts on the line at `line_start`.
@@ -223,7 +274,7 @@ pub fn soft_break(doc: &mut Doc, now: Duration) {
         // as wide as its markup.
         Some(inner) if inner_starts_here(&blocks, inner, line_start) => {
             let line = line_at(doc, pos).1;
-            insert += &line[..offset(0, line, inner.from)];
+            insert += &lead(&blocks, &contexts, line, line_start);
             insert += &inner.blank(None, true);
         }
         // On a continuation line, already indented: as it is.

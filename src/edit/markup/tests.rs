@@ -107,6 +107,16 @@ fn enter_in_fenced_code_keeps_the_indentation() {
         Some("```\n- x\n|\n```"),
         "no markup in code"
     );
+    assert_eq!(
+        enter("> ```\n> code|\n> ```").as_deref(),
+        Some("> ```\n> code\n> |\n> ```"),
+        "in a quote, its marker"
+    );
+    assert_eq!(
+        enter("```\n> x|\n```").as_deref(),
+        Some("```\n> x\n|\n```"),
+        "a `>` in code is code"
+    );
 }
 
 #[test]
@@ -329,4 +339,79 @@ fn shift_enter_over_a_selection_in_fenced_code_breaks_the_line() {
     doc.set_selection(Selection { anchor: 6, head: 8 });
     soft_break(&mut doc, Duration::ZERO);
     assert_eq!(shown(&doc), "```\nab\n|ef\n```\n");
+}
+
+#[test]
+fn a_new_line_under_an_item_on_its_parents_line_blanks_the_parents_marker() {
+    let mut quoted = doc("- a\n- > q|\n- c");
+    soft_break(&mut quoted, Duration::ZERO);
+    assert_eq!(shown(&quoted), "- a\n- > q\n  > |\n- c");
+    assert_eq!(
+        enter("1. a\n2. - b|\n3. c").as_deref(),
+        Some("1. a\n2. - b\n   - |\n3. c")
+    );
+    let mut nested = doc("1. a\n2. - b|");
+    soft_break(&mut nested, Duration::ZERO);
+    assert_eq!(shown(&nested), "1. a\n2. - b\n     |");
+}
+
+#[test]
+fn shift_tab_leaves_a_list_with_no_item_around_it() {
+    for text in [
+        " - a|\n - b",
+        " 8. eight|\n 9. nine\n10. ten",
+        ">  - a|\n>  - b",
+    ] {
+        assert_eq!(tab(text, true), text);
+    }
+}
+
+#[test]
+fn tab_and_shift_tab_land_on_the_items_text_column() {
+    // A tab short of the text's column becomes spaces.
+    assert_eq!(
+        tab("- t\n\t- u\n\n- p\n  1. a\n  2. b|", false),
+        "- t\n\t- u\n\n- p\n  1. a\n     1. b|"
+    );
+    assert_eq!(
+        tab("- t\n\n> - a\n> \t1. x|\n> \t2. y", true),
+        "- t\n\n> - a\n> 1. x|\n>    1. y"
+    );
+    // Children move by columns, not by the text in front of a tab; an item
+    // joining an ordered child list continues its numbers.
+    assert_eq!(
+        tab("1. a\n   1. x\n2. b|\n\t- c", false),
+        "1. a\n   1. x\n   2. b|\n       - c"
+    );
+    // A `>` with no space after it takes the first space as its own.
+    assert_eq!(tab(">- a\n>- b|", false), ">- a\n>   - b|");
+    assert_eq!(tab(">1. a\n>2. b|", false), ">1. a\n>    1. b|");
+}
+
+#[test]
+fn children_move_with_a_number_changing_width() {
+    // The lifted item's own, an outer sibling's, a following sibling's.
+    assert_eq!(
+        tab("9. a\n   1. x|\n      - c", true),
+        "9. a\n10. x|\n    - c"
+    );
+    assert_eq!(
+        tab("8. a\n   1. b|\n9. c\n   - d", true),
+        "8. a\n9. b|\n10. c\n    - d"
+    );
+    assert_eq!(
+        tab("8. a\n9. b|\n10. c\n    - d", false),
+        "8. a\n   1. b|\n9. c\n   - d"
+    );
+}
+
+#[test]
+fn shift_tab_into_another_kind_of_list_keeps_both_numbers() {
+    // Another delimiter: a list of its own, the outer one left as it is.
+    assert_eq!(tab("7. a\n   1) b|\n8. c", true), "7. a\n1) b|\n8. c");
+    // Siblings left under the lifted item join its ordered child list.
+    assert_eq!(
+        tab("1. a\n   1. b|\n      1. x\n   2. c", true),
+        "1. a\n2. b|\n   1. x\n   2. c"
+    );
 }
