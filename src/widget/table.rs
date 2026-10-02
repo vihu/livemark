@@ -5,6 +5,7 @@
 //! together when the table is wider than the text, and placed by the
 //! delimiter row's alignment. The delimiter row's line is shaped short and
 //! drawn as the rule under the header.
+use std::ops::Range;
 use std::sync::Arc;
 
 use iced::advanced::graphics::text::Renderer as _;
@@ -36,8 +37,11 @@ pub struct Cell {
     pub buffer: Arc<cosmic_text::Buffer>,
     /// Its text's width and height.
     pub size: Size,
-    /// Its source projected, to map clicks back.
+    /// Its source projected, to map clicks back, and where that source
+    /// started: a grid is shared by every table with its text, so offsets
+    /// are taken relative to this.
     pub line: Line,
+    pub start: usize,
 }
 
 impl Grid {
@@ -50,7 +54,7 @@ impl Grid {
             .map(|(row, (range, cells))| {
                 (0..table.align.len())
                     .map(|column| {
-                        let cell = cells.get(column).cloned().unwrap_or(range.end..range.end);
+                        let cell = cell_range(range, cells, column);
                         let runs: Vec<_> = styled
                             .runs()
                             .iter()
@@ -74,6 +78,7 @@ impl Grid {
                         Cell {
                             size: Size::new(width, cached.height),
                             buffer: cached.buffer,
+                            start: line.to_source(0, Affinity::Before),
                             line,
                         }
                     })
@@ -127,8 +132,9 @@ impl Grid {
             }
     }
 
-    /// The source offset under `x` (from the row's start) in row `row`.
-    pub fn hit(&self, row: usize, x: f32) -> usize {
+    /// The source offset under `x` (from the row's start) in row `row` of
+    /// `table`, a table with this grid's text.
+    pub fn hit(&self, table: &Table, row: usize, x: f32) -> usize {
         let column = self
             .columns
             .iter()
@@ -145,7 +151,9 @@ impl Grid {
         } else {
             display
         };
-        cell.line.to_source(display, Affinity::After)
+        let (range, cells) = &table.rows[row];
+        let start = cell_range(range, cells, column).start;
+        cell.line.to_source(display, Affinity::After) - cell.start + start
     }
 
     /// Draws row `row` with its top left at `at`, `height` tall, clipped
@@ -195,4 +203,10 @@ impl Grid {
             });
         }
     }
+}
+
+/// Cell `column` of the row at `range`: an empty range at the row's end
+/// when the row has fewer cells.
+fn cell_range(range: &Range<usize>, cells: &[Range<usize>], column: usize) -> Range<usize> {
+    cells.get(column).cloned().unwrap_or(range.end..range.end)
 }

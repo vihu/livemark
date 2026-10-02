@@ -135,6 +135,21 @@ fn a_click_on_a_grid_cell_puts_the_caret_in_its_source() {
     let _ = editor.update(Message(Input::Release));
     let head = editor.selection().head;
     assert_eq!(&text[head..head + 2], "dd", "after the hidden `**`");
+    // Text typed above moves the table; its grid is shared by text, so a
+    // click must still land in the moved source.
+    editor.select(0, 0);
+    let _ = editor.update(Message(Input::Key(super::Key::Insert('z'))));
+    let end = editor.text().len();
+    editor.select(end, end);
+    let _ = editor.update(Message(Input::Press {
+        at,
+        shift: false,
+        clicks: 1,
+        command: false,
+    }));
+    let _ = editor.update(Message(Input::Release));
+    let head = editor.selection().head;
+    assert_eq!(&editor.text()[head..head + 2], "dd", "after an edit above");
 }
 
 #[test]

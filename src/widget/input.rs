@@ -126,6 +126,9 @@ impl Editor {
         }
         if self.doc.version() != version {
             self.styled = Styled::new(self.doc.text());
+            // An edit while the button is held (a key, a paste) ends the
+            // press: its word or line is from the old text.
+            self.press = None;
         }
         if !vertical {
             self.goal_x = None;

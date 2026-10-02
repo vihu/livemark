@@ -417,7 +417,8 @@ impl Lines {
             MarkKind::TableRule(table) => (table, 0),
             _ => return None,
         };
-        Some(self.grid(source, table).hit(row, x - start))
+        let grid = self.grid(source, table);
+        Some(grid.hit(&source.styled.tables()[table], row, x - start))
     }
 
     /// The concealed task box whose checkbox is at `x`, `y` in the text

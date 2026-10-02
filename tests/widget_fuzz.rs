@@ -1,7 +1,8 @@
 //! Random sessions through the widget in iced's headless simulator: clicks
 //! (one to three), drags, the wheel and the scroll bar, typing, and the
 //! editing, motion, formatting, line and mode keys the surface handles.
-//! Never a panic, the selection always on character boundaries, and
+//! Every round is drawn. Never a panic, the selection always on
+//! character boundaries, and
 //! undoing everything gives back the text the session started with.
 //! Seeded, like `doc_fuzz.rs`; fewer seeds by default, since every round
 //! builds an interface.
@@ -123,6 +124,8 @@ fn run(
             ui.simulate(click());
         }
         events(&mut ui);
+        // Drawn too: marks, grids and highlighting must not panic either.
+        ui.snapshot(&iced::Theme::Light).expect("a frame");
         ui.into_messages().collect()
     };
     for message in messages {
