@@ -226,3 +226,14 @@ fn over_several_lines_only_inline_text_is_wrapped() {
     assert_eq!(twice("   \n  \n", (0, 6), Format::Bold)[0], "   \n  \n");
     assert_eq!(twice("- \n> \n", (0, 6), Format::Bold)[0], "- \n> \n");
 }
+
+#[test]
+fn a_line_of_markers_alone_and_a_backslash_in_code_come_back() {
+    let text = "_\nb\n";
+    assert_eq!(twice(text, (0, 4), Format::Bold)[1], text);
+    // In code a backslash is text, not a hard break.
+    assert_eq!(
+        twice("end C:\\dir\\\nnext", (4, 16), Format::Code)[0],
+        "end `C:\\dir\\`\n`next`"
+    );
+}

@@ -51,7 +51,7 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
     // (between its markers and its text), else on for those that are not.
     if text[range.clone()].contains(['\n', '\r']) {
         let texts = inline_text(text);
-        let lines: Vec<_> = content_lines(text, range.clone())
+        let lines: Vec<_> = content_lines(text, range.clone(), format)
             .into_iter()
             .filter(|line| {
                 let i = texts.partition_point(|t| t.end <= line.start);
@@ -61,14 +61,22 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         // The line's text without marker characters at its ends (the
         // parser can pair stars differently from how they were typed:
         // `***a***` is italic around bold), inside a span's text.
-        let stars: &[char] = match format {
-            Format::Code => &['`'],
-            _ => &['*', '_'],
+        let stars: &[&[char]] = match format {
+            Format::Code => &[&['`']],
+            _ => &[&['*', '_'], &['*']],
         };
         let span = |line: &std::ops::Range<usize>| {
             let own = &text[line.clone()];
-            let start = line.start + own.len() - own.trim_start_matches(stars).len();
-            let end = start + own.trim_matches(stars).len();
+            // A line of nothing but such characters (`_`) keeps the ones
+            // the keys do not type, or all of them.
+            let (start, end) = stars
+                .iter()
+                .map(|stars| {
+                    let start = line.start + own.len() - own.trim_start_matches(*stars).len();
+                    (start, start + own.trim_matches(*stars).len())
+                })
+                .find(|(start, end)| start < end)
+                .unwrap_or((line.start, line.end));
             styled
                 .constructs()
                 .iter()
@@ -144,7 +152,7 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
     let segments = if range.is_empty() {
         vec![strictly_in_word(doc, range.start).unwrap_or(range.clone())]
     } else {
-        content_lines(text, range.clone())
+        content_lines(text, range.clone(), format)
     };
     if segments.is_empty() {
         return;
@@ -219,7 +227,11 @@ fn inline_text(text: &str) -> Vec<std::ops::Range<usize>> {
 
 /// The lines `range` covers, each cut to `range`, without its block
 /// markup and without spaces at either end; empty ones left out.
-fn content_lines(text: &str, range: std::ops::Range<usize>) -> Vec<std::ops::Range<usize>> {
+fn content_lines(
+    text: &str,
+    range: std::ops::Range<usize>,
+    format: Format,
+) -> Vec<std::ops::Range<usize>> {
     let mut lines = Vec::new();
     let mut start = text[..range.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
     while start <= range.end {
@@ -238,7 +250,7 @@ fn content_lines(text: &str, range: std::ops::Range<usize>) -> Vec<std::ops::Ran
                 .rev()
                 .take_while(|&b| b == b'\\')
                 .count();
-            if content.end == end && slashes % 2 == 1 {
+            if format != Format::Code && content.end == end && slashes % 2 == 1 {
                 content.end -= 1;
                 content.end = content.start + text[content.clone()].trim_end().len();
             }
