@@ -59,19 +59,52 @@ impl App {
                 .as_ref()
                 .map(|error| text(error).style(text::danger).into())
         };
-        let file = button(text("File").size(14))
-            .style(if self.menu {
-                button::primary
-            } else {
-                button::text
-            })
-            .padding([4, 10])
-            .on_press(Message::Menu(!self.menu));
+        // As the editor's toolbar buttons: an outline, shaded under the
+        // pointer, filled while open.
+        let open = self.menu;
+        let file = button(
+            container(text("File").size(13))
+                .height(20)
+                .align_y(iced::Center),
+        )
+        .padding([5, 10])
+        .style(move |theme: &Theme, status| {
+            let palette = theme.palette();
+            let (background, text_color) = match status {
+                _ if open => (Some(palette.primary.base.color), palette.primary.base.text),
+                button::Status::Hovered => (
+                    Some(palette.background.weak.color),
+                    palette.background.base.text,
+                ),
+                button::Status::Pressed => (
+                    Some(palette.background.strong.color),
+                    palette.background.base.text,
+                ),
+                _ => (None, palette.background.base.text),
+            };
+            button::Style {
+                background: background.map(iced::Background::Color),
+                text_color,
+                border: iced::Border::default().rounded(5),
+                ..button::Style::default()
+            }
+        })
+        .on_press(Message::Menu(!self.menu));
+        let file = container(file)
+            .padding(2)
+            .style(|theme: &Theme| container::Style {
+                border: iced::Border {
+                    color: theme.palette().background.strong.color,
+                    width: 1.0,
+                    radius: 7.0.into(),
+                },
+                ..container::Style::default()
+            });
         // The toolbar always on top (PLAN-002).
         let toolbar = container(
             row![
                 file,
-                Space::new().width(12),
+                Space::new().width(8),
                 self.editor.toolbar().map(Message::Editor)
             ]
             .align_y(iced::Center),

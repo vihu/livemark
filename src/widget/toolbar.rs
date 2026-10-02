@@ -1,119 +1,150 @@
-//! The toolbar (PLAN-002): formatting, line prefixes and the mode, each
-//! button running its key's command and giving the keyboard back to the
-//! text. A host shows it where it likes, with its own items around it.
-use iced::widget::{Space, button, row, text, tooltip};
-use iced::{Element, Font, font};
+//! The toolbar (PLAN-003): formatting and line prefixes as icons in two
+//! groups, and the modes as a switch at the right edge, named and
+//! explained in their tooltips. Each button runs its key's command and
+//! gives the keyboard back to the text. A host shows it where it likes,
+//! with its own items around it.
+use iced::widget::{Space, button, container, row, text, tooltip};
+use iced::{Background, Border, Element, Length, Theme};
 
+use super::icons::{Glyph, icon};
 use super::{Editor, Input, Key, Message, Mode};
 use crate::edit::blocks::Block;
 use crate::edit::format::Format;
 
 impl Editor {
     /// The toolbar: bold, italic, code, link; heading, bullet, task, quote;
-    /// live, source and split mode. Opt-in: nothing shows it unless the host puts
-    /// it in its view.
+    /// and the mode: live preview, markdown, side by side. It fills the
+    /// width it is given. Opt-in: nothing shows it unless the host puts it
+    /// in its view.
     pub fn toolbar(&self) -> Element<'_, Message> {
-        let mode = self.mode;
-        let tool = |label: Element<'static, Message>, hint: &'static str, key: Key, on: bool| {
-            let style = if on { button::primary } else { button::text };
-            tooltip(
-                button(label)
-                    .style(style)
-                    .padding([4, 10])
+        let tool = |glyph: Glyph, hint: &'static str, key: Key| {
+            tip(
+                button(icon(glyph, false))
+                    .padding(5)
+                    .style(|theme, status| style(theme, status, false))
                     .on_press(Message(Input::Tool(key))),
-                text(if cfg!(target_os = "macos") {
-                    hint.replace("Ctrl+", "Cmd+")
-                } else {
-                    hint.to_owned()
-                })
-                .size(12),
-                tooltip::Position::Bottom,
+                hint,
             )
-            .gap(4)
-            .style(iced::widget::container::rounded_box)
         };
-        let label = |content: &'static str, font: Font| text(content).size(14).font(font).into();
-        let bold = Font {
-            weight: font::Weight::Bold,
-            ..Font::DEFAULT
-        };
-        let italic = Font {
-            style: font::Style::Italic,
-            ..Font::DEFAULT
-        };
-        let gap = || Space::new().width(12);
-        row![
+        let format = group(vec![
+            tool(Glyph::Bold, "Bold (Ctrl+B)", Key::Format(Format::Bold)),
             tool(
-                label("B", bold),
-                "Bold (Ctrl+B)",
-                Key::Format(Format::Bold),
-                false
-            ),
-            tool(
-                label("I", italic),
+                Glyph::Italic,
                 "Italic (Ctrl+I)",
                 Key::Format(Format::Italic),
-                false
             ),
             tool(
-                label("Code", Font::MONOSPACE),
-                "Code (Ctrl+E)",
+                Glyph::Code,
+                "Inline code (Ctrl+E)",
                 Key::Format(Format::Code),
-                false
             ),
+            tool(Glyph::Link, "Link (Ctrl+K)", Key::Link),
+        ]);
+        let blocks = group(vec![
             tool(
-                label("Link", Font::DEFAULT),
-                "Link (Ctrl+K)",
-                Key::Link,
-                false
-            ),
-            gap(),
-            tool(
-                label("H", bold),
-                "Heading: #, ##, ###, none",
+                Glyph::Heading,
+                "Heading: #, ##, ###, then none",
                 Key::Block(Block::Heading),
-                false
             ),
-            tool(
-                label("List", Font::DEFAULT),
-                "Bullet list",
-                Key::Block(Block::Bullet),
-                false
+            tool(Glyph::List, "Bullet list", Key::Block(Block::Bullet)),
+            tool(Glyph::Task, "Task list", Key::Block(Block::Task)),
+            tool(Glyph::Quote, "Quote", Key::Block(Block::Quote)),
+        ]);
+        let mode = |glyph: Glyph, label: &'static str, hint: &'static str, mode: Mode| {
+            let on = self.mode == mode;
+            tip(
+                button(
+                    row![icon(glyph, on), text(label).size(13)]
+                        .spacing(6)
+                        .align_y(iced::Center),
+                )
+                .padding([5, 10])
+                .style(move |theme, status| style(theme, status, on))
+                .on_press(Message(Input::Tool(Key::SetMode(mode)))),
+                hint,
+            )
+        };
+        let modes = group(vec![
+            mode(
+                Glyph::Live,
+                "Live preview",
+                "Markdown renders as you type; markers show where the caret is (Ctrl+Shift+E)",
+                Mode::Live,
             ),
-            tool(
-                label("Task", Font::DEFAULT),
-                "Task list",
-                Key::Block(Block::Task),
-                false
+            mode(
+                Glyph::Markdown,
+                "Markdown",
+                "The text exactly as saved, nothing hidden (Ctrl+Shift+E)",
+                Mode::Source,
             ),
-            tool(
-                label("Quote", Font::DEFAULT),
-                "Quote",
-                Key::Block(Block::Quote),
-                false
+            mode(
+                Glyph::Split,
+                "Side by side",
+                "Markdown on the left, the rendered note on the right, scrolled together (Ctrl+Shift+E)",
+                Mode::Split,
             ),
-            gap(),
-            tool(
-                label("Live", Font::DEFAULT),
-                "Live preview (Ctrl+Shift+E)",
-                Key::SetMode(Mode::Live),
-                mode == Mode::Live,
-            ),
-            tool(
-                label("Source", Font::DEFAULT),
-                "The markdown as written (Ctrl+Shift+E)",
-                Key::SetMode(Mode::Source),
-                mode == Mode::Source,
-            ),
-            tool(
-                label("Split", Font::DEFAULT),
-                "The markdown beside the rendered note (Ctrl+Shift+E)",
-                Key::SetMode(Mode::Split),
-                mode == Mode::Split,
-            ),
-        ]
-        .spacing(2)
-        .align_y(iced::Center)
+        ]);
+        row![format, blocks, Space::new().width(Length::Fill), modes]
+            .spacing(8)
+            .width(Length::Fill)
+            .align_y(iced::Center)
+            .into()
+    }
+}
+
+/// `content` with `hint` under it on hover; Cmd for Ctrl on macOS.
+fn tip<'a>(content: impl Into<Element<'a, Message>>, hint: &'static str) -> Element<'a, Message> {
+    let hint = if cfg!(target_os = "macos") {
+        hint.replace("Ctrl+", "Cmd+")
+    } else {
+        hint.to_owned()
+    };
+    tooltip(
+        content,
+        container(text(hint).size(12)).padding([4, 8]),
+        tooltip::Position::Bottom,
+    )
+    .gap(6)
+    .style(container::rounded_box)
+    .into()
+}
+
+/// Buttons side by side in one rounded outline.
+fn group(buttons: Vec<Element<'_, Message>>) -> Element<'_, Message> {
+    container(row(buttons).spacing(2))
+        .padding(2)
+        .style(|theme: &Theme| container::Style {
+            border: Border {
+                color: theme.palette().background.strong.color,
+                width: 1.0,
+                radius: 7.0.into(),
+            },
+            ..container::Style::default()
+        })
         .into()
+}
+
+/// A toolbar button: plain, shaded under the pointer, filled when it is
+/// the mode shown.
+fn style(theme: &Theme, status: button::Status, on: bool) -> button::Style {
+    let palette = theme.palette();
+    let (background, text_color) = if on {
+        (Some(palette.primary.base.color), palette.primary.base.text)
+    } else {
+        let shade = match status {
+            button::Status::Hovered => Some(palette.background.weak.color),
+            button::Status::Pressed => Some(palette.background.strong.color),
+            _ => None,
+        };
+        (shade, palette.background.base.text)
+    };
+    button::Style {
+        background: background.map(Background::Color),
+        text_color,
+        border: Border {
+            radius: 5.0.into(),
+            ..Border::default()
+        },
+        ..button::Style::default()
     }
 }

@@ -13,8 +13,8 @@ checkboxes), quotes, rules, code (syntax colors in fenced blocks, fences
 hidden) and tables (grids until the caret enters); list-aware editing;
 formatting keys; line commands; find and replace; a source mode; zoom;
 YAML front matter and `==highlight==`; images drawn under their line from
-bytes the host supplies; a toolbar and a Split mode with the rendered note beside the markdown, the
-two scrolled together. Targets Linux (Wayland) and macOS. It is both a library for
+bytes the host supplies; a toolbar; three modes, Live preview, Markdown (as written) and Side by
+side (the rendered note beside the markdown, the two scrolled together). Targets Linux (Wayland) and macOS. It is both a library for
 iced apps and a standalone editor (the `livemark` app).
 
 ## The app
@@ -55,7 +55,7 @@ note and linked at the caret (a new note is saved first); a picture file
 dropped on the window is linked by its path, a dropped `.md` file opens.
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
 the theme (System, Light, Dark). The zoom, the window's size, the theme,
-where the divider between the Split panes was (drag it; a double click
+where the divider between the side by side panes was (drag it; a double click
 puts it back in the middle) and the ten most recent files are kept in `~/.config/livemark/settings` (macOS:
 `~/Library/Application Support/livemark/settings`), a `key = value` file.
 
@@ -65,7 +65,7 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | --- | --- |
 | Ctrl+B, Ctrl+I, Ctrl+E | Bold, italic, inline code: on the selection or the word, off inside one |
 | Ctrl+K | A link: `[text]()` around the selection, `[](url)` around a URL |
-| Ctrl+Shift+E | Live preview, the markdown as written, or Split: the markdown beside the rendered note, scrolled together (a click there puts the caret at that place) |
+| Ctrl+Shift+E | The next mode: Live preview, Markdown (as written), Side by side (the rendered note beside the markdown, scrolled together; a click there puts the caret at that place) |
 | Ctrl+F, Ctrl+H | Find, find and replace; Enter, F3 or Ctrl+G for the next match, with Shift the previous; Tab to the next field; Escape closes |
 | Enter | Continues a list item (next number, unchecked box) or quote; on an empty item, one level less |
 | Shift+Enter | A new line indented to the item's text, without a marker |
@@ -123,7 +123,7 @@ key's command. A paste with no text but a picture comes to the host as
 picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn
 under its line while its markdown hides. `Editor::set_zoom` scales the
 text; `Editor::split_ratio` and `set_split_ratio` are the markdown's share
-of the width in Split mode, for a host to keep.
+of the width side by side (`Mode::Split`), for a host to keep.
 
 [iced]: https://github.com/iced-rs/iced
 

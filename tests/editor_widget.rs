@@ -574,37 +574,53 @@ fn ctrl_with_the_wheel_zooms_and_without_it_scrolls() {
 
 #[test]
 fn toolbar_buttons_run_their_keys_commands() {
-    let click = |editor: &mut Editor, label: &str| {
+    // A press on the toolbar, then the messages applied.
+    let press_at = |editor: &mut Editor, find: &dyn Fn(&mut iced_test::Simulator<'_, Message>)| {
         let messages: Vec<_> = {
             let view = iced::widget::column![editor.toolbar(), editor.view()];
             let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), SIZE, view);
-            ui.click(label)
-                .unwrap_or_else(|_| panic!("a {label} button"));
+            find(&mut ui);
             ui.into_messages().collect()
         };
         for message in messages {
             let _ = editor.update(message);
         }
     };
-    for (label, before, after) in [
-        ("B", "word", "**word**"),
-        ("I", "word", "*word*"),
-        ("Code", "word", "`word`"),
-        ("H", "Title", "# Title"),
-        ("List", "milk", "- milk"),
-        ("Task", "milk", "- [ ] milk"),
-        ("Quote", "a", "> a"),
+    // The icon buttons, 30 wide and 2 apart in two groups (2 padding each
+    // side, 8 between): button `i` is centred at this x, 17 down.
+    let icon_x = |i: usize| 2.0 + (i / 4) as f32 * 138.0 + (i % 4) as f32 * 32.0 + 15.0;
+    for (i, before, after) in [
+        (0, "word", "**word**"),
+        (1, "word", "*word*"),
+        (2, "word", "`word`"),
+        (4, "Title", "# Title"),
+        (5, "milk", "- milk"),
+        (6, "milk", "- [ ] milk"),
+        (7, "a", "> a"),
     ] {
         let mut editor = Editor::new(before.into());
         editor.select(0, before.len());
-        click(&mut editor, label);
-        assert_eq!(editor.text(), after, "{label}");
+        press_at(&mut editor, &|ui| click(ui, Point::new(icon_x(i), 17.0)));
+        assert_eq!(editor.text(), after, "button {i}");
     }
+    // The link button: `[text]()` around the selection.
+    let mut editor = Editor::new("word".into());
+    editor.select(0, 4);
+    press_at(&mut editor, &|ui| click(ui, Point::new(icon_x(3), 17.0)));
+    assert_eq!(editor.text(), "[word]()");
+    // The mode switch, by its names.
     let mut editor = Editor::new("text".into());
-    click(&mut editor, "Source");
-    assert_eq!(editor.mode(), livemark::widget::Mode::Source);
-    click(&mut editor, "Live");
-    assert_eq!(editor.mode(), livemark::widget::Mode::Live);
+    for (label, mode) in [
+        ("Markdown", livemark::widget::Mode::Source),
+        ("Side by side", livemark::widget::Mode::Split),
+        ("Live preview", livemark::widget::Mode::Live),
+    ] {
+        press_at(&mut editor, &|ui| {
+            ui.click(label)
+                .unwrap_or_else(|_| panic!("a {label} button"));
+        });
+        assert_eq!(editor.mode(), mode, "{label}");
+    }
 }
 
 #[test]

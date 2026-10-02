@@ -18,7 +18,7 @@
     <ul>
       <li>Live preview of headings, emphasis, links, lists, task lists, quotes, tables, code and images</li>
       <li>List-aware editing, formatting keys, find and replace</li>
-      <li>A toolbar, a source mode and a split view beside the rendered note</li>
+      <li>A toolbar, the markdown as written, and the rendered note side by side with it</li>
       <li>Pasted pictures are saved next to the note</li>
       <li>Light and dark mode, zoom, recent notes</li>
     </ul>

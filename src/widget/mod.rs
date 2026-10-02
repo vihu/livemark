@@ -5,6 +5,7 @@ mod divider;
 mod draw;
 mod find;
 mod highlight;
+mod icons;
 mod input;
 mod keys;
 mod lines;

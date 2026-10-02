@@ -11,8 +11,9 @@ The first release: the library and the `livemark` desktop app.
 - Editing: Enter, Tab and Backspace that know lists and quotes; formatting
   keys; line commands; find and replace; undo in typing bursts. A file
   loaded and saved without edits stays byte for byte the same.
-- A toolbar, a source mode and a Split mode with the rendered note beside
-  the markdown, the two scrolled together; zoom from 50% to 300%.
+- A toolbar of icons, and three modes: Live preview, Markdown (as written)
+  and Side by side (the rendered note beside the markdown, scrolled
+  together, with a divider to drag); zoom from 50% to 300%.
 - The app: new, open, save and recent notes from the File menu; light, dark
   or the system's theme; it asks before dropping unsaved changes and loads
   a file changed on disk again; pasted pictures are saved next to the note.
