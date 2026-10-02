@@ -25,8 +25,7 @@ impl Editor {
     pub(super) fn thumb(&self, track: Rectangle) -> Option<Rectangle> {
         let (start, visible, count) = self.with_lines(|lines, source| {
             let count = source.doc.line_count();
-            let height = lines.shaped(source, lines.anchor).height.max(1.0);
-            let start = lines.anchor as f32 + (lines.offset / height).clamp(0.0, 1.0);
+            let start = lines.position(source, (lines.anchor, lines.offset));
             (start, lines.visible, count)
         });
         if count <= 1 || (start == 0.0 && visible >= count) {
@@ -34,7 +33,7 @@ impl Editor {
         }
         let share = (visible as f32 / count as f32).min(1.0);
         let height = (share * track.height).clamp(MIN_THUMB.min(track.height), track.height);
-        let t = start / (count - 1) as f32;
+        let t = start / travel_lines(count, visible);
         let y = track.y + t.clamp(0.0, 1.0) * (track.height - height);
         Some(Rectangle::new(
             Point::new(track.x, y),
@@ -64,12 +63,20 @@ impl Editor {
     /// Scrolls so the thumb's top is at `t` of the way down its travel.
     pub(super) fn scroll_to(&mut self, t: f32) {
         self.with_lines(|lines, source| {
-            let position = t.clamp(0.0, 1.0) * (source.doc.line_count() - 1) as f32;
-            lines.anchor = position.floor() as usize;
+            let count = source.doc.line_count();
+            let position = t.clamp(0.0, 1.0) * travel_lines(count, lines.visible);
+            lines.anchor = (position.floor() as usize).min(count - 1);
             let height = lines.shaped(source, lines.anchor).height;
             lines.offset = position.fract() * height;
+            lines.stop_at_end(source);
         });
     }
+}
+
+/// How many lines the view's top travels over, by line counts: up to the
+/// last screen of lines (the frame before last drew `visible`).
+fn travel_lines(count: usize, visible: usize) -> f32 {
+    count.saturating_sub(visible).max(1) as f32
 }
 
 /// The thumb's travel for a top at `y`, from 0 to 1.

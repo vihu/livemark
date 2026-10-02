@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use iced::Font;
+use iced::advanced::graphics::core::color::Oklch;
 use iced::advanced::graphics::text::{cosmic_text, font_system, to_attributes, to_color};
 
 use super::highlight::Token;
@@ -21,6 +22,26 @@ const LINE_HEIGHT: f32 = 1.5;
 
 /// Heading sizes in em by level (Keeprs' web editor: 1.4, 1.25, 1.1).
 const HEADING: [f32; 6] = [1.4, 1.25, 1.1, 1.0, 1.0, 1.0];
+
+/// `color` made lighter or darker, its hue kept, until it reads on `on`
+/// (4.5:1, WCAG AA), toward the text color `text`: iced's palettes give
+/// accents that can be too dark on a dark band.
+pub fn readable(color: iced::Color, on: iced::Color, text: iced::Color) -> iced::Color {
+    let step = if text.relative_luminance() > on.relative_luminance() {
+        0.04
+    } else {
+        -0.04
+    };
+    let Oklch { mut l, c, h, a } = color.into_oklch();
+    for _ in 0..25 {
+        let shifted = iced::Color::from_oklch(Oklch { l, c, h, a });
+        if shifted.relative_contrast(on) >= 4.5 {
+            return shifted;
+        }
+        l = (l + step).clamp(0.0, 1.0);
+    }
+    text
+}
 
 /// Colors the lines are shaped with.
 #[derive(Clone, Copy, Debug, PartialEq)]

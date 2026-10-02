@@ -246,8 +246,35 @@ impl Lines {
         self.grids_used.clear();
     }
 
+    /// The furthest scroll: the anchor line and offset with the last
+    /// line's bottom at the view's bottom, or the top when the document
+    /// is shorter than the view.
+    pub fn end(&mut self, source: &Source) -> (usize, f32) {
+        let mut index = source.doc.line_count() - 1;
+        let mut room = self.height;
+        loop {
+            let height = self.shaped(source, index).height;
+            if height >= room {
+                return (index, height - room);
+            }
+            if index == 0 {
+                return (0, 0.0);
+            }
+            room -= height;
+            index -= 1;
+        }
+    }
+
+    /// The scroll position in lines: the anchor plus the share of it
+    /// scrolled past.
+    pub fn position(&mut self, source: &Source, (anchor, offset): (usize, f32)) -> f32 {
+        let height = self.shaped(source, anchor).height.max(1.0);
+        anchor as f32 + (offset / height).clamp(0.0, 1.0)
+    }
+
     /// Scrolls by `dy` pixels (positive: further down the document),
-    /// stopping with the first line at the top or the last line at the top.
+    /// stopping with the first line at the top or the document's end at
+    /// the bottom.
     pub fn scroll_by(&mut self, source: &Source, dy: f32) {
         self.offset += dy;
         while self.offset < 0.0 {
@@ -267,12 +294,22 @@ impl Lines {
             self.offset -= height;
             self.anchor += 1;
         }
-        if self.anchor >= last {
-            // The last line stops at the top, or with its bottom at the
-            // bottom when it is taller than the view.
-            self.anchor = last;
-            let height = self.shaped(source, last).height;
-            self.offset = self.offset.clamp(0.0, (height - self.height).max(0.0));
+        self.stop_at_end(source);
+    }
+
+    /// Keeps the view from scrolling past the document's end. Only near
+    /// the end: finding it shapes the last lines (and highlights code down
+    /// to them), so far from it nothing is measured (no row is under 8
+    /// pixels).
+    pub fn stop_at_end(&mut self, source: &Source) {
+        let last = source.doc.line_count() - 1;
+        if last - self.anchor.min(last) > (self.height / 8.0) as usize + 1 {
+            return;
+        }
+        let (end, end_offset) = self.end(source);
+        if self.anchor > end || (self.anchor == end && self.offset > end_offset) {
+            self.anchor = end;
+            self.offset = end_offset;
         }
     }
 
@@ -315,7 +352,14 @@ impl Lines {
                     cosmic_text::Affinity::Before => Affinity::Before,
                     cosmic_text::Affinity::After => Affinity::After,
                 };
-                (shaped.line.to_source(cursor.index, affinity), affinity)
+                // At the line's end, after its hidden markers, as End goes
+                // (REFERENCE-001 section 14).
+                let side = if cursor.index >= shaped.line.text.len() {
+                    Affinity::After
+                } else {
+                    affinity
+                };
+                (shaped.line.to_source(cursor.index, side), affinity)
             }
             None => (source.doc.line_range(index).end, Affinity::Before),
         }

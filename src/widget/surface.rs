@@ -296,6 +296,15 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                     return;
                 }
                 if state.focus.is_none() {
+                    // A find bar field has focus: Tab goes to the next.
+                    if *key == keyboard::Key::Named(keyboard::key::Named::Tab)
+                        && !modifiers.command()
+                        && !modifiers.alt()
+                    {
+                        let forward = !modifiers.shift();
+                        publish(shell, Input::Find(FindInput::Tab { forward }));
+                        shell.capture_event();
+                    }
                     return;
                 }
                 let press = KeyPress {

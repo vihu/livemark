@@ -11,6 +11,7 @@ use std::ops::Range;
 use iced::highlighter::{Parser, Settings};
 use iced::{Code, Color, Theme, font};
 
+use super::shape::readable;
 use crate::layout::Line;
 use crate::style::{CodeBlock, Styled};
 
@@ -42,6 +43,10 @@ struct Parsed {
 #[derive(Default)]
 pub struct Highlights {
     parsed: Vec<Parsed>,
+    /// Each class's color for `theme`, the theme last drawn with, made
+    /// readable once rather than per token.
+    colors: Vec<(Code, Option<Color>)>,
+    theme: Option<Theme>,
 }
 
 impl Highlights {
@@ -76,19 +81,40 @@ impl Highlights {
                 .classes
                 .push(parsed.parser.parse_line(source).collect());
         }
-        parsed.classes[index]
+        let classes = parsed.classes[index].clone();
+        classes
             .iter()
             .filter_map(|(r, code)| {
-                let style = code.highlight(theme);
                 let start = line.to_display(segment + r.start);
                 let end = line.to_display(segment + r.end);
                 Some(Token {
                     range: start..end,
-                    color: style.color?,
-                    italic: style.style == Some(font::Style::Italic),
+                    color: self.color(*code, theme)?,
+                    italic: code.highlight(theme).style == Some(font::Style::Italic),
                 })
             })
             .collect()
+    }
+
+    /// The theme's color for `code`, made to read on the code band.
+    fn color(&mut self, code: Code, theme: &Theme) -> Option<Color> {
+        if self.theme.as_ref() != Some(theme) {
+            self.theme = Some(theme.clone());
+            self.colors.clear();
+        }
+        if let Some(&(_, color)) = self.colors.iter().find(|(c, _)| *c == code) {
+            return color;
+        }
+        let palette = theme.palette();
+        let color = code.highlight(theme).color.map(|color| {
+            readable(
+                color,
+                palette.background.weak.color,
+                palette.background.base.text,
+            )
+        });
+        self.colors.push((code, color));
+        color
     }
 
     /// The parse of `block`: one made for the same lines, else the one in
@@ -178,7 +204,13 @@ mod tests {
             highlights.tokens(text, &styled, range, &line, &Theme::Light)
         };
         let rust = tokens(&mut highlights, 8..20);
-        let keyword = Code::Keyword.highlight(&Theme::Light).color.unwrap();
+        // The theme's keyword color, made to read on the code band.
+        let palette = Theme::Light.palette();
+        let keyword = super::readable(
+            Code::Keyword.highlight(&Theme::Light).color.unwrap(),
+            palette.background.weak.color,
+            palette.background.base.text,
+        );
         assert_eq!(
             (rust[0].range.clone(), rust[0].color),
             (0..2, keyword),

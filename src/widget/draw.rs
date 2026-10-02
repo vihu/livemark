@@ -10,7 +10,7 @@ use iced::{Color, Point, Rectangle, Size, Theme, Vector};
 use super::Editor;
 use super::lines::{Shaped, marks_in};
 use super::marks;
-use super::shape::{Colors, TEXT_SIZE};
+use super::shape::{Colors, TEXT_SIZE, readable};
 use crate::style::{MarkKind, Style};
 
 /// How far a code block's band reaches past the text on either side.
@@ -31,14 +31,21 @@ impl Editor {
     ) {
         let palette = theme.palette();
         let text = palette.background.base.text;
+        let background = palette.background.base.color;
+        let selection_color = palette.primary.base.color.mix(background, 0.7);
+        let code_background = palette.background.weak.color;
+        // Links and inline code read on the page and on the selection.
+        let accent = readable(
+            readable(palette.primary.base.color, background, text),
+            selection_color,
+            text,
+        );
         let colors = Colors {
             text,
             marker: Color { a: 0.4, ..text },
-            code: palette.primary.base.color,
-            link: palette.primary.base.color,
+            code: accent,
+            link: accent,
         };
-        let selection_color = palette.primary.weak.color;
-        let code_background = palette.background.weak.color;
         let quote_bar = palette.background.strong.color;
         let match_color = Color {
             a: 0.35,

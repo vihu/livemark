@@ -50,6 +50,11 @@ pub(super) enum FindInput {
     Replace,
     ReplaceAll,
     Close,
+    /// Tab or Shift+Tab in a field: the next or previous field (iced
+    /// moves focus only when asked).
+    Tab {
+        forward: bool,
+    },
 }
 
 impl Editor {
@@ -105,6 +110,10 @@ impl Editor {
             FindInput::Close => {
                 self.find = None;
                 return iced::widget::operation::focus(ID);
+            }
+            FindInput::Tab { forward: true } => return iced::widget::operation::focus_next(),
+            FindInput::Tab { forward: false } => {
+                return iced::widget::operation::focus_previous();
             }
         }
         Task::none()

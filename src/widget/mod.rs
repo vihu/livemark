@@ -381,3 +381,5 @@ impl Editor {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod walkthrough_tests;
