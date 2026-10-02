@@ -10,7 +10,7 @@ use crate::edit::format::Format;
 
 impl Editor {
     /// The toolbar: bold, italic, code, link; heading, bullet, task, quote;
-    /// live and source mode. Opt-in: nothing shows it unless the host puts
+    /// live, source and split mode. Opt-in: nothing shows it unless the host puts
     /// it in its view.
     pub fn toolbar(&self) -> Element<'_, Message> {
         let mode = self.mode;
@@ -99,6 +99,12 @@ impl Editor {
                 "The markdown as written (Ctrl+Shift+E)",
                 Key::SetMode(Mode::Source),
                 mode == Mode::Source,
+            ),
+            tool(
+                label("Split", Font::DEFAULT),
+                "The markdown beside the rendered note (Ctrl+Shift+E)",
+                Key::SetMode(Mode::Split),
+                mode == Mode::Split,
             ),
         ]
         .spacing(2)

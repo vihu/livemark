@@ -1,7 +1,7 @@
 //! A markdown file drawn headlessly by the editor, for typography reviews.
 //!
 //! ```text
-//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]
+//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--source|--split] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]
 //! ```
 //!
 //! Writes `<out>-<renderer>.png` at 2x, 900 by 1100 points (or `--size`), with the caret
@@ -13,7 +13,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [file, out, ..] = args.as_slice() else {
         eprintln!(
-            "usage: snapshot <file.md> <out.png> [--dark] [--source] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]"
+            "usage: snapshot <file.md> <out.png> [--dark] [--source|--split] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]"
         );
         std::process::exit(2);
     };
@@ -43,6 +43,9 @@ fn main() {
     editor.select(anchor, head);
     if args.iter().any(|a| a == "--source") {
         editor.set_mode(livemark::widget::Mode::Source);
+    }
+    if args.iter().any(|a| a == "--split") {
+        editor.set_mode(livemark::widget::Mode::Split);
     }
     if let Some(zoom) = args
         .iter()

@@ -375,3 +375,19 @@ fn a_picture_starts_under_its_lines_text() {
     let x = editor.with_lines(|lines, source| lines.shaped(source, 0).pictures[0].1.x);
     assert!(x > 4.0, "{x}");
 }
+
+#[test]
+fn the_split_preview_follows_every_edit() {
+    use super::Mode;
+    let mut editor = Editor::new("# Title\n".into());
+    assert!(
+        editor.preview.content.items().is_empty(),
+        "parsed only in split mode"
+    );
+    editor.set_mode(Mode::Split);
+    assert_eq!(editor.preview.content.raw(), "# Title\n");
+    assert!(!editor.preview.content.items().is_empty());
+    editor.select(8, 8);
+    let _ = editor.update(Message(Input::Commit("more".into())));
+    assert_eq!(editor.preview.content.raw(), "# Title\nmore");
+}

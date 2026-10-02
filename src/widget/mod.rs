@@ -9,6 +9,7 @@ mod keys;
 mod lines;
 mod marks;
 mod picture;
+mod preview;
 mod scrollbar;
 mod shape;
 mod surface;
@@ -45,6 +46,9 @@ pub enum Mode {
     /// The markdown as written: one size, the code font throughout,
     /// nothing hidden, still highlighted.
     Source,
+    /// The markdown as written beside the note rendered by iced's
+    /// `markdown` widget (PLAN-002).
+    Split,
 }
 
 /// A markdown document being edited with live preview.
@@ -80,6 +84,8 @@ pub struct Editor {
     reveal: RefCell<Option<RevealFor>>,
     /// Pictures the host supplied, by image destination (`set_image`).
     pictures: HashMap<String, picture::Picture>,
+    /// Split mode's rendered note.
+    preview: preview::Preview,
 }
 
 /// What live preview hides and draws over, and the document version and
@@ -244,6 +250,7 @@ impl Editor {
             })),
             reveal: RefCell::new(None),
             pictures: HashMap::new(),
+            preview: preview::Preview::default(),
         }
     }
 
@@ -304,8 +311,15 @@ impl Editor {
         if mode == self.mode {
             return;
         }
+        let split = (self.mode == Mode::Split) != (mode == Mode::Split);
         self.mode = mode;
-        self.keep_caret_row(|lines| lines.source = mode == Mode::Source);
+        self.keep_caret_row(|lines| lines.source = mode != Mode::Live);
+        // Into or out of Split the text's width changes at the next layout:
+        // the caret is brought into view then.
+        if split {
+            self.lines.borrow_mut().pending_reveal = Some((self.doc.selection().head, self.side));
+        }
+        self.refresh_preview();
     }
 
     /// Supplies the picture for images pointing at `url` (as written in
@@ -385,7 +399,13 @@ impl Editor {
         // Always a column, so the surface keeps its state (focus, held
         // modifiers, a preedit) when the find bar opens or closes.
         let surface = Element::new(surface::Surface { editor: self });
-        iced::widget::column![surface].push(self.find_bar()).into()
+        // In Split, the rendered note beside it; always a row, so the
+        // surface keeps its place.
+        let preview = (self.mode == Mode::Split).then(|| self.preview());
+        let text = iced::widget::row![surface]
+            .push(preview)
+            .height(iced::Length::Fill);
+        iced::widget::column![text].push(self.find_bar()).into()
     }
 
     /// A task that gives the editor keyboard focus.
@@ -396,7 +416,7 @@ impl Editor {
     /// The markers hidden and the marks drawn over with the selection
     /// drawn now; none in source mode.
     fn reveal(&self) -> Reveal {
-        if self.mode == Mode::Source {
+        if self.mode != Mode::Live {
             return (Arc::new([]), Arc::new([]));
         }
         let selection = if self.placed {

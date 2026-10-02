@@ -606,3 +606,23 @@ fn toolbar_buttons_run_their_keys_commands() {
     click(&mut editor, "Live");
     assert_eq!(editor.mode(), livemark::widget::Mode::Live);
 }
+
+#[test]
+fn ctrl_shift_e_cycles_live_source_and_split() {
+    use livemark::widget::Mode;
+    let mut editor = Editor::new("# Title\n\nSome text.\n".into());
+    // Ctrl+Shift+E cycles Live, Source, Split, Live.
+    let mut modes = Vec::new();
+    for _ in 0..3 {
+        run(&mut editor, |ui| {
+            click(ui, Point::new(30.0, 30.0));
+            ui.simulate([press(
+                Key::Character("e".into()),
+                keyboard::Modifiers::COMMAND | keyboard::Modifiers::SHIFT,
+            )]);
+        });
+        modes.push(editor.mode());
+    }
+    assert_eq!(modes, [Mode::Source, Mode::Split, Mode::Live]);
+    assert_eq!(editor.mode(), Mode::Live);
+}

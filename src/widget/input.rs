@@ -153,9 +153,11 @@ impl Editor {
                         task = Task::done(Message(Input::Follow(dest.to_owned())));
                     }
                 }
+                // Live, Source, Split, Live (the user's pick).
                 Key::ToggleMode => self.set_mode(match self.mode {
                     Mode::Live => Mode::Source,
-                    Mode::Source => Mode::Live,
+                    Mode::Source => Mode::Split,
+                    Mode::Split => Mode::Live,
                 }),
                 Key::Delete(Motion::Left) => edit::backspace(&mut self.doc, now),
                 Key::Delete(motion) => edit::delete(&mut self.doc, motion, now),
@@ -214,6 +216,7 @@ impl Editor {
             self.with_lines(|lines, source| lines.reveal(source, head, side));
         }
         self.refresh_matches();
+        self.refresh_preview();
         task
     }
 

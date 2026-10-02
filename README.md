@@ -37,7 +37,7 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | --- | --- |
 | Ctrl+B, Ctrl+I, Ctrl+E | Bold, italic, inline code: on the selection or the word, off inside one |
 | Ctrl+K | A link: `[text]()` around the selection, `[](url)` around a URL |
-| Ctrl+Shift+E | Live preview or the markdown as written |
+| Ctrl+Shift+E | Live preview, the markdown as written, or Split: the markdown beside the rendered note |
 | Ctrl+F, Ctrl+H | Find, find and replace; Enter, F3 or Ctrl+G for the next match, with Shift the previous; Tab to the next field; Escape closes |
 | Enter | Continues a list item (next number, unchecked box) or quote; on an empty item, one level less |
 | Shift+Enter | A new line indented to the item's text, without a marker |
