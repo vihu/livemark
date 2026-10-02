@@ -17,6 +17,10 @@ impl Editor {
         let mut side = Affinity::After;
         let mut vertical = false;
         let mut task = Task::none();
+        // Inputs that move nothing keep the view where it is, even with the
+        // caret off screen: following a link, ticking a checkbox, letting
+        // go of the button.
+        let mut keep_view = false;
         // Any input but scrolling places the caret (REFERENCE-001
         // section 2); a press only on release, so the text clicked does
         // not move under the pointer.
@@ -40,6 +44,7 @@ impl Editor {
                 let dest = self.link_under(at).unwrap_or_default();
                 task = Task::done(Message(Input::Follow(dest)));
                 side = self.side;
+                keep_view = true;
             }
             Input::Press {
                 at,
@@ -47,12 +52,22 @@ impl Editor {
                 clicks,
                 command,
                 alt,
-            } => side = self.press(at, shift, clicks, !(shift || command || alt)),
-            Input::Follow(_) => side = self.side,
+            } => match self.press(at, shift, clicks, !(shift || command || alt)) {
+                Some(placed) => side = placed,
+                None => {
+                    side = self.side;
+                    keep_view = true;
+                }
+            },
+            Input::Follow(_) => {
+                side = self.side;
+                keep_view = true;
+            }
             Input::Drag(at) => side = self.drag(at),
             Input::Release => {
                 self.press = None;
                 side = self.side;
+                keep_view = true;
             }
             Input::Scroll(dy) => {
                 self.with_lines(|lines, source| lines.scroll_by(source, dy));
@@ -147,7 +162,9 @@ impl Editor {
         }
         self.side = side;
         let head = self.doc.selection().head;
-        self.with_lines(|lines, source| lines.reveal(source, head, side));
+        if !keep_view {
+            self.with_lines(|lines, source| lines.reveal(source, head, side));
+        }
         self.refresh_matches();
         task
     }
@@ -173,7 +190,9 @@ impl Editor {
 
     /// A press: a caret (Shift extends the selection), a word on a double
     /// click, a line on a triple click (REFERENCE-001 section 14).
-    fn press(&mut self, at: Point, shift: bool, clicks: u8, plain: bool) -> Affinity {
+    /// Returns the side the caret is drawn on, or `None` when a checkbox
+    /// was ticked and the caret stayed.
+    fn press(&mut self, at: Point, shift: bool, clicks: u8, plain: bool) -> Option<Affinity> {
         // A checkbox toggles its task and leaves the caret where it is
         // (REFERENCE-001 section 8); with a modifier it is an ordinary
         // click.
@@ -181,7 +200,7 @@ impl Editor {
             let task = self.with_lines(|lines, source| lines.task_at(source, at.x, at.y));
             if let Some(task) = task {
                 edit::format::toggle_task(&mut self.doc, task, self.started.elapsed());
-                return self.side;
+                return None;
             }
         }
         let (offset, side) = self.hit(at);
@@ -211,7 +230,7 @@ impl Editor {
             unit,
             first,
         });
-        side
+        Some(side)
     }
 
     /// A drag: the selection grows from the press by characters, or by

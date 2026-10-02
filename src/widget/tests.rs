@@ -332,3 +332,34 @@ fn a_lazy_quote_line_draws_under_the_quoted_text() {
         assert_eq!(offset, 14, "the lazy line's first character");
     });
 }
+
+#[test]
+fn ticking_a_checkbox_far_from_the_caret_keeps_the_view() {
+    use super::{Input, Message};
+    let text = format!("{}- [ ] task\n", "line\n".repeat(200));
+    let task_line = 200;
+    let mut editor = Editor::new(text.clone());
+    editor.select(0, 0);
+    // Scroll the task into view, the caret staying at the top.
+    let _ = editor.update(Message(Input::ScrollTo(1.0)));
+    let anchor = editor.lines.borrow().anchor;
+    let at = editor.with_lines(|lines, source| {
+        let top = lines.top_of(source, task_line).expect("on screen");
+        (0..120)
+            .map(|x| iced::Point::new(x as f32, top + 12.0))
+            .find(|p| lines.task_at(source, p.x, p.y).is_some())
+            .expect("its checkbox")
+    });
+    let press = Input::Press {
+        at,
+        shift: false,
+        clicks: 1,
+        command: false,
+        alt: false,
+    };
+    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(Input::Release));
+    assert!(editor.text().ends_with("- [x] task\n"));
+    assert_eq!(editor.selection().head, 0, "the caret stays");
+    assert_eq!(editor.lines.borrow().anchor, anchor, "and so does the view");
+}
