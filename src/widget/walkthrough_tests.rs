@@ -391,3 +391,21 @@ fn the_split_preview_follows_every_edit() {
     let _ = editor.update(Message(Input::Commit("more".into())));
     assert_eq!(editor.preview.content.raw(), "# Title\nmore");
 }
+
+#[test]
+fn a_pasted_picture_reaches_the_host_as_png_and_insert_text_puts_markdown_in() {
+    let image = iced::advanced::clipboard::Image {
+        rgba: vec![255u8; 3 * 2 * 4].into(),
+        size: iced::Size::new(3, 2),
+    };
+    let message = Message(Input::PastedImage(image));
+    let png = message.pasted_image().expect("png bytes");
+    let decoded = super::picture::decode(&png).expect("a picture");
+    assert_eq!((decoded.size.width, decoded.size.height), (3.0, 2.0));
+    let mut editor = Editor::new("ab".into());
+    editor.select(1, 1);
+    let _ = editor.update(message);
+    assert_eq!(editor.text(), "ab", "the editor leaves it to the host");
+    editor.insert_text("![](p.png)");
+    assert_eq!(editor.text(), "a![](p.png)b");
+}

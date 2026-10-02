@@ -117,6 +117,8 @@ impl Editor {
             Input::Commit(text) => edit::type_text(&mut self.doc, &text, now),
             // Handled before this match.
             Input::Tool(_) => {}
+            // The host's (`Message::pasted_image`).
+            Input::PastedImage(_) => return Task::none(),
             Input::Find(input) => {
                 // Typing a replacement, closing the bar or a query with no
                 // match moves nothing: the view stays.

@@ -178,3 +178,34 @@ fn settings_remember_the_zoom_the_window_and_recent_notes() {
     std::fs::remove_file(&note).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn a_pasted_picture_is_kept_next_to_the_note_and_linked() {
+    let dir = std::env::temp_dir().join(format!("livemark-picture-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let note = dir.join("meeting.md");
+    write(&note, "Notes\n", 0);
+    let mut app = App::open(Some(note.clone()), None);
+    app.editor.select(6, 6);
+    let _ = app.paste_picture(b"png bytes".to_vec());
+    assert_eq!(app.editor.text(), "Notes\n![](assets/meeting-1.png)");
+    assert_eq!(
+        std::fs::read(dir.join("assets/meeting-1.png")).unwrap(),
+        b"png bytes"
+    );
+    // A dropped picture is linked by its path from the note.
+    let _ = app.dropped(dir.join("assets").join("meeting-1.png"));
+    assert!(
+        app.editor
+            .text()
+            .ends_with("![](assets/meeting-1.png)![](assets/meeting-1.png)")
+    );
+    // In a note not saved yet, the picture waits for a place.
+    let mut new = App::open(None, None);
+    let _ = new.paste_picture(b"later".to_vec());
+    assert!(new.waiting_picture.is_some() && new.editor.text().is_empty());
+    std::fs::remove_file(dir.join("assets/meeting-1.png")).unwrap();
+    std::fs::remove_dir(dir.join("assets")).unwrap();
+    std::fs::remove_file(&note).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+}

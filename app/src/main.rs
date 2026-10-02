@@ -105,6 +105,8 @@ struct App {
     settings: Settings,
     /// Where the settings are written; `None` writes nothing (tests).
     settings_file: Option<PathBuf>,
+    /// A picture pasted into a note not saved yet: kept once it is.
+    waiting_picture: Option<Vec<u8>>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -142,6 +144,8 @@ enum Message {
     Zoom(i8),
     /// The window's new size, remembered for the next start.
     Resized(iced::Size),
+    /// A file dropped on the window.
+    Dropped(PathBuf),
 }
 
 impl App {
@@ -170,6 +174,7 @@ impl App {
             tried: std::collections::HashSet::new(),
             settings: Settings::default(),
             settings_file: None,
+            waiting_picture: None,
         }
         .with_images()
     }
@@ -192,6 +197,47 @@ impl App {
         if self.editor.zoom() != self.settings.zoom {
             self.settings.zoom = self.editor.zoom();
             self.remember();
+        }
+    }
+
+    /// A pasted picture kept next to the note and linked at the caret
+    /// (PLAN-002); a note not saved yet is saved first, asking where.
+    fn paste_picture(&mut self, png: Vec<u8>) -> Task<Message> {
+        let Some(note) = self.path.clone() else {
+            self.waiting_picture = Some(png);
+            return self.update(Message::Save { choose: true });
+        };
+        match file::save_picture(&note, &png) {
+            Ok(dest) => {
+                self.editor.insert_text(&format!("![]({dest})"));
+                self.editor.set_image(&dest, &png);
+                self.tried.insert(dest);
+            }
+            Err(error) => self.error = Some(error),
+        }
+        Task::none()
+    }
+
+    /// A dropped picture is linked at the caret, by its path from the note;
+    /// a dropped markdown file opens.
+    fn dropped(&mut self, file: PathBuf) -> Task<Message> {
+        if file::is_picture(&file) {
+            let dest = match &self.path {
+                Some(note) => file::link_to(note, &file),
+                None => file.to_string_lossy().replace(' ', "%20"),
+            };
+            self.editor.insert_text(&format!("![]({dest})"));
+            if let Ok(bytes) = std::fs::read(&file) {
+                self.editor.set_image(&dest, &bytes);
+            }
+            Task::none()
+        } else if file
+            .extension()
+            .is_some_and(|e| e == "md" || e == "markdown")
+        {
+            self.update(Message::Opened(Some(file)))
+        } else {
+            Task::none()
         }
     }
 
@@ -293,6 +339,10 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Editor(message) if message.pasted_image().is_some() => {
+                return self.paste_picture(message.pasted_image().unwrap_or_default());
+            }
+            Message::Dropped(file) => return self.dropped(file),
             Message::Editor(message) => {
                 // Only a failure is reported; an open or save error stays.
                 if let Some(Err(error)) = message.link().map(open_link) {
@@ -339,6 +389,10 @@ impl App {
                 self.path = Some(path);
                 self.saved = version;
                 self.load_images();
+                // A picture pasted before the note had a place.
+                if let Some(png) = self.waiting_picture.take() {
+                    let _ = self.paste_picture(png);
+                }
                 // Typing while the save dialog was open: ask again.
                 if let Some(after) = self.pending.take() {
                     if self.unsaved() {
@@ -512,6 +566,7 @@ impl App {
         let focus = window::events().filter_map(|(_, event)| match event {
             window::Event::Focused => Some(Message::Focused),
             window::Event::Resized(size) => Some(Message::Resized(size)),
+            window::Event::FileDropped(file) => Some(Message::Dropped(file)),
             _ => None,
         });
         Subscription::batch([keys, close, focus])

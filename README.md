@@ -27,7 +27,10 @@ title marks unsaved changes; closing or opening another file then asks.
 When the window comes back into focus and the file changed on disk (git,
 another editor), it is loaded again; with unsaved changes the app asks
 which to keep. Images are read from files next to the note (relative
-paths); the app makes no network requests, so web images stay as markdown. The zoom, the window's size, the theme and the
+paths); the app makes no network requests, so web images stay as markdown.
+A picture pasted with Ctrl+V is saved as `assets/<note>-<n>.png` next to the
+note and linked at the caret (a new note is saved first); a picture file
+dropped on the window is linked by its path, a dropped `.md` file opens. The zoom, the window's size, the theme and the
 ten most recent files are kept in `~/.config/livemark/settings` (macOS:
 `~/Library/Application Support/livemark/settings`), a `key = value` file.
 
@@ -89,7 +92,9 @@ edits; `Editor::version` changes on every edit and comes back with undo, so
 compare it with the value from the last save to know when to autosave.
 `Editor::toolbar` is a row of buttons (bold, italic, code, link, heading,
 list, task, quote, the mode) to show where the host likes; each runs its
-key's command. `Editor::image_urls` lists where the note's images point; hand each
+key's command. A paste with no text but a picture comes to the host as
+`Message::pasted_image` (PNG bytes); keep it and answer with
+`Editor::insert_text`. `Editor::image_urls` lists where the note's images point; hand each
 picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn
 under its line while its markdown hides. `Editor::set_zoom` scales the
 text.

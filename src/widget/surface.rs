@@ -58,8 +58,9 @@ struct State {
     last_click: Option<mouse::Click>,
     dragging: bool,
     preedit: Option<input_method::Preedit>,
-    /// A paste asked the clipboard for its text.
-    pasting: bool,
+    /// A paste asked the clipboard for this: its text, then, when it has
+    /// none, a picture.
+    pasting: Option<clipboard::Kind>,
     modifiers: keyboard::Modifiers,
     /// The scroll bar's thumb is held this far below its top.
     thumb_grab: Option<f32>,
@@ -307,15 +308,30 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 shell.request_redraw();
                 shell.capture_event();
             }
-            // Nothing to paste (an image, an empty clipboard): the read is
-            // over, so a later one (another widget's) is not taken.
-            Event::Clipboard(clipboard::Event::Read(Err(_))) if state.pasting => {
-                state.pasting = false;
+            // No text to paste: a picture, perhaps (PLAN-002); nothing at
+            // all ends the read, so a later one (another widget's) is not
+            // taken.
+            Event::Clipboard(clipboard::Event::Read(Err(_))) if state.pasting.is_some() => {
+                if state.pasting == Some(clipboard::Kind::Text) {
+                    state.pasting = Some(clipboard::Kind::Image);
+                    shell.read_clipboard(clipboard::Kind::Image);
+                } else {
+                    state.pasting = None;
+                }
             }
-            Event::Clipboard(clipboard::Event::Read(Ok(content))) if state.pasting => {
-                state.pasting = false;
-                if let clipboard::Content::Text(text) = content.as_ref() {
-                    publish(shell, Input::Paste(text.clone()));
+            // Only the kind it asked for: another widget's read of another
+            // kind is not taken.
+            Event::Clipboard(clipboard::Event::Read(Ok(content))) if state.pasting.is_some() => {
+                match (state.pasting, content.as_ref()) {
+                    (Some(clipboard::Kind::Text), clipboard::Content::Text(text)) => {
+                        state.pasting = None;
+                        publish(shell, Input::Paste(text.clone()));
+                    }
+                    (Some(clipboard::Kind::Image), clipboard::Content::Image(image)) => {
+                        state.pasting = None;
+                        publish(shell, Input::PastedImage(image.clone()));
+                    }
+                    _ => {}
                 }
             }
             Event::Keyboard(keyboard::Event::KeyPressed {
@@ -517,7 +533,7 @@ impl Surface<'_> {
             Binding::Copy => shell.publish(key(Key::Copy(false))),
             Binding::Cut => shell.publish(key(Key::Copy(true))),
             Binding::Paste => {
-                state.pasting = true;
+                state.pasting = Some(clipboard::Kind::Text);
                 shell.read_clipboard(clipboard::Kind::Text);
             }
             // iced binds only Ctrl+Y to redo; REFERENCE-001 section 15 adds

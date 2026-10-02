@@ -132,6 +132,22 @@ impl Message {
             _ => None,
         }
     }
+
+    /// A picture the user pasted (the clipboard held no text), as PNG
+    /// bytes, for the host to keep somewhere and answer with the markdown to
+    /// insert (`Editor::insert_text`); the editor does nothing with it
+    /// (PLAN-001 host hook 3).
+    pub fn pasted_image(&self) -> Option<Vec<u8>> {
+        let Input::PastedImage(image) = &self.0 else {
+            return None;
+        };
+        let (width, height) = (image.size.width, image.size.height);
+        let rgba = image::RgbaImage::from_raw(width, height, image.rgba.to_vec())?;
+        let mut png = Vec::new();
+        rgba.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .ok()?;
+        Some(png)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -172,6 +188,8 @@ enum Input {
     /// Text committed by an input method.
     Commit(String),
     Paste(String),
+    /// A picture pasted: the host's to save (`Message::pasted_image`).
+    PastedImage(iced::advanced::clipboard::Image),
     Find(find::FindInput),
 }
 
@@ -332,6 +350,12 @@ impl Editor {
             self.pictures.insert(url.to_owned(), picture);
             *self.reveal.borrow_mut() = None;
         }
+    }
+
+    /// Inserts `text` at the caret, over the selection, as one undo step
+    /// (as a paste of it): what a host answers a pasted picture with.
+    pub fn insert_text(&mut self, text: &str) {
+        let _ = self.update(Message(Input::Paste(text.to_owned())));
     }
 
     /// Where the images in the text point, each once, in order: what a

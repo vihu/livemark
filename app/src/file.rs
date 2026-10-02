@@ -59,6 +59,47 @@ pub fn image_bytes(note: &Path, url: &str) -> Option<Vec<u8>> {
         .flatten()
 }
 
+/// Keeps a pasted picture (PNG bytes) for the note at `note`, in the
+/// `assets` folder next to it as `<note>-<n>.png` (the first free `n`, the
+/// user's pick in PLAN-002), and gives where its markdown points.
+pub fn save_picture(note: &Path, png: &[u8]) -> Result<String, String> {
+    let folder = note
+        .parent()
+        .ok_or("the note has no folder")?
+        .join("assets");
+    std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    let stem = note
+        .file_stem()
+        .map_or("note".into(), |s| s.to_string_lossy());
+    let name = (1..)
+        .map(|n| format!("{stem}-{n}.png"))
+        .find(|name| !folder.join(name).exists())
+        .ok_or("no free name")?;
+    let path = folder.join(&name);
+    std::fs::write(&path, png).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(format!("assets/{}", name.replace(' ', "%20")))
+}
+
+/// Where an image's markdown in the note at `note` points to `file`: its
+/// path from the note's folder when it is inside it, else the whole path;
+/// spaces as `%20`.
+pub fn link_to(note: &Path, file: &Path) -> String {
+    let inside = note
+        .parent()
+        .and_then(|folder| file.strip_prefix(folder).ok());
+    inside.unwrap_or(file).to_string_lossy().replace(' ', "%20")
+}
+
+/// Whether `file` is a picture the editor draws (PNG, JPEG, GIF, WebP).
+pub fn is_picture(file: &Path) -> bool {
+    file.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        matches!(
+            e.to_ascii_lowercase().as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "webp"
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -142,5 +183,39 @@ mod tests {
         assert!(load(&path).unwrap_err().contains("UTF-8"));
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn pictures_are_kept_in_assets_and_linked_from_the_note() {
+        let dir = std::env::temp_dir().join(format!("livemark-paste-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let note = dir.join("my note.md");
+        assert_eq!(
+            super::save_picture(&note, b"one").unwrap(),
+            "assets/my%20note-1.png"
+        );
+        assert_eq!(
+            super::save_picture(&note, b"two").unwrap(),
+            "assets/my%20note-2.png"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("assets/my note-2.png")).unwrap(),
+            b"two"
+        );
+        assert_eq!(
+            super::link_to(&note, &dir.join("pics/a b.png")),
+            "pics/a%20b.png"
+        );
+        assert_eq!(
+            super::link_to(&note, std::path::Path::new("/elsewhere/c.png")),
+            "/elsewhere/c.png"
+        );
+        assert!(super::is_picture(std::path::Path::new("x.JPG")));
+        assert!(!super::is_picture(std::path::Path::new("x.md")));
+        for name in ["my note-1.png", "my note-2.png"] {
+            std::fs::remove_file(dir.join("assets").join(name)).unwrap();
+        }
+        std::fs::remove_dir(dir.join("assets")).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
     }
 }

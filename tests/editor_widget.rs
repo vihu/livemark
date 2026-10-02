@@ -626,3 +626,31 @@ fn ctrl_shift_e_cycles_live_source_and_split() {
     assert_eq!(modes, [Mode::Source, Mode::Split, Mode::Live]);
     assert_eq!(editor.mode(), Mode::Live);
 }
+
+#[test]
+fn a_paste_with_no_text_hands_the_host_the_picture() {
+    use iced::advanced::clipboard;
+    let editor = Editor::new("one\n".into());
+    let messages: Vec<Message> = {
+        let mut ui =
+            iced_test::Simulator::with_size(iced::Settings::default(), SIZE, editor.view());
+        click(&mut ui, Point::new(30.0, 20.0));
+        ui.simulate([press(
+            Key::Character("v".into()),
+            keyboard::Modifiers::COMMAND,
+        )]);
+        // No text: the editor asks for a picture, and gets one.
+        ui.simulate([Event::Clipboard(clipboard::Event::Read(Err(
+            clipboard::Error::ContentNotAvailable,
+        )))]);
+        let image = clipboard::Image {
+            rgba: vec![0u8; 2 * 2 * 4].into(),
+            size: iced::Size::new(2, 2),
+        };
+        ui.simulate([Event::Clipboard(clipboard::Event::Read(Ok(
+            std::sync::Arc::new(clipboard::Content::Image(image)),
+        )))]);
+        ui.into_messages().collect()
+    };
+    assert!(messages.iter().any(|m| m.pasted_image().is_some()));
+}
