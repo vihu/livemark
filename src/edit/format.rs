@@ -216,8 +216,8 @@ fn inline_text(text: &str) -> Vec<std::ops::Range<usize>> {
     let mut texts = Vec::new();
     for (event, range) in crate::parse::events(text) {
         match event {
-            Event::Start(Tag::CodeBlock(_) | Tag::Table(_)) => depth += 1,
-            Event::End(TagEnd::CodeBlock | TagEnd::Table) => depth -= 1,
+            Event::Start(Tag::CodeBlock(_) | Tag::Table(_) | Tag::MetadataBlock(_)) => depth += 1,
+            Event::End(TagEnd::CodeBlock | TagEnd::Table | TagEnd::MetadataBlock(_)) => depth -= 1,
             Event::Text(_) | Event::Code(_) if depth == 0 => texts.push(range),
             _ => {}
         }

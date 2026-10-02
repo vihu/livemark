@@ -36,6 +36,9 @@ pub struct Style {
     /// In the code font without being code: a task box, so `[ ]` and
     /// `[x]` are as wide and checking one moves nothing.
     pub mono: bool,
+    /// YAML front matter (Obsidian's properties): dimmed, in the code
+    /// font (REFERENCE-001 section 11).
+    pub meta: bool,
 }
 
 /// The syntax a [`Construct`] is.

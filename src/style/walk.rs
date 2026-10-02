@@ -167,6 +167,9 @@ impl Walk<'_> {
                 self.content(&range);
             }
             Event::Start(Tag::CodeBlock(kind)) => self.code_start(kind, range),
+            // YAML front matter (Obsidian's properties): dimmed, in the code
+            // font, fences and all (REFERENCE-001 section 11).
+            Event::Start(Tag::MetadataBlock(_)) => self.toggles.push((range, Flag::Meta)),
             Event::End(TagEnd::CodeBlock) => self.code_end(),
             Event::Start(Tag::Table(align)) => {
                 // The code font goes on each row, not on the table's range,

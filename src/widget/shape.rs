@@ -184,7 +184,8 @@ pub fn shape(
 }
 
 fn attrs(style: Style, colors: Colors, mono: bool) -> cosmic_text::Attrs<'static> {
-    let font = if mono || style.code || style.code_block || style.table || style.mono {
+    let font = if mono || style.code || style.code_block || style.table || style.mono || style.meta
+    {
         Font::new(fonts::MONO)
     } else {
         Font::new(fonts::PROSE)
@@ -196,7 +197,7 @@ fn attrs(style: Style, colors: Colors, mono: bool) -> cosmic_text::Attrs<'static
     if style.emphasis {
         attrs = attrs.style(cosmic_text::Style::Italic);
     }
-    let color = if style.marker || style.done {
+    let color = if style.marker || style.done || style.meta {
         colors.marker
     } else if style.code {
         colors.code

@@ -9,7 +9,9 @@ use std::collections::VecDeque;
 use std::iter::Peekable;
 use std::ops::Range;
 
-use pulldown_cmark::{CowStr, Event, LinkType, OffsetIter, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    CowStr, Event, LinkType, MetadataBlockKind, OffsetIter, Options, Parser, Tag, TagEnd,
+};
 
 /// The syntax pulldown-cmark reads beyond CommonMark; GFM's extended
 /// autolinks are added after it.
@@ -21,16 +23,72 @@ pub const OPTIONS: Options = Options::ENABLE_TABLES
 /// or end event spans its whole construct, markers included. A `www.` link,
 /// bare URL or email address in text comes as a link of type
 /// [`LinkType::Autolink`] or [`LinkType::Email`] whose range has no `<`.
+///
+/// YAML front matter at the very start (Obsidian's properties) comes as one
+/// [`Tag::MetadataBlock`] holding one text event, and the rest is parsed as
+/// if it were not there. pulldown-cmark's own option would take a `---`,
+/// a line and a `---` anywhere in the document for one.
 pub fn events(text: &str) -> impl Iterator<Item = (Event<'_>, Range<usize>)> {
-    Events {
-        text,
-        inner: Parser::new_ext(text, OPTIONS).into_offset_iter().peekable(),
+    let front = front_matter(text);
+    let meta = front.clone().map(|(block, body)| {
+        let kind = MetadataBlockKind::YamlStyle;
+        [
+            (Event::Start(Tag::MetadataBlock(kind)), block.clone()),
+            (Event::Text(CowStr::Borrowed(&text[body.clone()])), body),
+            (Event::End(TagEnd::MetadataBlock(kind)), block),
+        ]
+    });
+    let shift = front.map_or(0, |(block, _)| block.end);
+    let rest = &text[shift..];
+    let events = Events {
+        text: rest,
+        inner: Parser::new_ext(rest, OPTIONS).into_offset_iter().peekable(),
         ready: VecDeque::new(),
         run: Vec::new(),
         code: 0,
         links: 0,
         text_end: 0,
+    };
+    meta.into_iter()
+        .flatten()
+        .chain(events.map(move |(event, range)| (event, range.start + shift..range.end + shift)))
+}
+
+/// YAML front matter at the start of `text`: a `---` line, then lines up
+/// to a `---` or `...` line, the first of them not blank. The block without its last line ending, and
+/// the lines between the fences.
+fn front_matter(text: &str) -> Option<(Range<usize>, Range<usize>)> {
+    let fence = |line: &str, closing: bool| {
+        let line = line.trim_end_matches([' ', '\t']);
+        line == "---" || (closing && line == "...")
+    };
+    let mut lines = text.split_inclusive(['\n', '\r']).scan(0, |at, line| {
+        let start = *at;
+        *at += line.len();
+        Some((start, line))
+    });
+    // `\r\n` splits as `\r` then `\n`; the `\n` alone ends nothing new.
+    let (_, first) = lines.next()?;
+    if !first.ends_with(['\n', '\r']) || !fence(first.trim_end_matches(['\n', '\r']), false) {
+        return None;
     }
+    let body_start =
+        first.len() + usize::from(first.ends_with('\r') && text[first.len()..].starts_with('\n'));
+    for (start, line) in lines.filter(|&(start, _)| start >= body_start) {
+        if line == "\n" && text[..start].ends_with('\r') {
+            continue;
+        }
+        let content = line.trim_end_matches(['\n', '\r']);
+        // Its first line is neither blank nor the end, as in
+        // pulldown-cmark: `---` twice is two rules.
+        if start == body_start && content.trim().is_empty() {
+            return None;
+        }
+        if fence(content, true) {
+            return (start > body_start).then_some((0..start + content.len(), body_start..start));
+        }
+    }
+    None
 }
 
 /// pulldown-cmark's events with extended autolinks spliced in, lazily:
@@ -262,10 +320,44 @@ mod tests {
     #[test]
     fn every_commonmark_example_parses_like_the_spec_but_bare_urls() {
         // GFM's extended autolinks link what these three CommonMark examples
-        // say is plain text (comrak with GFM on differs the same way).
+        // say is plain text (comrak with GFM on differs the same way), and
+        // a document starting `---`, a line, `---` is YAML front matter
+        // (Obsidian's properties), not a rule and a setext heading.
         assert_eq!(
             failures("commonmark-0.31.2.json"),
-            ["608 Autolinks", "611 Autolinks", "612 Autolinks"]
+            [
+                "96 Setext headings",
+                "608 Autolinks",
+                "611 Autolinks",
+                "612 Autolinks"
+            ]
+        );
+    }
+
+    #[test]
+    fn front_matter_is_one_block_only_at_the_start() {
+        use pulldown_cmark::{Tag, TagEnd};
+        let block = |text: &str| -> Option<std::ops::Range<usize>> {
+            events(text)
+                .find(|(e, _)| matches!(e, pulldown_cmark::Event::Start(Tag::MetadataBlock(_))))
+                .map(|(_, r)| r)
+        };
+        assert_eq!(block("---\ntags: [a]\n---\n\n# T\n"), Some(0..17));
+        assert_eq!(block("---\r\na: 1\r\n...\r\nx"), Some(0..14), "CRLF, `...`");
+        assert_eq!(block("---\n---\n"), None, "two rules");
+        assert_eq!(block("---\n\na: 1\n---\n"), None, "a blank first line");
+        assert_eq!(block("---\ra: 1\r---\rx"), Some(0..12), "lone CR");
+        assert_eq!(block("x\n\n---\na: 1\n---\n"), None, "not at the start");
+        assert_eq!(block("---\na: 1\n"), None, "never closed");
+        // After it, the rest parses as if it were not there, offsets kept.
+        let text = "---\na: 1\n---\n# Title\n";
+        let heading = events(text)
+            .find(|(e, _)| matches!(e, pulldown_cmark::Event::Start(Tag::Heading { .. })))
+            .map(|(_, r)| r);
+        assert_eq!(heading, Some(13..21));
+        assert!(
+            events(text)
+                .any(|(e, _)| matches!(e, pulldown_cmark::Event::End(TagEnd::MetadataBlock(_))))
         );
     }
 

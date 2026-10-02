@@ -566,3 +566,33 @@ fn a_task_items_bullet_hides_with_its_box_concealed() {
         assert!(styled.hidden(at..at).iter().all(|h| h.end <= 5), "{at}");
     }
 }
+
+#[test]
+fn front_matter_is_one_dimmed_code_font_block() {
+    let text = "---\ntags: [work]\n---\n\n# Title\n";
+    let styled = Styled::new(text);
+    let block = 0..text.find("\n\n").unwrap();
+    for (range, style) in styled.runs() {
+        if range.start < block.end {
+            assert!(
+                style.meta && !style.marker && style.heading == 0,
+                "{range:?}"
+            );
+        }
+    }
+    assert!(
+        styled
+            .concealed(text.len()..text.len())
+            .iter()
+            .all(|m| m.kind != MarkKind::Rule),
+        "its fences are no rules"
+    );
+    // Further down, `---` is a rule again.
+    let later = Styled::new("a\n\n---\nb\n---\n");
+    assert!(
+        later
+            .concealed(0..0)
+            .iter()
+            .any(|m| m.kind == MarkKind::Rule)
+    );
+}
