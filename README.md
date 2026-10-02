@@ -108,6 +108,23 @@ Markers (`**`, `#`, `[`, `](url)`) stay hidden until the caret touches
 them; bullets show as dots, task boxes as checkboxes, rules as lines, code
 fences as a language label, and tables as grids until the caret enters. The scroll bar on the right drags, and a click on its track jumps.
 
+### Notes from scripts and agents
+
+The `livemark` binary also writes notes without opening a window, for
+scripts and coding agents:
+
+```text
+livemark note "Flaky test cause" --tags work,ci --by claude-code < body.md
+livemark tags
+```
+
+`note` writes `2026-10-02-flaky-test-cause.md` into the vault (the one the
+app last opened, or `--vault <dir>`) with front matter for its title, tags,
+date and who wrote it (`by:`), the body from stdin, and prints its path. It
+never prompts and never overwrites a note (a second one that day gets
+`-2`). `tags` lists the vault's tags, `tag count` a line, so an agent can
+reuse `travel` rather than invent `trips`. `livemark --help` shows both.
+
 ## Embedding
 
 Keep an `Editor` in your state, show its view, and pass its messages back:

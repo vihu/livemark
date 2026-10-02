@@ -2,6 +2,8 @@
 //!
 //! ```text
 //! livemark [file.md] [--dark|--light]
+//! livemark note "<title>" [--tags a,b] [--by <agent>] [--vault <dir>] < body.md
+//! livemark tags [--vault <dir>]
 //! cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 //! ```
 //!
@@ -17,9 +19,11 @@
 //! makes a folder of notes a vault with a sidebar (PLAN-004, `vault.rs`,
 //! `sidebar.rs`); with one and no file given, the note last open in it
 //! opens.
+mod cli;
 mod file;
 mod links;
 mod note;
+mod opening;
 mod pictures;
 mod quick;
 mod search;
@@ -36,6 +40,10 @@ use settings::Settings;
 
 pub fn main() -> iced::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `livemark note ...`, `livemark tags`: no window (`cli.rs`).
+    if let Some(code) = cli::run(&args) {
+        std::process::exit(code);
+    }
     let path = args
         .iter()
         .find(|a| !a.starts_with("--"))
@@ -278,52 +286,6 @@ impl App {
         iced::exit()
     }
 
-    /// Whether the file was modified on disk since it was opened or saved
-    /// here.
-    fn changed_on_disk(&self) -> bool {
-        let stamp = self.path.as_deref().and_then(file::modified);
-        stamp.is_some() && stamp != self.stamp
-    }
-
-    /// Loads the file again if it changed on disk; with unsaved changes,
-    /// asks first.
-    fn check_disk(&mut self) {
-        let Some(path) = &self.path else {
-            return;
-        };
-        let stamp = file::modified(path);
-        if stamp.is_none() || stamp == self.stamp {
-            return;
-        }
-        if self.unsaved() {
-            self.changed = true;
-        } else {
-            self.reload();
-        }
-    }
-
-    /// The file's text from disk, the selection kept where it fits.
-    fn reload(&mut self) {
-        self.changed = false;
-        let Some(path) = self.path.clone() else {
-            return;
-        };
-        match file::load(&path) {
-            Ok(text) => {
-                let selection = self.editor.selection();
-                self.editor = self.editor_for(text);
-                self.tried.clear();
-                self.editor.select(selection.anchor, selection.head);
-                self.saved = self.editor.version();
-                self.discarded = None;
-                self.stamp = file::modified(&path);
-                self.error = None;
-                self.load_images();
-            }
-            Err(error) => self.error = Some(error),
-        }
-    }
-
     fn unsaved(&self) -> bool {
         self.editor.version() != self.saved
     }
@@ -486,53 +448,6 @@ impl App {
         }
         Task::none()
     }
-
-    fn carry_on(&mut self, after: After) -> Task<Message> {
-        match after {
-            After::Close => self.exit(),
-            After::Open => Task::perform(file::pick(), Message::Opened),
-            After::New => self.new_note(),
-            After::Load(path) => self.load(path),
-        }
-    }
-
-    /// The file at `path` in place of the current note.
-    fn load(&mut self, path: PathBuf) -> Task<Message> {
-        match file::load(&path) {
-            Ok(text) => {
-                self.editor = self.editor_for(text);
-                self.tried.clear();
-                self.saved = self.editor.version();
-                // Versions start again with a new editor.
-                self.discarded = None;
-                self.stamp = file::modified(&path);
-                self.changed = false;
-                self.settings.opened(&path);
-                self.remember();
-                self.path = Some(path);
-                self.error = None;
-                self.load_images();
-                Editor::focus()
-            }
-            Err(error) => {
-                self.error = Some(error);
-                Task::none()
-            }
-        }
-    }
-
-    /// An empty, untitled note in place of the current one.
-    fn new_note(&mut self) -> Task<Message> {
-        self.path = None;
-        self.editor = self.editor_for(String::new());
-        self.tried.clear();
-        self.saved = self.editor.version();
-        self.discarded = None;
-        self.stamp = None;
-        self.changed = false;
-        self.error = None;
-        Editor::focus()
-    }
 }
 
 /// The iced theme for a remembered one; `None` follows the system.
@@ -569,3 +484,5 @@ fn open_link(link: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vault_tests;
