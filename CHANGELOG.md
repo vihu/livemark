@@ -33,6 +33,8 @@
   commit.
 - Ctrl+N in a vault names a new note and makes it as
   `2026-10-02-the-title.md` with front matter.
+- A title in any script gives a readable file name (`日本` makes
+  `ri-ben`, not `note`).
 - One search field in the toolbar (Ctrl+P) finds notes by title, lines in
   notes and tags; Ctrl+Enter lists every match in the sidebar.
 - Search marks what matched in every result, and finds titles by their

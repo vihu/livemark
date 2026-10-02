@@ -19,4 +19,5 @@ jiff = "0.2"
 livemark = { path = ".." }
 # Open and save dialogs (XDG portal on Linux).
 rfd      = "0.17"
+slug = "0.1"
 strsim = "0.11"
