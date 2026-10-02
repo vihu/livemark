@@ -358,7 +358,7 @@ fn bullets_boxes_quote_marks_and_rules_conceal_until_touched() {
             ("[x]", MarkKind::Task(true)),
             (">", MarkKind::Quote),
             (">", MarkKind::Quote),
-            ("  ---", MarkKind::Rule),
+            ("---", MarkKind::Rule),
         ],
         "ordered numbers always show"
     );
@@ -372,4 +372,52 @@ fn bullets_boxes_quote_marks_and_rules_conceal_until_touched() {
         !concealed(26).iter().any(|m| m.1 == MarkKind::Rule),
         "a caret at the start of the indented rule line"
     );
+}
+
+#[test]
+fn fences_and_setext_underlines_conceal_until_their_block_is_touched() {
+    let text = "Title\n=====\n\n> ```rust x\n> code\n> ```\n\n```\nopen\n";
+    let styled = Styled::new(text);
+    let concealed = |at: usize| -> Vec<&str> {
+        styled
+            .concealed(at..at)
+            .into_iter()
+            .filter(|m| matches!(m.kind, MarkKind::Fence | MarkKind::Underline))
+            .map(|m| &text[m.range])
+            .collect()
+    };
+    assert_eq!(
+        concealed(text.len()),
+        ["=====", "```rust x", "```", "```"],
+        "an unclosed block has its opening fence only"
+    );
+    assert_eq!(
+        concealed(2),
+        ["```rust x", "```", "```"],
+        "the heading's text"
+    );
+    assert_eq!(concealed(22), ["=====", "```"], "inside the quoted block");
+}
+
+#[test]
+fn quoted_fences_split_on_crlf_and_lf() {
+    // A lone `\r` after a fence is not a line ending to pulldown-cmark
+    // 0.13, so no block is parsed there; the view follows the parser.
+    for ending in ["\r\n", "\n"] {
+        let text = ["> ```", "> a", "> ```", ""].join(ending);
+        let styled = Styled::new(&text);
+        let lines: Vec<&str> = styled.code_blocks()[0]
+            .lines
+            .iter()
+            .map(|l| &text[l.clone()])
+            .collect();
+        assert_eq!(lines, ["a"], "{ending:?}");
+        let fences: Vec<&str> = styled
+            .concealed(text.len()..text.len())
+            .into_iter()
+            .filter(|m| m.kind == MarkKind::Fence)
+            .map(|m| &text[m.range])
+            .collect();
+        assert_eq!(fences, ["```", "```"], "{ending:?}");
+    }
 }

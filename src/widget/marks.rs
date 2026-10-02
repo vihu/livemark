@@ -1,7 +1,8 @@
-//! What concealed marks are drawn as (REFERENCE-001 sections 6, 7, 8, 11):
-//! a dot for a bullet, a checkbox for a task box, a bar for a nested
+//! What concealed marks are drawn as (REFERENCE-001 sections 3, 6 to 9,
+//! 11): a dot for a bullet, a checkbox for a task box, a bar for a nested
 //! quote's `>` (the outermost level has the gutter bar), a line across for
-//! a rule. Their source stays laid out, only transparent, so nothing moves
+//! a rule, the info string as a label for a fence, nothing for a setext
+//! underline. Their source stays laid out, only transparent, so nothing moves
 //! when the caret shows it.
 use std::ops::Range;
 
@@ -62,20 +63,9 @@ pub(super) fn draw<'a>(
                 let side = bounds.width;
                 if checked {
                     quad(renderer, bounds, border::rounded(3), palette.accent);
+                    let text = small("✓", side * 0.9, text::Alignment::Center, bounds.size());
                     renderer.fill_text(
-                        text::Text {
-                            content: "✓".to_owned(),
-                            bounds: bounds.size(),
-                            size: Pixels(side * 0.9),
-                            line_height: text::LineHeight::Relative(1.0),
-                            font: iced::Font::DEFAULT,
-                            align_x: text::Alignment::Center,
-                            align_y: iced::alignment::Vertical::Center,
-                            shaping: text::Shaping::Advanced,
-                            wrapping: text::Wrapping::None,
-                            ellipsis: text::Ellipsis::None,
-                            hint_factor: None,
-                        },
+                        text,
                         Point::new(origin.x + bounds.center_x(), origin.y + bounds.center_y()),
                         palette.tick,
                         Rectangle::new(origin + Vector::new(bounds.x, bounds.y), bounds.size()),
@@ -99,6 +89,21 @@ pub(super) fn draw<'a>(
                     quad(renderer, bar, Border::default(), palette.line);
                 }
             }
+            MarkKind::Fence => {
+                let fence = &line[mark.range.start - start..mark.range.end - start];
+                let info = fence.trim_start_matches(['`', '~']).trim();
+                if !info.is_empty() {
+                    let label = Point::new(width, rect.center_y());
+                    label_text(
+                        renderer,
+                        info,
+                        size * 0.75,
+                        origin + Vector::new(label.x, label.y),
+                        palette.marker,
+                    );
+                }
+            }
+            MarkKind::Underline => {}
             MarkKind::Rule => {
                 let thickness = (size / 12.0).max(1.0).round();
                 let rule = Rectangle::new(
@@ -108,6 +113,39 @@ pub(super) fn draw<'a>(
                 quad(renderer, rule, Border::default(), palette.line);
             }
         }
+    }
+}
+
+/// Draws `content` in the code font at `size`, ending at `end` (its right
+/// edge, centred vertically there): the code font's advance is 0.6 em, so
+/// its width is known without measuring.
+fn label_text(renderer: &mut iced::Renderer, content: &str, size: f32, end: Point, color: Color) {
+    let width = content.chars().count() as f32 * size * 0.6;
+    let bounds = Size::new(width + size, size * 1.5);
+    let at = Point::new(end.x - width, end.y);
+    let mut label = small(content, size, text::Alignment::Left, bounds);
+    label.font = iced::Font::new(crate::fonts::MONO);
+    let clip = Rectangle::new(
+        Point::new(at.x, at.y - size),
+        Size::new(bounds.width, 2.0 * size),
+    );
+    renderer.fill_text(label, at, color, clip);
+}
+
+/// One line of `content` in the prose font at `size`.
+fn small(content: &str, size: f32, align_x: text::Alignment, bounds: Size) -> text::Text {
+    text::Text {
+        content: content.to_owned(),
+        bounds,
+        size: Pixels(size),
+        line_height: text::LineHeight::Relative(1.0),
+        font: iced::Font::DEFAULT,
+        align_x,
+        align_y: iced::alignment::Vertical::Center,
+        shaping: text::Shaping::Advanced,
+        wrapping: text::Wrapping::None,
+        ellipsis: text::Ellipsis::None,
+        hint_factor: None,
     }
 }
 

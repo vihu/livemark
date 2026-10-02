@@ -88,8 +88,11 @@ pub struct CodeBlock {
 /// place, so nothing moves when it shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Mark {
-    /// The source drawn over; touching it shows the source.
+    /// The source drawn over.
     pub range: Range<usize>,
+    /// What a selection touches to show the source: the mark itself, the
+    /// line of a rule, the block of a fence, the heading of an underline.
+    pub touch: Range<usize>,
     /// What it is drawn as.
     pub kind: MarkKind,
 }
@@ -105,6 +108,11 @@ pub enum MarkKind {
     Quote,
     /// A thematic break's line: a horizontal line (section 11).
     Rule,
+    /// A code fence: nothing, or the info string as a label at the right
+    /// (section 9).
+    Fence,
+    /// A setext heading's underline: nothing (section 3).
+    Underline,
 }
 
 /// A document's styling, worked out once per edit.
@@ -179,7 +187,7 @@ impl Styled {
     pub fn concealed(&self, selection: Range<usize>) -> Vec<Mark> {
         self.marks
             .iter()
-            .filter(|m| !(selection.start <= m.range.end && m.range.start <= selection.end))
+            .filter(|m| !(selection.start <= m.touch.end && m.touch.start <= selection.end))
             .cloned()
             .collect()
     }

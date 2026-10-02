@@ -154,20 +154,14 @@ impl Walk<'_> {
                 let width = if digits > 0 { digits + 1 } else { 1 };
                 let marker = range.start..(range.start + width).min(range.end);
                 if digits == 0 {
-                    self.marks.push(Mark {
-                        range: marker.clone(),
-                        kind: MarkKind::Bullet,
-                    });
+                    self.mark(marker.clone(), MarkKind::Bullet);
                 }
                 self.toggles.push((marker, Flag::Marker));
                 self.item = Some(range.start);
             }
             Event::End(TagEnd::Item) => self.item = None,
             Event::TaskListMarker(checked) => {
-                self.marks.push(Mark {
-                    range: range.clone(),
-                    kind: MarkKind::Task(checked),
-                });
+                self.mark(range.clone(), MarkKind::Task(checked));
                 self.toggles.push((range.clone(), Flag::Marker));
                 self.toggles.push((range.clone(), Flag::Mono));
                 if checked {
@@ -185,7 +179,8 @@ impl Walk<'_> {
                     .rfind(['\n', '\r'])
                     .map_or(0, |i| i + 1);
                 self.marks.push(Mark {
-                    range: line..end,
+                    range: range.start..end,
+                    touch: line..end,
                     kind: MarkKind::Rule,
                 });
                 self.toggles.push((range.start..end, Flag::Marker));
@@ -238,6 +233,11 @@ impl Walk<'_> {
             // preview's (REFERENCE-001 section 3).
             let underline = self.text[..end].rfind(['\n', '\r']).map_or(end, |i| i + 1);
             self.toggles.push((underline..end, Flag::Marker));
+            self.marks.push(Mark {
+                range: underline..end,
+                touch: range.start..end,
+                kind: MarkKind::Underline,
+            });
         }
     }
 
@@ -357,12 +357,40 @@ impl Walk<'_> {
             // container it sits in.
             if block.language.is_some() {
                 for gap in gaps(block.range.clone(), &texts) {
-                    self.toggles.push((gap, Flag::Marker));
+                    self.toggles.push((gap.clone(), Flag::Marker));
+                    // The fences among them: a run of ``` or ~~~ after
+                    // any container prefix, to the line's end.
+                    for line in lines_of(self.text, gap) {
+                        let text = &self.text[line.clone()];
+                        let fence = text.trim_start_matches(['>', ' ', '\t']);
+                        if fence.starts_with("```") || fence.starts_with("~~~") {
+                            self.marks.push(Mark {
+                                range: line.end - fence.len()..line.end,
+                                touch: block.range.clone(),
+                                kind: MarkKind::Fence,
+                            });
+                        }
+                    }
                 }
             }
-            block.lines = texts
-                .iter()
-                .flat_map(|t| lines_of(self.text, t.clone()))
+            // In a container, pulldown-cmark ends a CRLF line with a text
+            // event of its own after skipping the `\r`: join them, or the
+            // ending would make a line.
+            let mut joined: Vec<Range<usize>> = Vec::with_capacity(texts.len());
+            for text in texts {
+                match joined.last_mut() {
+                    Some(last)
+                        if text.start == last.end + 1
+                            && self.text[last.end..].starts_with("\r\n") =>
+                    {
+                        last.end = text.end;
+                    }
+                    _ => joined.push(text),
+                }
+            }
+            block.lines = joined
+                .into_iter()
+                .flat_map(|t| lines_of(self.text, t))
                 .collect();
             self.code_blocks.push(block);
         }
@@ -384,10 +412,7 @@ impl Walk<'_> {
                     break;
                 }
                 self.toggles.push((at..at + 1, Flag::Marker));
-                self.marks.push(Mark {
-                    range: at..at + 1,
-                    kind: MarkKind::Quote,
-                });
+                self.mark(at..at + 1, MarkKind::Quote);
                 at += 1;
                 if bytes.get(at) == Some(&b' ') {
                     at += 1;
@@ -400,6 +425,15 @@ impl Walk<'_> {
                 None => break,
             }
         }
+    }
+
+    /// A mark that shows when it is touched itself.
+    fn mark(&mut self, range: Range<usize>, kind: MarkKind) {
+        self.marks.push(Mark {
+            touch: range.clone(),
+            range,
+            kind,
+        });
     }
 
     fn in_text(&self, at: usize) -> bool {
@@ -465,24 +499,30 @@ fn gaps(outer: Range<usize>, inner: &[Range<usize>]) -> Vec<Range<usize>> {
     gaps
 }
 
-/// The lines of `range` in `text`, each without its line ending.
+/// The lines of `range` in `text`, each without its line ending (`\n`,
+/// `\r\n` or a lone `\r`, as in `Doc`).
 fn lines_of(text: &str, range: Range<usize>) -> Vec<Range<usize>> {
+    let bytes = text.as_bytes();
     let mut lines = Vec::new();
-    let mut start = range.start;
-    for (i, byte) in text[range.clone()].bytes().enumerate() {
-        if byte == b'\n' {
-            let end = range.start + i;
-            let end = if text[start..end].ends_with('\r') {
-                end - 1
-            } else {
-                end
-            };
-            lines.push(start..end);
-            start = range.start + i + 1;
+    let (mut start, mut at) = (range.start, range.start);
+    while at < range.end {
+        match bytes[at] {
+            b'\n' => {
+                lines.push(start..at);
+                at += 1;
+                start = at;
+            }
+            b'\r' => {
+                lines.push(start..at);
+                let crlf = at + 1 < range.end && bytes[at + 1] == b'\n';
+                at += if crlf { 2 } else { 1 };
+                start = at;
+            }
+            _ => at += 1,
         }
     }
     if start < range.end {
-        lines.push(start..range.start + line_trim(&text[range.clone()]));
+        lines.push(start..range.end);
     }
     lines
 }
