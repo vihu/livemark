@@ -273,6 +273,7 @@ impl Walk<'_> {
                     range: range.start..end,
                     markers,
                     group: self.constructs.len(),
+                    hides: true,
                 });
             }
         } else {
@@ -294,9 +295,9 @@ impl Walk<'_> {
     }
 
     /// Adds an inline construct with `width`-byte markers at both ends and
-    /// returns its index. Inside a table its markers are only dimmed:
-    /// hiding them would pull the columns out of line until tables are
-    /// drawn as grids (REFERENCE-001 section 10).
+    /// returns its index. Inside a table cell its markers are only dimmed
+    /// in the source, which keeps its columns, and hidden by the grid
+    /// (REFERENCE-001 section 10).
     fn inline(&mut self, syntax: Syntax, range: Range<usize>, width: usize) -> usize {
         let markers = [
             range.start..range.start + width,
@@ -306,16 +307,17 @@ impl Walk<'_> {
             self.toggles.push((marker.clone(), Flag::Marker));
         }
         let index = self.constructs.len();
-        if self.cells.is_none() {
-            self.constructs.push(Construct {
-                syntax,
-                range,
-                markers,
-                group: self.open.first().copied().unwrap_or(index),
-            });
-        } else {
-            self.cell_markers(markers);
+        let hides = self.cells.is_none();
+        if !hides {
+            self.cell_markers(markers.clone());
         }
+        self.constructs.push(Construct {
+            syntax,
+            range,
+            markers,
+            group: self.open.first().copied().unwrap_or(index),
+            hides,
+        });
         index
     }
 
@@ -330,6 +332,7 @@ impl Walk<'_> {
                 range: range.clone(),
                 markers: [range.start..range.start, range.end..range.end],
                 group: self.open.first().copied().unwrap_or(index),
+                hides: true,
             });
             self.open.push(index);
             index

@@ -68,6 +68,10 @@ pub struct Construct {
     /// The construct whose touch reveals this one: the outermost inline
     /// span it sits in (REFERENCE-001 section 4), else itself.
     pub group: usize,
+    /// Whether live preview hides its markers: not in a table cell, where
+    /// the source keeps its columns (the grid hides them instead). Such a
+    /// construct is still one for the formatting keys.
+    pub hides: bool,
 }
 
 /// A fenced or indented code block (REFERENCE-001 section 9).
@@ -255,7 +259,7 @@ impl Styled {
         let mut hidden: Vec<Range<usize>> = self
             .constructs
             .iter()
-            .filter(|c| !touches(&self.constructs[c.group].range))
+            .filter(|c| c.hides && !touches(&self.constructs[c.group].range))
             .flat_map(|c| c.markers.clone())
             .filter(|m| !m.is_empty())
             .collect();

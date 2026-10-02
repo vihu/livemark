@@ -106,3 +106,28 @@ fn ctrl_k_makes_a_link_from_the_selection() {
     assert_eq!(link_of("[some text]"), "[some text](|)");
     assert_eq!(link_of("|"), "[|]()");
 }
+
+#[test]
+fn in_a_table_cell_the_format_toggles_off_too() {
+    // Built by hand: the helpers read a table's pipes as the caret.
+    for (text, at, format, after) in [
+        (
+            "| **ab** | c |\n| - | - |\n",
+            5,
+            Format::Bold,
+            "| ab | c |\n| - | - |\n",
+        ),
+        (
+            "| x | `cd` |\n| - | - |\n",
+            8,
+            Format::Code,
+            "| x | cd |\n| - | - |\n",
+        ),
+    ] {
+        let mut doc = Doc::new(text.into());
+        doc.set_selection(Selection::caret(at));
+        let styled = Styled::new(doc.text());
+        toggle(&mut doc, &styled, format, Duration::ZERO);
+        assert_eq!(doc.text(), after);
+    }
+}

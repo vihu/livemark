@@ -26,6 +26,7 @@ fn an_atx_heading_hides_its_opening_and_closing_runs() {
             range: 0..11,
             markers: [0..3, 8..11],
             group: 0,
+            hides: true,
         }]
     );
     assert_eq!(
