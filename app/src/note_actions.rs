@@ -1,17 +1,16 @@
-//! What can be done to a note from the sidebar (PLAN-006): its menu on a
-//! right press (Open, Rename, Duplicate, Copy link, Show in folder,
+//! What can be done to a note from the sidebar (PLAN-006), from its menu
+//! (`context.rs`: Open, Rename, Duplicate, Copy link, Show in folder,
 //! Delete), F2 renaming the open note. A rename changes the title and the
 //! file name (its date kept) and rewrites the links to it in other notes;
 //! a delete says first how many notes link to it. Each can be undone.
 use std::path::{Path, PathBuf};
 
-use iced::widget::{button, column, container, row, text, text_input};
-use iced::{Element, Length, Task, Theme};
+use iced::widget::{column, text_input};
+use iced::{Element, Task};
 
-use super::icons::{Icon, Tone, icon};
 use super::links::relative;
 use super::relink::{free_path, relinked, retitled};
-use super::sidebar::{Shown, choice};
+use super::sidebar::Shown;
 use super::tag_actions::{notes, question};
 use super::undo::Undo;
 use super::vault::Vault;
@@ -22,8 +21,6 @@ const RENAME: iced::widget::Id = iced::widget::Id::new("livemark-note-rename");
 
 #[derive(Debug, Clone)]
 pub enum NoteMessage {
-    /// A right press on a note: its menu, or closed again.
-    Menu(PathBuf),
     /// Rename this note; `None` (F2) the open one.
     StartRename(Option<PathBuf>),
     RenameText(String),
@@ -46,14 +43,9 @@ pub enum NoteAction {
 impl App {
     pub(crate) fn note_update(&mut self, message: NoteMessage) -> Task<Message> {
         match message {
-            NoteMessage::Menu(path) => {
-                self.note_action = None;
-                self.note_menu = (self.note_menu.as_ref() != Some(&path)).then(|| path.clone());
-                if self.note_menu.is_some() {
-                    return self.bring_into_view(&path);
-                }
-            }
             NoteMessage::StartRename(path) => {
+                // F2 (no path): the open note, whose row may be out of sight.
+                let scrolls = path.is_none();
                 let Some(path) = path.or_else(|| self.path.clone()) else {
                     return Task::none();
                 };
@@ -66,8 +58,11 @@ impl App {
                 if !self.shown_keeps(&path) {
                     self.shown = Shown::All;
                 }
-                self.note_menu = None;
-                let scroll = self.bring_into_view(&path);
+                let scroll = if scrolls {
+                    self.bring_into_view(&path)
+                } else {
+                    Task::none()
+                };
                 self.note_action = Some(NoteAction::Rename { path, value: title });
                 return Task::batch([scroll, iced::widget::operation::focus(RENAME)]);
             }
@@ -76,16 +71,8 @@ impl App {
                     *v = value;
                 }
             }
-            NoteMessage::StartDelete(path) => {
-                self.note_menu = None;
-                let scroll = self.bring_into_view(&path);
-                self.note_action = Some(NoteAction::Delete(path));
-                return scroll;
-            }
-            NoteMessage::Cancel => {
-                self.note_menu = None;
-                self.note_action = None;
-            }
+            NoteMessage::StartDelete(path) => self.note_action = Some(NoteAction::Delete(path)),
+            NoteMessage::Cancel => self.note_action = None,
             NoteMessage::Confirm => {
                 let result = match self.note_action.take() {
                     Some(NoteAction::Rename { path, value }) => {
@@ -107,18 +94,14 @@ impl App {
                 };
                 self.said(result);
             }
-            NoteMessage::Duplicate(path) => {
-                self.note_menu = None;
-                match self.duplicate_note(&path) {
-                    Ok((copy, title)) => {
-                        self.said(Ok(format!("Duplicated as {title}")));
-                        return self.update(Message::Opened(Some(copy)));
-                    }
-                    Err(error) => self.error = Some(error),
+            NoteMessage::Duplicate(path) => match self.duplicate_note(&path) {
+                Ok((copy, title)) => {
+                    self.said(Ok(format!("Duplicated as {title}")));
+                    return self.update(Message::Opened(Some(copy)));
                 }
-            }
+                Err(error) => self.error = Some(error),
+            },
             NoteMessage::CopyLink(path) => {
-                self.note_menu = None;
                 let (Some(vault), Some(title)) = (&self.vault, self.title_of(&path)) else {
                     return Task::none();
                 };
@@ -130,7 +113,6 @@ impl App {
                 return iced::clipboard::write(link).discard();
             }
             NoteMessage::ShowInFolder(path) => {
-                self.note_menu = None;
                 if let Err(error) = show_in_folder(&path) {
                     self.error = Some(error);
                 }
@@ -294,84 +276,6 @@ impl App {
         self.refresh_vault();
         Ok((copy, title))
     }
-}
-
-/// The menu under a note's row.
-pub(crate) fn menu_view(path: &Path, open: bool) -> Element<'static, Message> {
-    let item =
-        |glyph: Icon, label: &'static str, hint: &'static str, danger: bool, message: Message| {
-            button(
-                row![
-                    icon(glyph, 16.0, if danger { Tone::Danger } else { Tone::Quiet }),
-                    text(label).size(13).width(Length::Fill),
-                    text(hint).size(11).style(text::secondary),
-                ]
-                .spacing(8)
-                .align_y(iced::Center),
-            )
-            .width(Length::Fill)
-            .padding([6, 10])
-            .style(move |theme: &Theme, status| {
-                let mut style = choice(theme, status, false);
-                if danger {
-                    style.text_color = theme.palette().danger.base.color;
-                }
-                style
-            })
-            .on_press(message)
-        };
-    let note = |message| Message::Note(message);
-    let path = path.to_path_buf();
-    container(
-        column![
-            item(
-                Icon::Doc,
-                "Open",
-                "",
-                false,
-                Message::Opened(Some(path.clone()))
-            ),
-            item(
-                Icon::Pen,
-                "Rename...",
-                if open { "F2" } else { "" },
-                false,
-                note(NoteMessage::StartRename(Some(path.clone())))
-            ),
-            item(
-                Icon::Copy,
-                "Duplicate",
-                "",
-                false,
-                note(NoteMessage::Duplicate(path.clone()))
-            ),
-            item(
-                Icon::Link,
-                "Copy link",
-                "",
-                false,
-                note(NoteMessage::CopyLink(path.clone()))
-            ),
-            item(
-                Icon::Folder,
-                "Show in folder",
-                "",
-                false,
-                note(NoteMessage::ShowInFolder(path.clone()))
-            ),
-            item(
-                Icon::Bin,
-                "Delete...",
-                "",
-                true,
-                note(NoteMessage::StartDelete(path.clone()))
-            ),
-        ]
-        .spacing(1),
-    )
-    .padding(4)
-    .style(container::bordered_box)
-    .into()
 }
 
 /// The rename field in place of a note's row, and what will happen.

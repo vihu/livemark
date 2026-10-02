@@ -42,13 +42,54 @@ impl App {
         let mut items = column![
             item(Icon::Plus, "New note", "N", Message::New),
             item(Icon::Folder, "Open file...", "O", Message::Open),
-            item(
-                Icon::Vault,
-                "Open vault...",
-                "",
-                Message::Vault(VaultMessage::Open)
-            ),
+            rule::horizontal(1),
+            container(text("Vaults").size(12).style(text::secondary)).padding([4, 10]),
         ];
+        // The vaults opened, one press away; the open one marked.
+        let open = self.vault.as_ref().map(|vault| vault.root.clone());
+        for root in &self.settings.vaults {
+            let here = open.as_ref() == Some(root);
+            let name = column![
+                text(file_name(root))
+                    .size(14)
+                    .wrapping(Wrapping::None)
+                    .ellipsis(Ellipsis::End),
+                text(folder(root))
+                    .size(11)
+                    .style(text::secondary)
+                    .wrapping(Wrapping::None)
+                    .ellipsis(Ellipsis::Start),
+            ]
+            .width(Length::Fill);
+            items = items.push(
+                button(
+                    row![icon(Icon::Vault, 16.0, Tone::Quiet), name]
+                        .push(here.then(|| icon(Icon::Check, 16.0, Tone::Quiet)))
+                        .spacing(10)
+                        .align_y(iced::Center),
+                )
+                .width(Length::Fill)
+                .padding([5, 10])
+                .style(move |theme: &Theme, status| ghost(theme, status, here))
+                .on_press_maybe(
+                    (!here).then(|| Message::Vault(VaultMessage::Picked(Some(root.clone())))),
+                ),
+            );
+        }
+        items = items.push(item(
+            Icon::Vault,
+            "Open vault...",
+            "",
+            Message::Vault(VaultMessage::Open),
+        ));
+        if open.is_some() {
+            items = items.push(item(
+                Icon::Close,
+                "Close vault",
+                "",
+                Message::Vault(VaultMessage::Close),
+            ));
+        }
         if !self.settings.recent.is_empty() {
             items = items.push(rule::horizontal(1));
             items = items.push(

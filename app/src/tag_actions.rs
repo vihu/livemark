@@ -16,8 +16,6 @@ const RENAME: iced::widget::Id = iced::widget::Id::new("livemark-tag-rename");
 pub enum TagMessage {
     /// The pointer over a tag's row, or off them all.
     Hover(Option<String>),
-    /// Its menu, open or closed again.
-    Menu(String),
     StartRename(String),
     RenameText(String),
     StartDelete(String),
@@ -66,12 +64,7 @@ impl App {
     pub(crate) fn tag_update(&mut self, message: TagMessage) -> Task<Message> {
         match message {
             TagMessage::Hover(tag) => self.hovered_tag = tag,
-            TagMessage::Menu(tag) => {
-                self.tag_action = None;
-                self.tag_menu = (self.tag_menu.as_ref() != Some(&tag)).then_some(tag);
-            }
             TagMessage::StartRename(tag) => {
-                self.tag_menu = None;
                 self.tag_action = Some(TagAction::Rename {
                     value: tag.clone(),
                     tag,
@@ -84,13 +77,9 @@ impl App {
                 }
             }
             TagMessage::StartDelete(tag) => {
-                self.tag_menu = None;
                 self.tag_action = Some(TagAction::Delete(tag));
             }
-            TagMessage::Cancel => {
-                self.tag_menu = None;
-                self.tag_action = None;
-            }
+            TagMessage::Cancel => self.tag_action = None,
             TagMessage::Confirm => {
                 let Some(action) = self.tag_action.take() else {
                     return Task::none();
@@ -164,7 +153,10 @@ impl App {
             return self.rename_field(tag, value, count);
         }
         let on = self.shown == Shown::Tag(tag.to_owned());
-        let open = self.tag_menu.as_deref() == Some(tag);
+        let open = self
+            .context
+            .as_ref()
+            .is_some_and(|menu| menu.target == super::context::Target::Tag(tag.to_owned()));
         let hovered = self.hovered_tag.as_deref() == Some(tag);
         let name = button(
             row![
@@ -197,7 +189,7 @@ impl App {
                 }
                 style
             })
-            .on_press(Message::Tag(TagMessage::Menu(tag.to_owned())));
+            .on_press(open_menu(tag));
         let line = container(
             row![
                 name,
@@ -223,10 +215,11 @@ impl App {
         });
         let line = mouse_area(line)
             .on_enter(Message::Tag(TagMessage::Hover(Some(tag.to_owned()))))
-            .on_exit(Message::Tag(TagMessage::Hover(None)));
-        let below: Option<Element<'_, Message>> = if open {
-            Some(self.tag_menu_view(tag))
-        } else if asking && self.tag_action == Some(TagAction::Delete(tag.to_owned())) {
+            .on_exit(Message::Tag(TagMessage::Hover(None)))
+            .on_right_press(open_menu(tag));
+        let below: Option<Element<'_, Message>> = if asking
+            && self.tag_action == Some(TagAction::Delete(tag.to_owned()))
+        {
             Some(card(
                 format!(
                     "Delete #{tag} from {}? In front matter it goes; in the text the word stays and loses its #.",
@@ -239,54 +232,6 @@ impl App {
             None
         };
         column![line].push(below).spacing(2).into()
-    }
-
-    fn tag_menu_view(&self, tag: &str) -> Element<'_, Message> {
-        let item = |label: &'static str, hint: &'static str, danger: bool, message: TagMessage| {
-            button(
-                row![
-                    text(label).size(13).width(Length::Fill),
-                    text(hint).size(11).style(text::secondary),
-                ]
-                .align_y(iced::Center),
-            )
-            .width(Length::Fill)
-            .padding([6, 10])
-            .style(move |theme: &Theme, status| {
-                let mut style = choice(theme, status, false);
-                if danger {
-                    style.text_color = theme.palette().danger.base.color;
-                }
-                style
-            })
-            .on_press(Message::Tag(message))
-        };
-        container(
-            column![
-                item(
-                    "Rename or merge",
-                    "",
-                    false,
-                    TagMessage::StartRename(tag.to_owned())
-                ),
-                item(
-                    "Open in the tag manager",
-                    "",
-                    false,
-                    TagMessage::Manage(tag.to_owned())
-                ),
-                item(
-                    "Delete from every note",
-                    "",
-                    true,
-                    TagMessage::StartDelete(tag.to_owned())
-                ),
-            ]
-            .spacing(1),
-        )
-        .padding(4)
-        .style(container::bordered_box)
-        .into()
     }
 
     pub(crate) fn rename_field<'a>(
@@ -328,6 +273,13 @@ impl App {
         .spacing(4)
         .into()
     }
+}
+
+/// The tag's menu, where the pointer pressed.
+fn open_menu(tag: &str) -> Message {
+    Message::Context(super::context::ContextMessage::Open(
+        super::context::Target::Tag(tag.to_owned()),
+    ))
 }
 
 /// A question under a tag: what will happen, and the buttons.

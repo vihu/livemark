@@ -22,6 +22,7 @@
 mod appearance;
 mod autosave;
 mod cli;
+mod context;
 mod file;
 mod icons;
 mod into_vault;
@@ -44,6 +45,7 @@ mod tags;
 mod undo;
 mod update;
 mod vault;
+mod vaults;
 mod view;
 
 use std::path::PathBuf;
@@ -172,14 +174,14 @@ struct App {
     toast: Option<String>,
     /// Whether it offers Undo (a change), or only says something done.
     toast_undo: bool,
-    /// The note whose menu is open in the sidebar, and the question open
-    /// under one.
-    note_menu: Option<PathBuf>,
+    /// The question open under a note in the sidebar.
     note_action: Option<note_actions::NoteAction>,
+    /// The right-click menu open, and where the pointer last pressed.
+    context: Option<context::Menu>,
+    pointer: iced::Point,
     /// The sidebar's tag under the pointer, its tag with the menu open,
     /// and the question open under one.
     hovered_tag: Option<String>,
-    tag_menu: Option<String>,
     tag_action: Option<tag_actions::TagAction>,
     /// The tag manager, in place of the note while it is open.
     manager: Option<manager::Manager>,
@@ -242,8 +244,17 @@ enum Message {
     Undo,
     /// The note over the text closed.
     DismissToast,
-    /// Escape: a menu or question under a tag or a note taken back.
+    /// Escape: a menu, or a question under a tag or a note, taken back.
     Escape,
+    /// The pointer pressed here (the right button?), before anything heard.
+    Pressed {
+        at: iced::Point,
+        right: bool,
+    },
+    /// A right-click menu and what it does.
+    Context(context::ContextMessage),
+    /// The clipboard's text, for the text's menu.
+    Paste(Option<String>),
     /// The bar over a note outside the vault.
     IntoVault(into_vault::IntoVault),
     /// The window lost focus: autosave writes the note.
@@ -306,10 +317,10 @@ impl App {
             undo: None,
             toast: None,
             toast_undo: false,
-            note_menu: None,
+            context: None,
+            pointer: iced::Point::ORIGIN,
             note_action: None,
             hovered_tag: None,
-            tag_menu: None,
             tag_action: None,
             manager: None,
             kept_apart: Vec::new(),
@@ -328,11 +339,17 @@ impl App {
         self.settings_file = file;
         self.editor.set_zoom(self.settings.zoom);
         self.editor.set_split_ratio(self.settings.split);
-        self.vault = self
-            .settings
-            .vault
-            .as_deref()
-            .and_then(|root| vault::Vault::open(root).ok());
+        if let Some(root) = self.settings.vault.clone() {
+            match vault::Vault::open(&root) {
+                Ok(vault) => {
+                    if !self.settings.vaults.contains(&vault.root) {
+                        self.settings.vaults.insert(0, vault.root.clone());
+                    }
+                    self.vault = Some(vault);
+                }
+                Err(error) => self.error = Some(format!("{}: {error}", root.display())),
+            }
+        }
         self.settings.recent.retain(|path| path.exists());
         if let Some(path) = self.path.clone() {
             self.settings.opened(&path);
@@ -420,6 +437,8 @@ mod manager_tests;
 mod note_tests;
 #[cfg(test)]
 mod search_tests;
+#[cfg(test)]
+mod switch_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -6,6 +6,12 @@
   File's place; the note's bar has the formatting buttons without boxes,
   the search, whether the note is saved, and the mode as three icons.
   Ctrl+\ hides the sidebar, its edge drags to resize it; Ctrl+Q quits.
+- Right-click menus float where you click, on notes, tags and the text
+  (Cut, Copy, Paste, Select all), and close on any click elsewhere.
+- Vaults: the vault menu lists the vaults opened, one click away; a vault
+  opens with the note last open in it and nothing of the last vault left
+  over; a note of another vault opened from the recent files brings its
+  vault; Close vault.
 - Notes from the sidebar: a right press opens a note's menu: rename (F2
   for the open note; the file is renamed with the title and the links to
   it follow), duplicate, copy a link, show it in its folder, delete. Each

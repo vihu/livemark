@@ -67,6 +67,12 @@ impl App {
 
     /// The file at `path` in place of the current note.
     pub(crate) fn load(&mut self, path: PathBuf) -> Task<Message> {
+        // A note of another vault the app knows: that vault comes in first.
+        if let Some(root) = self.vault_holding(&path)
+            && let Err(error) = self.enter_vault(&root)
+        {
+            self.error = Some(error);
+        }
         match file::load(&path) {
             Ok(text) => {
                 self.editor = self.editor_for(text);

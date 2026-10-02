@@ -190,10 +190,24 @@ impl App {
             }
             Message::DismissToast => self.toast = None,
             Message::IntoVault(message) => return self.bring_in_update(message),
+            Message::Pressed { at, right } => {
+                self.pointer = at;
+                // A right press elsewhere closes the menu; one on something
+                // with a menu opens that next.
+                if right {
+                    self.context = None;
+                }
+            }
+            Message::Context(message) => return self.context_update(message),
+            Message::Paste(text) => {
+                if let Some(text) = text.filter(|_| self.manager.is_none() && !self.appearance) {
+                    self.editor.insert_text(&text);
+                    return self.typed();
+                }
+            }
             Message::Escape => {
-                self.tag_menu = None;
+                self.context = None;
                 self.tag_action = None;
-                self.note_menu = None;
                 self.note_action = None;
             }
             Message::Sidebar => {

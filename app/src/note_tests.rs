@@ -47,8 +47,6 @@ fn a_rename_moves_the_file_retitles_it_and_its_links_follow_then_undo() {
     let (root, mut app) = vault("rename");
     let old = root.join("2026-09-30-lisbon-hotels.md");
     let new = root.join("2026-09-30-lisbon-stays.md");
-    note(&mut app, NoteMessage::Menu(old.clone()));
-    assert_eq!(app.note_menu.as_ref(), Some(&old));
     note(&mut app, NoteMessage::StartRename(Some(old.clone())));
     note(&mut app, NoteMessage::RenameText("Lisbon stays".into()));
     note(&mut app, NoteMessage::Confirm);
@@ -134,10 +132,6 @@ fn duplicate_opens_a_copy_and_copy_link_says_so_without_undo() {
     note(&mut app, NoteMessage::CopyLink(hotels.clone()));
     assert_eq!(app.toast.as_deref(), Some("Copied a link to Lisbon hotels"));
     assert!(!app.toast_undo);
-    // Escape closes a menu.
-    note(&mut app, NoteMessage::Menu(hotels.clone()));
-    let _ = app.update(Message::Escape);
-    assert_eq!(app.note_menu, None);
     std::fs::remove_dir_all(&root).unwrap();
 }
 

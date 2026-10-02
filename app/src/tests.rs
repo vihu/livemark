@@ -306,6 +306,8 @@ fn the_bar_says_whether_the_note_is_saved_and_the_sidebar_hides() {
     let _ = app.update(Message::Vault(crate::sidebar::VaultMessage::Picked(Some(
         vault.clone(),
     ))));
+    assert_eq!(app.path.as_ref(), Some(&inside), "the vault's note opens");
+    let _ = app.update(Message::Opened(Some(outside.clone())));
     assert_eq!(app.save_state(), SaveState::Outside);
     let _ = app.update(Message::Opened(Some(inside.clone())));
     assert_eq!(app.save_state(), SaveState::Saved);

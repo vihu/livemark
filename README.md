@@ -59,7 +59,9 @@ paths); the app makes no network requests, so web images stay as markdown.
 A picture pasted with Ctrl+V is saved as `assets/<note>-<n>.png` next to the
 note and linked at the caret (a new note is saved first); a picture file
 dropped on the window is linked by its path, a dropped `.md` file opens.
-The vault menu (the name at the sidebar's top) > Open vault picks a folder of notes (a vault, kept in your own git
+The vault menu (the name at the sidebar's top) lists the vaults you have
+opened, a click switching to one (it opens with the note last open in it,
+nothing of the other vault left over); Open vault picks a folder of notes (a vault, kept in your own git
 repository; the app never runs git): a sidebar lists its notes, most
 recently changed first, and their tags (front matter `tags: [work,
 travel]` and inline `#tags`) with counts, a click on one showing only its
@@ -79,7 +81,9 @@ normal markdown link to the one chosen (`[Lisbon hotels](2026-10-02-lisbon-hotel
 so links work in the git web UI too); typing `#` and a letter lists the
 vault's tags. Ctrl+click on a link to a note opens it here, and "Linked
 from" at the end of the note lists the notes linking to it, each with the
-line its link sits in, a click opening it. A right press on a note in the sidebar opens its menu: Open, Rename (F2 for
+line its link sits in, a click opening it. Right-click opens a menu where you click: on a note in the sidebar, on a tag
+(its "···" too), and on the text (Cut, Copy, Paste, Select all); a click
+elsewhere or Escape closes it. A note's menu: Open, Rename (F2 for
 the open note: the title and the file's name change together, its date
 kept, and the links in other notes follow), Duplicate, Copy link (a
 markdown link to paste into another note), Show in folder, and Delete

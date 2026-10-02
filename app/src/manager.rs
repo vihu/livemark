@@ -59,7 +59,6 @@ impl App {
         match message {
             ManagerMessage::Open(tag) => {
                 self.appearance = false;
-                self.tag_menu = None;
                 self.tag_action = None;
                 self.manager = Some(Manager {
                     sort: Column::Notes,

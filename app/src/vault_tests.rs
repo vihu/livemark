@@ -343,8 +343,6 @@ fn the_tag_menu_renames_merges_deletes_and_undoes() {
     let tag = |app: &mut App, m| {
         let _ = app.update(Message::Tag(m));
     };
-    tag(&mut app, TagMessage::Menu("trips".into()));
-    assert_eq!(app.tag_menu.as_deref(), Some("trips"));
     let _ = app.view();
     tag(&mut app, TagMessage::StartRename("trips".into()));
     tag(&mut app, TagMessage::RenameText("Travel".into()));

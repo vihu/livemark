@@ -10,7 +10,7 @@ use iced::widget::{
 };
 use iced::{Element, Length, Task, Theme};
 
-use super::note_actions::{self, NoteAction, NoteMessage};
+use super::note_actions::{self, NoteAction};
 use super::vault::Vault;
 use super::{App, Message, file};
 
@@ -63,8 +63,11 @@ impl Shown {
 pub enum VaultMessage {
     /// File > Open vault: pick a folder.
     Open,
-    /// The folder picked (`None`: the dialog was cancelled).
+    /// The folder picked, or a recent vault (`None`: the dialog was
+    /// cancelled).
     Picked(Option<PathBuf>),
+    /// No vault: the note stays open as a plain file.
+    Close,
     /// Show these notes; the same tag again shows all.
     Show(Shown),
     /// "All N tags", or back to the top eight.
@@ -91,16 +94,14 @@ impl App {
                     Message::Vault(VaultMessage::Picked(folder))
                 });
             }
-            VaultMessage::Picked(Some(root)) => match Vault::open(&root) {
-                Ok(vault) => {
-                    self.settings.vault = Some(vault.root.clone());
-                    self.remember();
-                    self.vault = Some(vault);
-                    self.shown = Shown::All;
-                    self.refresh_footer();
-                }
-                Err(error) => self.error = Some(error.to_string()),
-            },
+            VaultMessage::Picked(Some(root)) => {
+                self.menu = false;
+                return self.switch_vault(&root);
+            }
+            VaultMessage::Close => {
+                self.menu = false;
+                self.close_vault();
+            }
             VaultMessage::Picked(None) => {}
             VaultMessage::Show(shown) => {
                 self.listing = None;
@@ -271,7 +272,10 @@ impl App {
                                 vault.generation,
                                 self.shown.clone(),
                                 current,
-                                self.note_menu.clone(),
+                                self.context.as_ref().and_then(|menu| match &menu.target {
+                                    super::context::Target::Note(path) => Some(path.clone()),
+                                    _ => None,
+                                }),
                                 self.note_action.clone(),
                             ),
                             |(_, shown, current, menu, action)| {
@@ -384,11 +388,10 @@ fn notes(
                     })
                     .on_press(Message::Opened(Some(note.path.clone()))),
             )
-            .on_right_press(Message::Note(NoteMessage::Menu(note.path.clone()))),
+            .on_right_press(Message::Context(super::context::ContextMessage::Open(
+                super::context::Target::Note(note.path.clone()),
+            ))),
         );
-        if open_menu {
-            list = list.push(note_actions::menu_view(&note.path, on));
-        }
         if action.as_ref() == Some(&NoteAction::Delete(note.path.clone())) {
             list = list.push(note_actions::delete_view(vault, &note.path, &note.title));
         }

@@ -15,7 +15,12 @@ impl App {
         let editor = match &self.manager {
             _ if self.appearance => self.appearance_view(),
             Some(manager) => self.manager_view(manager),
-            None => self.editor.view().map(Message::Editor),
+            // A right press on the text: its menu (Cut, Copy, Paste...).
+            None => mouse_area(self.editor.view().map(Message::Editor))
+                .on_right_press(Message::Context(super::context::ContextMessage::Open(
+                    super::context::Target::Text,
+                )))
+                .into(),
         };
         let bar: Option<Element<'_, Message>> = if self.changed {
             Some(
@@ -108,10 +113,13 @@ impl App {
             stack![editor].push(self.search_panel()).push(toast)
         ]
         .push(bar.map(|bar| container(bar).padding(12)));
-        stack![row![self.sidebar_column(), note]]
-            .push(menu)
-            .push(self.resize_layer())
-            .into()
+        // Every press says where it landed first, for the menus.
+        super::context::press_at(
+            stack![row![self.sidebar_column(), note]]
+                .push(menu)
+                .push(self.resize_layer())
+                .push(self.context_layer()),
+        )
     }
 
     pub(crate) fn subscription(&self) -> Subscription<Message> {
@@ -193,19 +201,17 @@ impl App {
             )),
             _ => None,
         });
-        let asking = (self.tag_action.is_some()
-            || self.tag_menu.is_some()
-            || self.note_action.is_some()
-            || self.note_menu.is_some())
-        .then(|| {
-            keyboard::listen().filter_map(|event| match event {
-                keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
-                    ..
-                } => Some(Message::Escape),
-                _ => None,
-            })
-        });
+        let asking =
+            (self.tag_action.is_some() || self.note_action.is_some() || self.context.is_some())
+                .then(|| {
+                    keyboard::listen().filter_map(|event| match event {
+                        keyboard::Event::KeyPressed {
+                            key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                            ..
+                        } => Some(Message::Escape),
+                        _ => None,
+                    })
+                });
         Subscription::batch(
             [keys, close, focus, rename, system]
                 .into_iter()

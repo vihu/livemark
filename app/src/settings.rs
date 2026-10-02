@@ -100,6 +100,8 @@ pub struct Settings {
     pub split: f32,
     /// The vault last opened (PLAN-004).
     pub vault: Option<PathBuf>,
+    /// The vaults opened, most recent first (PLAN-006).
+    pub vaults: Vec<PathBuf>,
     /// Whether the sidebar shows (Ctrl+\ hides it, PLAN-006).
     pub sidebar: bool,
     /// The sidebar's width, its edge dragged (PLAN-006).
@@ -120,6 +122,7 @@ impl Default for Settings {
             recent: Vec::new(),
             split: 0.5,
             vault: None,
+            vaults: Vec::new(),
             sidebar: true,
             sidebar_width: SIDEBAR_WIDTH,
             autosave: true,
@@ -207,6 +210,7 @@ impl Settings {
                     settings.window = size.filter(|&(w, h)| w >= 200.0 && h >= 150.0);
                 }
                 "vault" if !value.is_empty() => settings.vault = Some(PathBuf::from(value)),
+                "recent vault" if !value.is_empty() => settings.vaults.push(PathBuf::from(value)),
                 "sidebar" => settings.sidebar = value != "hidden",
                 "autosave" => settings.autosave = value != "off",
                 "sidebar width" => {
@@ -240,6 +244,9 @@ impl Settings {
         }
         if let Some(vault) = &self.vault {
             text += &format!("vault = {}\n", vault.display());
+        }
+        for vault in &self.vaults {
+            text += &format!("recent vault = {}\n", vault.display());
         }
         if !self.sidebar {
             text += "sidebar = hidden\n";
@@ -279,6 +286,7 @@ mod tests {
             recent: Vec::new(),
             split: 0.35,
             vault: Some("/notes".into()),
+            vaults: vec!["/notes".into(), "/work".into()],
             sidebar: false,
             sidebar_width: 320.0,
             autosave: false,
