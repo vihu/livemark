@@ -55,11 +55,20 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
             .filter(|c| c.list.is_none() && c.range.start <= pos && pos <= c.range.end)
             .count();
         let at = quote_prefix(line, quotes);
-        let blank = line[at..].len() - line[at..].trim_start_matches([' ', '\t']).len();
-        let insert = format!("{ending}{}", &line[..at + blank]);
-        let caret = pos + insert.len();
+        let prefix =
+            &line[..at + line[at..].len() - line[at..].trim_start_matches([' ', '\t']).len()];
+        // With the caret in that prefix, the new line goes above, the
+        // caret after the prefix (CodeMirror's `insertNewlineAndIndent`).
+        let (at, insert, caret) = if col < prefix.len() {
+            let insert = format!("{}{ending}", prefix.trim_end());
+            let caret = line_start + insert.len() + prefix.len();
+            (line_start, insert, caret)
+        } else {
+            let insert = format!("{ending}{prefix}");
+            (pos, insert.clone(), pos + insert.len())
+        };
         doc.apply(
-            vec![Change::insert(pos, insert)],
+            vec![Change::insert(at, insert)],
             Selection::caret(caret),
             Kind::Other,
             now,
@@ -89,7 +98,13 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
             return false;
         }
         let next = contexts.len().checked_sub(2).map(|i| contexts[i].clone());
+        // A parent item starting on this line keeps its marker: only this
+        // item's goes.
+        let parent_here = next
+            .as_ref()
+            .is_some_and(|n| n.item.is_some() && inner_starts_here(&blocks, n, line_start));
         let (del_to, insert) = match &next {
+            Some(_) if parent_here => (offset(line_start, line, inner.from), String::new()),
             Some(next) if next.item.is_some() => (
                 offset(line_start, line, next.from),
                 next.marker(text, &blocks, 1),
@@ -108,6 +123,7 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
         }
         if let Some((parent, parent_list)) = next.and_then(|n| n.item)
             && blocks.lists[parent_list].ordered
+            && !parent_here
         {
             renumber(text, &blocks, parent, parent_list, 0, &mut changes);
         }
@@ -193,6 +209,14 @@ fn lead(blocks: &Blocks, contexts: &[context::Context], line: &str, line_start: 
     let Some((inner, outer)) = contexts.split_last() else {
         return String::new();
     };
+    // A lazy line, without its quotes' markers: the markup from the
+    // contexts, as CodeMirror builds it.
+    if contexts
+        .iter()
+        .any(|c| c.quote && !line.get(c.from..c.to).is_some_and(|s| s.contains('>')))
+    {
+        return outer.iter().map(|c| c.blank(None, true)).collect();
+    }
     let mut lead = line[..offset(0, line, inner.from)].to_owned();
     for context in outer {
         if context.item.is_some() && inner_starts_here(blocks, context, line_start) {
@@ -341,9 +365,13 @@ pub fn delete_markup(doc: &mut Doc, now: Duration) -> bool {
         );
         return true;
     }
-    let on_item_line = inner
-        .item
-        .is_some_and(|(item, _)| line_start <= blocks.containers[item].range.start);
+    // On the item's first line, or after a quote's marker on this line.
+    let on_item_line = match inner.item {
+        Some((item, _)) => line_start <= blocks.containers[item].range.start,
+        None => line
+            .get(inner.from..inner.to)
+            .is_some_and(|s| s.contains('>')),
+    };
     let only_markup = line
         .get(..inner.to)
         .is_some_and(|s| s.bytes().all(|b| b.is_ascii_whitespace() || b == b'>'));
@@ -357,7 +385,13 @@ pub fn delete_markup(doc: &mut Doc, now: Duration) -> bool {
             .get(inner.from..inner.to)
             .is_some_and(|s| !s.trim().is_empty())
     {
-        let insert = inner.blank(Some(inner.to - inner.from), true);
+        let mut insert = inner.blank(Some(inner.to - inner.from), true);
+        // After a `>` with no space, the first space is the quote's
+        // (CommonMark 5.1): one more keeps the text in the item.
+        if inner.space_before.is_empty() && line.get(..inner.from).is_some_and(|s| s.ends_with('>'))
+        {
+            insert.push(' ');
+        }
         let caret = start + insert.len();
         doc.apply(
             vec![Change {

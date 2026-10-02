@@ -189,18 +189,18 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
                     .next()
                     .filter(|c| matches!(c, '.' | ')'));
                 (digits > 0).then_some(()).and(delimiter).map(|delimiter| {
-                    let tail = &after[digits + 1..];
-                    let mut space = tail.bytes().take_while(|&b| b == b' ').count();
-                    let mut len = spaces + digits + 1 + space;
-                    if space >= 4 {
-                        space -= 4;
+                    let space = after_marker(&after[digits + 1..]);
+                    let mut len = spaces + digits + 1 + space.len();
+                    let mut space = space.to_owned();
+                    if !space.contains('\t') && space.len() >= 4 {
+                        space.truncate(space.len() - 4);
                         len -= 4;
                     }
                     Context {
                         from,
                         to: from + len,
                         space_before: indent.to_owned(),
-                        space_after: " ".repeat(space),
+                        space_after: space,
                         kind: delimiter.to_string(),
                         quote: false,
                         item: Some((index, list)),
@@ -208,10 +208,10 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
                 })
             }
             Some(list) => bullet(after).map(|(bullet, task, space)| {
-                let mut space_after = space;
-                let mut len = spaces + 1 + task.len() + space;
-                if space_after > 4 {
-                    space_after -= 4;
+                let mut len = spaces + 1 + task.len() + space.len();
+                let mut space_after = space.to_owned();
+                if !space.contains('\t') && space.len() > 4 {
+                    space_after.truncate(space.len() - 4);
                     len -= 4;
                 }
                 // A task continues unchecked.
@@ -220,7 +220,7 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
                     from,
                     to: from + len,
                     space_before: indent.to_owned(),
-                    space_after: " ".repeat(space_after),
+                    space_after,
                     kind,
                     quote: false,
                     item: Some((index, list)),
@@ -232,9 +232,18 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
     contexts
 }
 
+/// The spaces after a list marker, or up to a tab among them (CommonMark
+/// example 7).
+fn after_marker(tail: &str) -> &str {
+    let run = tail.len() - tail.trim_start_matches([' ', '\t']).len();
+    let run = &tail[..run];
+    run.find('\t').map_or(run, |tab| &run[..=tab])
+}
+
 /// `-`, `+` or `*`, then an optional task box after 1 to 4 spaces, then at
-/// least one space: the bullet, the box with its spaces, and the spaces.
-fn bullet(text: &str) -> Option<(char, &str, usize)> {
+/// least one space or a tab: the bullet, the box with its spaces, and the
+/// spaces.
+fn bullet(text: &str) -> Option<(char, &str, &str)> {
     let bullet = text
         .chars()
         .next()
@@ -247,11 +256,8 @@ fn bullet(text: &str) -> Option<(char, &str, usize)> {
         && matches!(rest.as_bytes()[lead + 1], b' ' | b'x' | b'X')
         && rest.as_bytes()[lead + 2] == b']';
     let task = if boxed { &rest[..lead + 3] } else { "" };
-    let space = rest[task.len()..]
-        .bytes()
-        .take_while(|&b| b == b' ')
-        .count();
-    (space > 0).then_some((bullet, task, space))
+    let space = after_marker(&rest[task.len()..]);
+    (!space.is_empty()).then_some((bullet, task, space))
 }
 
 /// The indentation and number of the ordered item starting at `start`.

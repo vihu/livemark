@@ -1,5 +1,6 @@
 //! Tab and Shift+Tab on list items (REFERENCE-001 section 7): the items a
 //! selection reaches move together, with their children.
+use std::borrow::Cow;
 use std::time::Duration;
 
 use super::context::{Blocks, Container, contexts, item_number};
@@ -30,17 +31,28 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     let Some((item, list)) = item else {
         if outdent {
             let (line_start, line) = line_at(doc, pos);
-            let unit = if line.starts_with('\t') {
+            // In fenced code, never the indentation in front of the fence:
+            // it is the list item's or the quote's the code is in.
+            let floor = blocks
+                .fenced
+                .iter()
+                .find(|f| f.start < pos && pos < f.end)
+                .map_or(0, |f| column(f.start));
+            let lead = line.len() - line.trim_start_matches([' ', '\t']).len();
+            let cut = floor.min(lead);
+            let rest = &line[cut..lead];
+            let unit = if rest.starts_with('\t') {
                 1
             } else {
-                line.bytes().take(4).take_while(|&b| b == b' ').count()
+                rest.bytes().take(4).take_while(|&b| b == b' ').count()
             };
+            let cut = line_start + cut;
             if unit > 0 {
                 let moved = |at: usize| {
-                    if at >= line_start + unit {
+                    if at >= cut + unit {
                         at - unit
                     } else {
-                        at.min(line_start)
+                        at.min(cut)
                     }
                 };
                 let selection = Selection {
@@ -48,7 +60,7 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
                     head: moved(selection.head),
                 };
                 doc.apply(
-                    vec![Change::delete(line_start..line_start + unit)],
+                    vec![Change::delete(cut..cut + unit)],
                     selection,
                     Kind::Other,
                     now,
@@ -70,6 +82,17 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         return;
     };
     let item_start = blocks.containers[item].range.start;
+    // Markers in front of a container on its line: a parent item's.
+    let markers = |start: usize| {
+        text[start - column(start)..start]
+            .bytes()
+            .any(|b| !matches!(b, b' ' | b'\t' | b'>'))
+    };
+    // An item starting on its parent's line stays: moving it would split
+    // the line.
+    if markers(item_start) {
+        return;
+    }
     let items = &blocks.lists[list].items;
     let position = items.iter().position(|&i| i == item).unwrap_or(0);
     // The last sibling the selection reaches; one ending at a line's start
@@ -95,21 +118,35 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         .map(|(i, _)| i)
         .next_back();
     // Lines move by their indentation, after the `>` of the quotes the list
-    // is in: the item's own indentation is replaced by where it goes, as
-    // text, so tabs and spaces both work and nothing is measured in columns.
+    // is in.
     let quotes = blocks
         .containers
         .iter()
         .filter(|c| c.list.is_none() && c.range.start < item_start && item_start <= c.range.end)
         .count();
-    let indent = |start: usize| -> (usize, &str) {
+    // Where a container's line's indentation starts, and the indentation,
+    // read with the markers in front of it on its line as spaces.
+    let indent = |start: usize| -> (usize, Cow<str>) {
         let line = start - column(start);
         let rest = &text[line..];
-        let len = rest.find(['\n', '\r']).unwrap_or(rest.len());
-        let at = line + quote_prefix(&rest[..len], quotes);
-        let blank =
-            text[at..line + len].len() - text[at..line + len].trim_start_matches([' ', '\t']).len();
-        (at, &text[at..at + blank])
+        let row = &rest[..rest.find(['\n', '\r']).unwrap_or(rest.len())];
+        let row: Cow<str> = if markers(start) {
+            let blanked = row.bytes().enumerate().map(|(i, b)| match b {
+                b' ' | b'\t' | b'>' => b,
+                _ if line + i < start => b' ',
+                _ => b,
+            });
+            String::from_utf8(blanked.collect()).map_or(Cow::Borrowed(row), Cow::Owned)
+        } else {
+            Cow::Borrowed(row)
+        };
+        let at = quote_prefix(&row, quotes);
+        let blank = row[at..].len() - row[at..].trim_start_matches([' ', '\t']).len();
+        let blank = match row {
+            Cow::Borrowed(row) => Cow::Borrowed(&row[at..at + blank]),
+            Cow::Owned(row) => Cow::Owned(row[at..at + blank].to_owned()),
+        };
+        (line + at, blank)
     };
     let own = indent(item_start).1;
     // Lists indented with tabs get tabs (REFERENCE-001 section 7).
@@ -125,8 +162,23 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     // follows as its own (CommonMark 5.1); a tab goes to the next stop.
     let rel = |at: usize, blank: &str| {
         let start = columns(0, &text[at - column(at)..at]);
-        let bare = !blank.is_empty() && text[..at].ends_with('>');
+        let bare = blank.starts_with([' ', '\t']) && text[..at].ends_with('>');
         columns(start, blank) - start - usize::from(bare)
+    };
+    // The columns of the marker at `from` (with the space or tab after
+    // it), numbered `number` when given, on a line whose text starts
+    // `blank` after `at`.
+    let marker = |from: usize, at: usize, blank: &str, number: Option<u64>| {
+        let item = &text[from..];
+        let width = marker_width(item);
+        let shown = &item[..width.min(item.find(['\n', '\r']).unwrap_or(item.len()))];
+        let pad = width - shown.len();
+        let digits = shown.bytes().take_while(u8::is_ascii_digit).count();
+        let shown = match number {
+            Some(n) if digits > 0 => format!("{n}{}", &shown[digits..]),
+            _ => shown.to_owned(),
+        };
+        rel(at, &format!("{blank}{shown}")) - rel(at, blank) + pad
     };
     let spaces =
         |at: usize, rel: usize| " ".repeat(rel + usize::from(rel > 0 && text[..at].ends_with('>')));
@@ -179,7 +231,10 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
             return;
         };
         let (at, blank) = indent(blocks.containers[parent].range.start);
-        (blank.to_owned(), rel(at, blank))
+        {
+            let columns = rel(at, &blank);
+            (blank.into_owned(), columns)
+        }
     } else {
         // Under the previous item's text: as its children are indented, or
         // by its marker's width (the task box is text, CommonMark 5.3).
@@ -191,11 +246,14 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         match child {
             Some(child) => {
                 let (at, blank) = indent(child.range.start);
-                (blank.to_owned(), rel(at, blank))
+                {
+                    let columns = rel(at, &blank);
+                    (blank.into_owned(), columns)
+                }
             }
             None => {
                 let (at, blank) = indent(blocks.containers[previous].range.start);
-                under(at, blank, marker_width(&text[at + blank.len()..]))
+                under(at, &blank, marker(at + blank.len(), at, &blank, None))
             }
         }
     };
@@ -218,14 +276,6 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         (true, true) => outer.map(|(_, _, start)| start + 1 + n as u64),
         (true, false) => Some(first + n as u64),
     };
-    // How many digits `item`'s number gains (or loses) as `n`.
-    let grows = |item: usize, n: Option<u64>| match (
-        n,
-        item_number(text, blocks.containers[item].range.start),
-    ) {
-        (Some(n), Some((digits, _))) => n.to_string().len() as isize - digits.len() as isize,
-        _ => 0,
-    };
     // A line's indentation `blank` at `at` that was `own` plus more, put
     // at `goal` columns: `own` replaced by `to` where that lands there
     // (tabs kept), else spaces. The change and the new indentation.
@@ -239,18 +289,27 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         let new = spaces(at, goal);
         (at..at + blank.len(), new.clone(), new)
     };
+    // How far the text of the item whose line's indentation `own` at `at`
+    // becomes `new` moves: with its marker, which can change width there (a
+    // tab after it, a number of `number`'s digits).
+    let text_shift = |at: usize, own: &str, new: &str, number: Option<u64>| {
+        let start = at + own.len();
+        (rel(at, new) + marker(start, at, new, number)) as isize
+            - (rel(at, own) + marker(start, at, own, None)) as isize
+    };
     let mut changes = Vec::new();
     // The lines of the item from `from` to `end` move as its first line
-    // goes to `to`, `to_rel` columns in; lines after the first move `grow`
-    // columns more, with the item's text when its number changes width.
+    // goes to `to`, `to_rel` columns in, numbered `number` when given;
+    // lines after the first move with its text.
     let retarget = |from: usize,
                     end: usize,
                     (to, to_rel): (&str, usize),
-                    grow: isize,
+                    number: Option<u64>,
                     changes: &mut Vec<Change>| {
         let first = from - column(from);
         let (at, own) = indent(first);
-        let shift = to_rel as isize - rel(at, own) as isize;
+        let new = place(at, &own, &own, to, to_rel).2;
+        let shift = text_shift(at, &own, &new, number);
         let mut line = first;
         loop {
             let (at, blank) = indent(line);
@@ -260,9 +319,12 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
                 .starts_with(['\n', '\r'])
                 || at + blank.len() >= end;
             if !blank_line {
-                let more = if line == first { 0 } else { grow };
-                let goal = (rel(at, blank) as isize + shift + more).max(0) as usize;
-                let (range, new, _) = place(at, blank, own, to, goal);
+                let goal = if line == first {
+                    to_rel
+                } else {
+                    (rel(at, &blank) as isize + shift).max(0) as usize
+                };
+                let (range, new, _) = place(at, &blank, &own, to, goal);
                 if text[range.clone()] != new {
                     changes.push(Change { range, text: new });
                 }
@@ -275,12 +337,11 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     };
     for (n, &moved) in items[position..=last].iter().enumerate() {
         let range = &blocks.containers[moved].range;
-        let grow = grows(moved, renumbered(n));
         retarget(
             range.start,
             range.end,
             (&target, target_rel),
-            grow,
+            renumbered(n),
             &mut changes,
         );
     }
@@ -291,28 +352,32 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     let mut after_first = 1;
     if outdent && last + 1 < items.len() {
         let lifted = items[last];
-        let grow = grows(lifted, renumbered(last - position));
+        let lifted_number = renumbered(last - position);
         let (child, number) = nested(lifted, blocks.containers[items[last + 1]].range.start);
         after_first = number;
         let to = match child {
             Some(child) => {
                 let (at, blank) = indent(child.range.start);
                 let (lifted_at, lifted_own) = indent(blocks.containers[lifted].range.start);
-                let shift = target_rel as isize - rel(lifted_at, lifted_own) as isize;
-                let goal = (rel(at, blank) as isize + shift + grow).max(0) as usize;
-                let (_, _, new) = place(at, blank, lifted_own, &target, goal);
+                let new = place(lifted_at, &lifted_own, &lifted_own, &target, target_rel).2;
+                let shift = text_shift(lifted_at, &lifted_own, &new, lifted_number);
+                let goal = (rel(at, &blank) as isize + shift).max(0) as usize;
+                let (_, _, new) = place(at, &blank, &lifted_own, &target, goal);
                 (new, goal)
             }
             None => {
-                let at = indent(blocks.containers[lifted].range.start).0;
-                let marker = marker_width(text[at..].trim_start_matches([' ', '\t']));
-                under(at, &target, marker.saturating_add_signed(grow))
+                let (at, blank) = indent(blocks.containers[lifted].range.start);
+                under(
+                    at,
+                    &target,
+                    marker(at + blank.len(), at, &target, lifted_number),
+                )
             }
         };
         for (n, &after) in items[last + 1..].iter().enumerate() {
             let range = &blocks.containers[after].range;
-            let grow = grows(after, ordered.then_some(after_first + n as u64));
-            retarget(range.start, range.end, (&to.0, to.1), grow, &mut changes);
+            let number = ordered.then_some(after_first + n as u64);
+            retarget(range.start, range.end, (&to.0, to.1), number, &mut changes);
         }
     }
     if ordered {
@@ -327,18 +392,15 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         // An item that stays where it is but whose number changes width:
         // its other lines move with its text.
         let follow = |item: usize, n: u64, changes: &mut Vec<Change>| {
-            let grow = grows(item, Some(n));
-            if grow != 0 {
-                let range = &blocks.containers[item].range;
-                let (at, blank) = indent(range.start);
-                retarget(
-                    range.start,
-                    range.end,
-                    (blank, rel(at, blank)),
-                    grow,
-                    changes,
-                );
-            }
+            let range = &blocks.containers[item].range;
+            let (at, blank) = indent(range.start);
+            retarget(
+                range.start,
+                range.end,
+                (&blank, rel(at, &blank)),
+                Some(n),
+                changes,
+            );
         };
         for (n, &moved) in items[position..=last].iter().enumerate() {
             if let Some(new) = renumbered(n) {
@@ -421,14 +483,18 @@ fn renumber_after(
     renumbered
 }
 
-/// How wide an item's marker is with the space after it (`- `, `10. `):
-/// where its text starts, at least one space, at most four (more is code).
+/// How many bytes an item's marker takes with the space after it (`- `,
+/// `10. `, `-\t`): up to where its text starts, at least one space, at
+/// most four (more is code), or up to a tab.
 fn marker_width(item: &str) -> usize {
     let digits = item.bytes().take_while(u8::is_ascii_digit).count();
     let marker = if digits > 0 { digits + 1 } else { 1 };
-    let spaces = item[marker.min(item.len())..]
-        .bytes()
-        .take_while(|&b| b == b' ')
-        .count();
-    marker + if (1..=4).contains(&spaces) { spaces } else { 1 }
+    let rest = &item[marker.min(item.len())..];
+    let run = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+    marker
+        + match rest[..run].find('\t') {
+            Some(tab) => tab + 1,
+            None if (1..=4).contains(&run) => run,
+            None => 1,
+        }
 }

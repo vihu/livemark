@@ -427,3 +427,71 @@ fn enter_moves_the_children_of_an_item_whose_number_gains_a_digit() {
         Some("> 8. a\n> 9. |\n> 10. b\n>     - c")
     );
 }
+
+#[test]
+fn enter_in_fenced_code_with_the_caret_in_the_prefix_opens_a_line_above() {
+    for text in ["> ```\n> a\n|> b\n> ```", "> ```\n> a\n>| b\n> ```"] {
+        assert_eq!(enter(text).as_deref(), Some("> ```\n> a\n>\n> |b\n> ```"));
+    }
+    assert_eq!(
+        enter("- ```\n|  x\n  ```").as_deref(),
+        Some("- ```\n\n  |x\n  ```")
+    );
+}
+
+#[test]
+fn shift_tab_in_fenced_code_keeps_the_items_indentation() {
+    assert_eq!(
+        tab("- a\n  ```\n  x|\n  ```", true),
+        "- a\n  ```\n  x|\n  ```"
+    );
+    assert_eq!(
+        tab("- a\n  ```\n      x|\n  ```", true),
+        "- a\n  ```\n  x|\n  ```"
+    );
+}
+
+#[test]
+fn tab_and_shift_tab_measure_items_after_a_parents_marker() {
+    assert_eq!(tab("1. - a\n   - b|", false), "1. - a\n     - b|");
+    assert_eq!(tab("1. - a\n     - b|", true), "1. - a\n   - b|");
+    assert_eq!(tab("- > 1. a\n  > 2. b|", false), "- > 1. a\n  >    1. b|");
+    assert_eq!(
+        tab("- - a|", true),
+        "- - a|",
+        "an item on its parent's line stays"
+    );
+}
+
+#[test]
+fn a_tab_after_a_list_marker_is_its_space() {
+    assert_eq!(enter("-\tw1|").as_deref(), Some("-\tw1\n-\t|"));
+    assert_eq!(enter("1.\tw1|").as_deref(), Some("1.\tw1\n2.\t|"));
+    assert_eq!(tab("-\ta\n-\tb|", false), "-\ta\n    -\tb|");
+    assert_eq!(tab("|-\ta", false), "|-\ta", "a first item stays");
+}
+
+#[test]
+fn enter_on_an_empty_item_on_its_parents_line_keeps_the_parent() {
+    assert_eq!(enter("1. - |\n2. c").as_deref(), Some("1. |\n2. c"));
+}
+
+#[test]
+fn backspace_after_a_bare_quote_marker_and_a_quote_in_an_item() {
+    assert_eq!(
+        backspace(">- a\n>\n>- |b").as_deref(),
+        Some(">- a\n>\n>   |b")
+    );
+    assert_eq!(backspace("- > |q").as_deref(), Some("- |q"));
+}
+
+#[test]
+fn a_new_line_after_a_lazy_quote_line_takes_the_quotes_markers() {
+    assert_eq!(
+        enter("> > nested\nlazy line|").as_deref(),
+        Some("> > nested\nlazy line\n> > |")
+    );
+    let mut lazy = doc("> > nested\nlazy line|");
+    soft_break(&mut lazy, Duration::ZERO);
+    assert_eq!(shown(&lazy), "> > nested\nlazy line\n> > |");
+}
