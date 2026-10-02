@@ -257,3 +257,23 @@ fn a_cached_grid_follows_a_link_definition_added_elsewhere() {
     }
     assert_eq!(cell(&editor), "a", "a reference link now");
 }
+
+#[test]
+fn enter_in_the_find_field_with_shift_held_steps_back() {
+    use super::find::FindInput;
+    use super::{Input, Message};
+    let mut editor = Editor::new("a x a x a".into());
+    editor.select(4, 5);
+    let send = |editor: &mut Editor, input| {
+        let _ = editor.update(Message(input));
+    };
+    send(&mut editor, Input::Find(FindInput::Open { replace: false }));
+    send(&mut editor, Input::Find(FindInput::Query("a".into())));
+    // Enter submits a step forward; with Shift held it goes back.
+    send(&mut editor, Input::Shift(true));
+    send(&mut editor, Input::Find(FindInput::Step { forward: true }));
+    assert_eq!(editor.selection().range(), 0..1);
+    send(&mut editor, Input::Shift(false));
+    send(&mut editor, Input::Find(FindInput::Step { forward: true }));
+    assert_eq!(editor.selection().range(), 4..5);
+}

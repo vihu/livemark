@@ -63,6 +63,8 @@ pub struct Editor {
     /// The find bar, when it is open.
     find: Option<find::Find>,
     mode: Mode,
+    /// Shift is held (`Input::Shift`).
+    shift: bool,
     /// Whether the caret has been placed since the document was loaded:
     /// until then nothing is revealed (REFERENCE-001 section 2).
     placed: bool,
@@ -138,6 +140,9 @@ enum Input {
     /// The scroll bar's thumb dragged or the track pressed: how far down
     /// its travel, from 0 to 1.
     ScrollTo(f32),
+    /// Shift went down or up: Enter in the find field steps back while it
+    /// is held (the field submits whatever the modifiers).
+    Shift(bool),
     Key(Key),
     /// Text committed by an input method.
     Commit(String),
@@ -205,6 +210,7 @@ impl Editor {
             linewise: None,
             find: None,
             mode: Mode::Live,
+            shift: false,
             placed: false,
             lines: RefCell::new(Lines::new(Colors {
                 text: Color::BLACK,

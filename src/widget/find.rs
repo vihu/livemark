@@ -92,7 +92,7 @@ impl Editor {
             FindInput::Replacement(text) => state.replacement = text,
             FindInput::Step { forward } => {
                 let query = state.query.clone();
-                find::find(&mut self.doc, &query, forward);
+                find::find(&mut self.doc, &query, forward && !self.shift);
             }
             FindInput::Replace => {
                 let (query, replacement) = (state.query.clone(), state.replacement.clone());

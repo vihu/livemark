@@ -157,6 +157,9 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 });
             }
             Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                if modifiers.shift() != state.modifiers.shift() {
+                    publish(shell, Input::Shift(modifiers.shift()));
+                }
                 state.modifiers = *modifiers;
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))

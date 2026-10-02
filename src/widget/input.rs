@@ -22,7 +22,11 @@ impl Editor {
         // not move under the pointer.
         self.placed |= !matches!(
             input,
-            Input::Scroll(_) | Input::ScrollTo(_) | Input::Press { .. } | Input::Drag(_)
+            Input::Scroll(_)
+                | Input::ScrollTo(_)
+                | Input::Shift(_)
+                | Input::Press { .. }
+                | Input::Drag(_)
         );
         match input {
             Input::Press {
@@ -56,6 +60,10 @@ impl Editor {
             }
             Input::ScrollTo(t) => {
                 self.scroll_to(t);
+                return Task::none();
+            }
+            Input::Shift(held) => {
+                self.shift = held;
                 return Task::none();
             }
             Input::Commit(text) => edit::type_text(&mut self.doc, &text, now),
