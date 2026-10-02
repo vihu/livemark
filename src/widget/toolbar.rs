@@ -21,7 +21,12 @@ impl Editor {
                     .style(style)
                     .padding([4, 10])
                     .on_press(Message(Input::Tool(key))),
-                text(hint).size(12),
+                text(if cfg!(target_os = "macos") {
+                    hint.replace("Ctrl+", "Cmd+")
+                } else {
+                    hint.to_owned()
+                })
+                .size(12),
                 tooltip::Position::Bottom,
             )
             .gap(4)

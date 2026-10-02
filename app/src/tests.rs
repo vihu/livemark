@@ -209,3 +209,53 @@ fn a_pasted_picture_is_kept_next_to_the_note_and_linked() {
     std::fs::remove_file(&note).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn the_file_menu_opens_recent_notes_and_sets_the_theme() {
+    use crate::settings::{Settings, Theme};
+    let dir = std::env::temp_dir().join(format!("livemark-menu-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b, gone) = (dir.join("a.md"), dir.join("b.md"), dir.join("gone.md"));
+    write(&a, "a\n", 0);
+    write(&b, "b\n", 0);
+    let settings = Settings {
+        recent: vec![a.clone(), gone.clone(), b.clone()],
+        ..Settings::default()
+    };
+    let mut app = App::open(None, None).with_settings(settings, None);
+    assert_eq!(
+        app.settings.recent,
+        [a.clone(), b.clone()],
+        "missing ones dropped"
+    );
+    let _ = app.update(Message::Menu(true));
+    let _ = app.view();
+    std::fs::remove_file(&b).unwrap();
+    let _ = app.update(Message::Menu(true));
+    assert_eq!(
+        app.settings.recent,
+        std::slice::from_ref(&a),
+        "dropped when the menu opens"
+    );
+    // A pick closes the menu and opens the note.
+    let _ = app.update(Message::Recent(a.clone()));
+    assert!(!app.menu);
+    assert_eq!(app.editor.text(), "a\n");
+    // One gone since the menu opened: said, and forgotten.
+    app.settings.recent.push(gone.clone());
+    let _ = app.update(Message::Recent(gone.clone()));
+    assert!(app.error.as_deref().is_some_and(|e| e.contains("gone.md")));
+    assert!(!app.settings.recent.contains(&gone));
+    // With unsaved typing, it asks first.
+    app.saved = u64::MAX;
+    let _ = app.update(Message::Recent(a.clone()));
+    assert!(matches!(app.pending, Some(super::After::Load(_))));
+    // The theme is shown and remembered.
+    let _ = app.update(Message::Theme(Theme::Dark));
+    assert_eq!(app.theme, Some(iced::Theme::Dark));
+    assert_eq!(app.settings.theme, Theme::Dark);
+    let _ = app.update(Message::Theme(Theme::System));
+    assert_eq!(app.theme, None);
+    std::fs::remove_file(&a).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+}

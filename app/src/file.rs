@@ -2,7 +2,7 @@
 //! contract 1), saved through a temporary file so a crash or a full disk
 //! never leaves half a note.
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The file's text, or why it could not be read (not UTF-8 included: a
 /// lossy conversion would change bytes on save).
@@ -98,6 +98,33 @@ pub fn is_picture(file: &Path) -> bool {
             "png" | "jpg" | "jpeg" | "gif" | "webp"
         )
     })
+}
+
+/// The markdown file the user picks, if any.
+pub async fn pick() -> Option<PathBuf> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter("Markdown", &["md", "markdown", "txt"])
+        .pick_file()
+        .await?;
+    Some(file.path().to_owned())
+}
+
+/// Saves to `path`, or asks where first when there is none.
+pub async fn save_as(path: Option<PathBuf>, text: String) -> Result<Option<PathBuf>, String> {
+    let path = match path {
+        Some(path) => path,
+        None => {
+            let dialog = rfd::AsyncFileDialog::new()
+                .add_filter("Markdown", &["md"])
+                .set_file_name("untitled.md");
+            let Some(file) = dialog.save_file().await else {
+                return Ok(None);
+            };
+            file.path().to_owned()
+        }
+    };
+    save(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(Some(path))
 }
 
 #[cfg(test)]

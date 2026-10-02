@@ -15,13 +15,13 @@
 //! comes back into focus and the file changed on disk, it is loaded again,
 //! or with unsaved changes the app asks which to keep.
 mod file;
+mod pictures;
 mod settings;
+mod view;
 
 use std::path::PathBuf;
 
-use iced::keyboard;
-use iced::widget::{button, column, container, row, text};
-use iced::{Element, Length, Subscription, Task, Theme, window};
+use iced::{Task, Theme, window};
 use livemark::widget::{self, Editor};
 use settings::Settings;
 
@@ -41,11 +41,7 @@ pub fn main() -> iced::Result {
     } else if args.iter().any(|a| a == "--light") {
         Some(Theme::Light)
     } else {
-        match settings.theme {
-            settings::Theme::System => None,
-            settings::Theme::Light => Some(Theme::Light),
-            settings::Theme::Dark => Some(Theme::Dark),
-        }
+        iced_theme(settings.theme)
     };
     let size = settings
         .window
@@ -107,6 +103,8 @@ struct App {
     settings_file: Option<PathBuf>,
     /// A picture pasted into a note not saved yet: kept once it is.
     waiting_picture: Option<Vec<u8>>,
+    /// Whether the File menu is open.
+    menu: bool,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -146,6 +144,12 @@ enum Message {
     Resized(iced::Size),
     /// A file dropped on the window.
     Dropped(PathBuf),
+    /// Opens (true) or closes the File menu.
+    Menu(bool),
+    /// A recent note picked in the File menu.
+    Recent(PathBuf),
+    /// The theme picked in the File menu, remembered.
+    Theme(settings::Theme),
 }
 
 impl App {
@@ -175,6 +179,7 @@ impl App {
             settings: Settings::default(),
             settings_file: None,
             waiting_picture: None,
+            menu: false,
         }
         .with_images()
     }
@@ -185,6 +190,7 @@ impl App {
         self.settings = settings;
         self.settings_file = file;
         self.editor.set_zoom(self.settings.zoom);
+        self.settings.recent.retain(|path| path.exists());
         if let Some(path) = self.path.clone() {
             self.settings.opened(&path);
         }
@@ -200,47 +206,6 @@ impl App {
         }
     }
 
-    /// A pasted picture kept next to the note and linked at the caret
-    /// (PLAN-002); a note not saved yet is saved first, asking where.
-    fn paste_picture(&mut self, png: Vec<u8>) -> Task<Message> {
-        let Some(note) = self.path.clone() else {
-            self.waiting_picture = Some(png);
-            return self.update(Message::Save { choose: true });
-        };
-        match file::save_picture(&note, &png) {
-            Ok(dest) => {
-                self.editor.insert_text(&format!("![]({dest})"));
-                self.editor.set_image(&dest, &png);
-                self.tried.insert(dest);
-            }
-            Err(error) => self.error = Some(error),
-        }
-        Task::none()
-    }
-
-    /// A dropped picture is linked at the caret, by its path from the note;
-    /// a dropped markdown file opens.
-    fn dropped(&mut self, file: PathBuf) -> Task<Message> {
-        if file::is_picture(&file) {
-            let dest = match &self.path {
-                Some(note) => file::link_to(note, &file),
-                None => file.to_string_lossy().replace(' ', "%20"),
-            };
-            self.editor.insert_text(&format!("![]({dest})"));
-            if let Ok(bytes) = std::fs::read(&file) {
-                self.editor.set_image(&dest, &bytes);
-            }
-            Task::none()
-        } else if file
-            .extension()
-            .is_some_and(|e| e == "md" || e == "markdown")
-        {
-            self.update(Message::Opened(Some(file)))
-        } else {
-            Task::none()
-        }
-    }
-
     /// Writes the settings, when there is a file for them; a failure only
     /// loses what was remembered.
     fn remember(&self) {
@@ -253,26 +218,6 @@ impl App {
     fn exit(&mut self) -> Task<Message> {
         self.remember();
         iced::exit()
-    }
-
-    fn with_images(mut self) -> Self {
-        self.load_images();
-        self
-    }
-
-    /// Hands the editor the pictures its images point to, from files next
-    /// to the note (REFERENCE-001 section 5), each destination once.
-    fn load_images(&mut self) {
-        let Some(note) = self.path.clone() else {
-            return;
-        };
-        for url in self.editor.image_urls() {
-            if self.tried.insert(url.clone())
-                && let Some(bytes) = file::image_bytes(&note, &url)
-            {
-                self.editor.set_image(&url, &bytes);
-            }
-        }
     }
 
     /// Whether the file was modified on disk since it was opened or saved
@@ -338,6 +283,13 @@ impl App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        // A File menu item picked.
+        if matches!(
+            message,
+            Message::New | Message::Open | Message::Save { .. } | Message::Recent(_)
+        ) {
+            self.menu = false;
+        }
         match message {
             Message::Editor(message) if message.pasted_image().is_some() => {
                 return self.paste_picture(message.pasted_image().unwrap_or_default());
@@ -356,7 +308,7 @@ impl App {
             Message::New if self.unsaved() => self.pending = Some(After::New),
             Message::New => return self.new_note(),
             Message::Open if self.unsaved() => self.pending = Some(After::Open),
-            Message::Open => return Task::perform(pick_file(), Message::Opened),
+            Message::Open => return Task::perform(file::pick(), Message::Opened),
             // Typing while the dialog was open is not dropped unasked.
             Message::Opened(Some(path))
                 if self.unsaved() && self.discarded != Some(self.editor.version()) =>
@@ -372,7 +324,7 @@ impl App {
                 let text = self.editor.text().to_owned();
                 let version = self.editor.version();
                 let path = self.path.clone().filter(|_| !choose);
-                return Task::perform(save_file(path, text), move |result| {
+                return Task::perform(file::save_as(path, text), move |result| {
                     Message::Saved(result, version)
                 });
             }
@@ -431,6 +383,26 @@ impl App {
                     .set_zoom(if step == 0 { 1.0 } else { tenths / 10.0 });
                 self.remember_zoom();
             }
+            Message::Menu(open) => {
+                self.menu = open;
+                // Notes moved or deleted since are not offered.
+                let count = self.settings.recent.len();
+                self.settings.recent.retain(|path| path.exists());
+                if self.settings.recent.len() != count {
+                    self.remember();
+                }
+            }
+            Message::Recent(path) if !path.exists() => {
+                self.error = Some(format!("No longer there: {}", path.display()));
+                self.settings.recent.retain(|recent| *recent != path);
+                self.remember();
+            }
+            Message::Recent(path) => return self.update(Message::Opened(Some(path))),
+            Message::Theme(theme) => {
+                self.theme = iced_theme(theme);
+                self.settings.theme = theme;
+                self.remember();
+            }
             Message::Reload(false) => {
                 // Keep this text; saving will replace the file's.
                 self.changed = false;
@@ -443,7 +415,7 @@ impl App {
     fn carry_on(&mut self, after: After) -> Task<Message> {
         match after {
             After::Close => self.exit(),
-            After::Open => Task::perform(pick_file(), Message::Opened),
+            After::Open => Task::perform(file::pick(), Message::Opened),
             After::New => self.new_note(),
             After::Load(path) => self.load(path),
         }
@@ -486,90 +458,14 @@ impl App {
         self.error = None;
         Editor::focus()
     }
+}
 
-    fn view(&self) -> Element<'_, Message> {
-        let editor = self.editor.view().map(Message::Editor);
-        let bar: Option<Element<'_, Message>> = if self.changed {
-            Some(
-                row![
-                    text("The file changed on disk.").width(Length::Fill),
-                    button("Load it")
-                        .style(button::danger)
-                        .on_press(Message::Reload(true)),
-                    button("Keep mine")
-                        .style(button::secondary)
-                        .on_press(Message::Reload(false)),
-                ]
-                .spacing(8)
-                .align_y(iced::Center)
-                .into(),
-            )
-        } else if self.pending.is_some() {
-            Some(
-                row![
-                    text("Unsaved changes.").width(Length::Fill),
-                    button("Save").on_press(Message::Unsaved(Some(true))),
-                    button("Discard")
-                        .style(button::danger)
-                        .on_press(Message::Unsaved(Some(false))),
-                    button("Cancel")
-                        .style(button::secondary)
-                        .on_press(Message::Unsaved(None)),
-                ]
-                .spacing(8)
-                .align_y(iced::Center)
-                .into(),
-            )
-        } else {
-            self.error
-                .as_ref()
-                .map(|error| text(error).style(text::danger).into())
-        };
-        // The toolbar always on top (PLAN-002). Always a column, so the
-        // editor keeps its place in the widget tree (and its focus) when a
-        // bar comes or goes.
-        let toolbar = container(self.editor.toolbar().map(Message::Editor)).padding([6, 12]);
-        column![toolbar, editor]
-            .push(bar.map(|bar| container(bar).padding(12)))
-            .into()
-    }
-
-    fn subscription(&self) -> Subscription<Message> {
-        // By the letter on the key in the layout, as the editor reads its
-        // own shortcuts.
-        let keys = keyboard::listen().filter_map(|event| {
-            let keyboard::Event::KeyPressed {
-                key,
-                physical_key,
-                modifiers,
-                ..
-            } = event
-            else {
-                return None;
-            };
-            if !modifiers.command() || modifiers.alt() {
-                return None;
-            }
-            match key.to_latin(physical_key)? {
-                'n' => Some(Message::New),
-                'o' => Some(Message::Open),
-                's' => Some(Message::Save {
-                    choose: modifiers.shift(),
-                }),
-                '=' | '+' => Some(Message::Zoom(1)),
-                '-' => Some(Message::Zoom(-1)),
-                '0' => Some(Message::Zoom(0)),
-                _ => None,
-            }
-        });
-        let close = window::close_requests().map(|_| Message::CloseRequested);
-        let focus = window::events().filter_map(|(_, event)| match event {
-            window::Event::Focused => Some(Message::Focused),
-            window::Event::Resized(size) => Some(Message::Resized(size)),
-            window::Event::FileDropped(file) => Some(Message::Dropped(file)),
-            _ => None,
-        });
-        Subscription::batch([keys, close, focus])
+/// The iced theme for a remembered one; `None` follows the system.
+fn iced_theme(theme: settings::Theme) -> Option<Theme> {
+    match theme {
+        settings::Theme::System => None,
+        settings::Theme::Light => Some(Theme::Light),
+        settings::Theme::Dark => Some(Theme::Dark),
     }
 }
 
@@ -594,32 +490,6 @@ fn open_link(link: &str) -> Result<(), String> {
     // Reaped in the background, so no zombie is left behind.
     std::thread::spawn(move || child.wait());
     Ok(())
-}
-
-async fn pick_file() -> Option<PathBuf> {
-    let file = rfd::AsyncFileDialog::new()
-        .add_filter("Markdown", &["md", "markdown", "txt"])
-        .pick_file()
-        .await?;
-    Some(file.path().to_owned())
-}
-
-/// Saves to `path`, or asks where first when there is none.
-async fn save_file(path: Option<PathBuf>, text: String) -> Result<Option<PathBuf>, String> {
-    let path = match path {
-        Some(path) => path,
-        None => {
-            let dialog = rfd::AsyncFileDialog::new()
-                .add_filter("Markdown", &["md"])
-                .set_file_name("untitled.md");
-            let Some(file) = dialog.save_file().await else {
-                return Ok(None);
-            };
-            file.path().to_owned()
-        }
-    };
-    file::save(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(Some(path))
 }
 
 #[cfg(test)]
