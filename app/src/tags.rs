@@ -7,8 +7,6 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
-use super::vault::Vault;
-
 /// What to do to a tag (lowercase names, without `#`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Edit {
@@ -54,17 +52,7 @@ impl Undo {
     }
 }
 
-/// The notes `edit` changes: their paths and new texts.
-pub fn plan(vault: &Vault, edit: &Edit) -> Vec<(PathBuf, String)> {
-    vault
-        .notes
-        .iter()
-        .filter(|note| note.tags.iter().any(|t| t == edit.from()))
-        .filter_map(|note| Some((note.path.clone(), apply(&note.text, edit)?)))
-        .collect()
-}
-
-/// Writes what `plan` worked out, keeping what each file held for Undo.
+/// Writes the notes' new texts, keeping what each file held for Undo.
 pub fn write(changes: Vec<(PathBuf, String)>) -> Result<Undo, String> {
     let mut files = Vec::new();
     for (path, after) in changes {
@@ -239,30 +227,51 @@ fn inline_list(value: &str, offset: usize, edit: &Edit) -> Vec<(Range<usize>, St
 }
 
 impl super::App {
-    /// Carries out `edit` across the vault; the open note is loaded again
+    /// Carries out `edits` across the vault, in turn, as one change with
+    /// one Undo (a merge of several tags); the open note is loaded again
     /// when it changed. Refused while the open note has unsaved changes the
-    /// edit would touch.
-    pub(crate) fn edit_tags(&mut self, edit: Edit) -> Result<usize, String> {
+    /// edits would touch.
+    pub(crate) fn edit_tags(&mut self, edits: Vec<Edit>) -> Result<usize, String> {
         let Some(vault) = &mut self.vault else {
             return Err("No vault is open".into());
         };
         vault.refresh();
-        let changes = plan(vault, &edit);
+        // Each note's text as the edits before left it.
+        let mut texts: std::collections::BTreeMap<PathBuf, String> = Default::default();
+        for edit in &edits {
+            for note in &vault.notes {
+                let touched = texts.contains_key(&note.path);
+                if !touched && !note.tags.iter().any(|t| t == edit.from()) {
+                    continue;
+                }
+                let current = texts.get(&note.path).unwrap_or(&note.text);
+                if let Some(after) = apply(current, edit) {
+                    texts.insert(note.path.clone(), after);
+                }
+            }
+        }
+        let changes: Vec<(PathBuf, String)> = texts.into_iter().collect();
         let open = self.path.clone();
         let touches_open = open
             .as_ref()
             .is_some_and(|open| changes.iter().any(|(p, _)| p == open));
         if touches_open && self.unsaved() {
-            return Err(format!("Save the open note first: it has #{}", edit.from()));
+            let tags: Vec<String> = edits.iter().map(|e| format!("#{}", e.from())).collect();
+            return Err(format!(
+                "Save the open note first: it has {}",
+                tags.join(" or ")
+            ));
         }
         let undo = write(changes)?;
         let count = undo.count();
         use super::sidebar::Shown;
-        if self.shown == Shown::Tag(edit.from().to_owned()) {
-            self.shown = match &edit {
-                Edit::Rename { to, .. } => Shown::Tag(to.clone()),
-                Edit::Delete(_) => Shown::All,
-            };
+        for edit in &edits {
+            if self.shown == Shown::Tag(edit.from().to_owned()) {
+                self.shown = match edit {
+                    Edit::Rename { to, .. } => Shown::Tag(to.clone()),
+                    Edit::Delete(_) => Shown::All,
+                };
+            }
         }
         self.refresh_vault();
         if touches_open {

@@ -211,6 +211,28 @@ impl App {
                 .style(button::text)
                 .on_press(Message::Vault(VaultMessage::AllTags))
         });
+        let open = self.manager.is_some();
+        let manage = button(
+            row![
+                text("Manage tags").size(13).width(Length::Fill),
+                text(if self.suggestion().is_some() {
+                    "1 suggestion"
+                } else {
+                    ""
+                })
+                .size(11)
+                .style(text::secondary),
+            ]
+            .align_y(iced::Center),
+        )
+        .width(Length::Fill)
+        .padding([5, 8])
+        .style(move |theme: &Theme, status| choice(theme, status, open))
+        .on_press(Message::Manager(if open {
+            super::manager::ManagerMessage::Close
+        } else {
+            super::manager::ManagerMessage::Open(None)
+        }));
         let tags = column![
             item(" ", "All notes".into(), vault.notes.len(), Shown::All),
             item(" ", "Untagged".into(), untagged, Shown::Untagged),
@@ -218,6 +240,7 @@ impl App {
             rows,
         ]
         .push(fold)
+        .push(manage)
         .spacing(2);
         let heading = row![
             text(self.shown.heading())

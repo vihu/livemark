@@ -385,7 +385,7 @@ fn a_tag_edit_rewrites_the_vault_reloads_the_note_and_undoes() {
         from: "trips".into(),
         to: "travel".into(),
     };
-    assert_eq!(app.edit_tags(merge.clone()), Ok(2));
+    assert_eq!(app.edit_tags(vec![merge.clone()]), Ok(2));
     assert_eq!(
         std::fs::read_to_string(&a).unwrap(),
         "---\ntags: [travel, work]\n---\nPack for #travel.\n"
@@ -421,7 +421,7 @@ fn a_tag_edit_rewrites_the_vault_reloads_the_note_and_undoes() {
     // Unsaved typing in a note the edit touches: refused, nothing written.
     app.saved = u64::MAX;
     assert!(
-        app.edit_tags(merge)
+        app.edit_tags(vec![merge])
             .unwrap_err()
             .contains("Save the open note")
     );

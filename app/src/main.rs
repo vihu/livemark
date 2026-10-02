@@ -22,6 +22,8 @@
 mod cli;
 mod file;
 mod links;
+mod manager;
+mod manager_view;
 mod note;
 mod opening;
 mod pictures;
@@ -145,6 +147,10 @@ struct App {
     hovered_tag: Option<String>,
     tag_menu: Option<String>,
     tag_action: Option<tag_actions::TagAction>,
+    /// The tag manager, in place of the note while it is open.
+    manager: Option<manager::Manager>,
+    /// Look-alike tags the user chose to keep apart.
+    kept_apart: Vec<(String, String)>,
     /// The title being typed for a new note in the vault.
     naming: Option<String>,
     /// Quick open (Ctrl+P), while it is open.
@@ -204,6 +210,8 @@ enum Message {
     Quick(quick::QuickMessage),
     /// A tag's menu and what it does.
     Tag(tag_actions::TagMessage),
+    /// The tag manager.
+    Manager(manager::ManagerMessage),
     /// Search across the vault.
     Search(search::SearchMessage),
 }
@@ -244,6 +252,8 @@ impl App {
             hovered_tag: None,
             tag_menu: None,
             tag_action: None,
+            manager: None,
+            kept_apart: Vec::new(),
             naming: None,
             quick: None,
             search: None,
@@ -337,6 +347,7 @@ impl App {
             Message::Vault(message) => return self.vault_update(message),
             Message::Quick(message) => return self.quick_update(message),
             Message::Tag(message) => return self.tag_update(message),
+            Message::Manager(message) => return self.manager_update(message),
             Message::Search(message) => return self.search_update(message),
             Message::Editor(message) => {
                 if let Some(tag) = message.tag() {
@@ -504,6 +515,8 @@ fn open_link(link: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
+mod manager_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

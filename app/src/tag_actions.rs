@@ -26,6 +26,8 @@ pub enum TagMessage {
     Cancel,
     /// F2: rename the tag the notes are filtered by.
     RenameShown,
+    /// The tag manager, with this tag selected.
+    Manage(String),
     Undo,
     /// The Undo note closed.
     Dismiss,
@@ -47,11 +49,21 @@ pub fn clean(name: &str) -> String {
         .replace(char::is_whitespace, "-")
 }
 
-fn notes(n: usize) -> String {
+pub(crate) fn notes(n: usize) -> String {
     if n == 1 {
         "1 note".into()
     } else {
         format!("{n} notes")
+    }
+}
+
+/// `#a`, `#a and #b`, `#a, #b and #c`.
+pub(crate) fn listed(tags: &[String]) -> String {
+    let tags: Vec<String> = tags.iter().map(|tag| format!("#{tag}")).collect();
+    match tags.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
     }
 }
 
@@ -111,13 +123,7 @@ impl App {
                         (Edit::Delete(tag.clone()), format!("Deleted #{tag}"))
                     }
                 };
-                match self.edit_tags(edit) {
-                    Ok(n) => {
-                        self.toast = Some(format!("{said}: {} changed", notes(n)));
-                        self.error = None;
-                    }
-                    Err(error) => self.error = Some(error),
-                }
+                self.run_edits(vec![edit], said);
             }
             TagMessage::Undo => {
                 self.toast = None;
@@ -133,8 +139,27 @@ impl App {
                 }
             }
             TagMessage::Dismiss => self.toast = None,
+            TagMessage::Manage(tag) => {
+                return self.manager_update(super::manager::ManagerMessage::Open(Some(tag)));
+            }
         }
         Task::none()
+    }
+
+    /// Carries out `edits` as one, then says `said` and how many notes
+    /// changed over the Undo; whether it went through.
+    pub(crate) fn run_edits(&mut self, edits: Vec<Edit>, said: String) -> bool {
+        match self.edit_tags(edits) {
+            Ok(n) => {
+                self.toast = Some(format!("{said}: {} changed", notes(n)));
+                self.error = None;
+                true
+            }
+            Err(error) => {
+                self.error = Some(error);
+                false
+            }
+        }
     }
 
     /// How many notes have `tag`.
@@ -151,11 +176,13 @@ impl App {
     /// One tag's row in the sidebar, with its menu, rename field or delete
     /// question under it when open.
     pub(crate) fn tag_row(&self, tag: &str, count: usize) -> Element<'_, Message> {
+        let asking = self.manager.is_none();
         if let Some(TagAction::Rename {
             tag: renaming,
             value,
         }) = &self.tag_action
             && renaming == tag
+            && asking
         {
             return self.rename_field(tag, value, count);
         }
@@ -222,7 +249,7 @@ impl App {
             .on_exit(Message::Tag(TagMessage::Hover(None)));
         let below: Option<Element<'_, Message>> = if open {
             Some(self.tag_menu_view(tag))
-        } else if self.tag_action == Some(TagAction::Delete(tag.to_owned())) {
+        } else if asking && self.tag_action == Some(TagAction::Delete(tag.to_owned())) {
             Some(card(
                 format!(
                     "Delete #{tag} from {}? In front matter it goes; in the text the word stays and loses its #.",
@@ -266,6 +293,12 @@ impl App {
                     TagMessage::StartRename(tag.to_owned())
                 ),
                 item(
+                    "Open in the tag manager",
+                    "",
+                    false,
+                    TagMessage::Manage(tag.to_owned())
+                ),
+                item(
                     "Delete from every note",
                     "",
                     true,
@@ -279,7 +312,12 @@ impl App {
         .into()
     }
 
-    fn rename_field<'a>(&'a self, tag: &str, value: &'a str, count: usize) -> Element<'a, Message> {
+    pub(crate) fn rename_field<'a>(
+        &'a self,
+        tag: &str,
+        value: &'a str,
+        count: usize,
+    ) -> Element<'a, Message> {
         let to = clean(value);
         let (said, action) = if to.is_empty() || to == tag {
             (
@@ -351,7 +389,7 @@ impl App {
 }
 
 /// A question under a tag: what will happen, and the buttons.
-fn card<'a>(said: String, action: &str, danger: bool) -> Element<'a, Message> {
+pub(crate) fn card<'a>(said: String, action: &str, danger: bool) -> Element<'a, Message> {
     container(
         column![
             text(said).size(13),

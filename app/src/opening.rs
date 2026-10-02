@@ -75,6 +75,8 @@ impl App {
                 self.discarded = None;
                 self.stamp = file::modified(&path);
                 self.changed = false;
+                // A note picked goes back from the tag manager to it.
+                self.manager = None;
                 self.settings.opened(&path);
                 self.remember();
                 self.path = Some(path);

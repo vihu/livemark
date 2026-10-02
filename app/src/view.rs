@@ -22,7 +22,12 @@ const COMMAND: &str = if cfg!(target_os = "macos") {
 
 impl App {
     pub(crate) fn view(&self) -> Element<'_, Message> {
-        let editor = self.editor.view().map(Message::Editor);
+        // The tag manager in the note's place; the editor is made again
+        // when it closes (its text, scroll and caret are the `Editor`'s).
+        let editor = match &self.manager {
+            Some(manager) => self.manager_view(manager),
+            None => self.editor.view().map(Message::Editor),
+        };
         let bar: Option<Element<'_, Message>> = if self.changed {
             Some(
                 row![
@@ -121,12 +126,14 @@ impl App {
             });
         // The toolbar always on top (PLAN-002).
         let toolbar = container(
-            row![
-                file,
-                Space::new().width(8),
-                self.editor.toolbar().map(Message::Editor)
-            ]
-            .align_y(iced::Center),
+            row![file, Space::new().width(8),]
+                .push(
+                    // No formatting the note while it is out of sight.
+                    self.manager
+                        .is_none()
+                        .then(|| self.editor.toolbar().map(Message::Editor)),
+                )
+                .align_y(iced::Center),
         )
         .padding([6, 12]);
         // The open menu floats over the text; a press anywhere else closes

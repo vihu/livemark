@@ -74,8 +74,13 @@ vault's tags. Ctrl+click on a link to a note opens it here, and the
 sidebar lists the notes linking to the open one. Each tag in the sidebar has a
 menu: Rename or merge (F2; typing a tag that exists merges the two, and
 says so first) and Delete from every note (an inline `#tag` keeps its
-word). Both rewrite only the tag's own bytes, in front matter and in the
-text, and end with an Undo. Its foot says how many
+word), and Open in the tag manager. Manage tags, under the list, shows
+every tag in place of the note: how many notes have it and when the newest
+was made, sorted by any column, with Rename and Delete on each row; select
+several to merge them into one of them or another tag, or to delete them;
+tags that look alike (a plural, a dash, a slip of a letter) come up as a
+suggestion to merge. All of these rewrite only the tag's own bytes, in
+front matter and in the text, and end with one Undo. Its foot says how many
 notes changed since your last commit (going by file times; the app never
 runs git, so committing, signing and pushing stay yours).
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
