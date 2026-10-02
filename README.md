@@ -1,19 +1,40 @@
 # livemark
 
+[![CI](https://github.com/vihu/livemark/actions/workflows/ci.yml/badge.svg)](https://github.com/vihu/livemark/actions/workflows/ci.yml)
+[![Release](https://github.com/vihu/livemark/actions/workflows/release.yml/badge.svg)](https://github.com/vihu/livemark/actions/workflows/release.yml)
+
 A live-preview markdown editor for [iced]: you type markdown and it renders
 in place as you type, like Obsidian's Live Preview. The markdown text is the
 document. Nothing else is stored, so other tools edit the same file.
 
-Status: working towards v0.1.0, not on crates.io. Live preview of headings,
+Status: 0.1.0, not on crates.io (changes in `CHANGELOG.md`). Live preview of headings,
 emphasis, links, escapes, lists (bullets as dots), task lists (clickable
 checkboxes), quotes, rules, code (syntax colors in fenced blocks, fences
 hidden) and tables (grids until the caret enters); list-aware editing;
 formatting keys; line commands; find and replace; a source mode; zoom;
 YAML front matter and `==highlight==`; images drawn under their line from
-bytes the host supplies. Targets Linux (Wayland) and macOS. It is both a library for
+bytes the host supplies; a toolbar and a Split mode beside the rendered note. Targets Linux (Wayland) and macOS. It is both a library for
 iced apps and a standalone editor (the `livemark` app).
 
 ## The app
+
+Download it from [Releases](https://github.com/vihu/livemark/releases):
+
+- Linux (x86_64 and arm64), either of:
+  - `livemark-<version>-<arch>.flatpak`: run
+    `flatpak install --user livemark-<version>-<arch>.flatpak` (it fetches
+    the runtime from Flathub), then start livemark from the app menu. It
+    can read and write in your home folder, where a note's pictures are.
+  - `livemark-<version>-<arch>.AppImage`: make it executable
+    (`chmod +x`) and run it. Needs glibc 2.35 or newer (Ubuntu 22.04,
+    Debian 12, Fedora 36 and later).
+- macOS 11 or newer (Apple silicon and Intel):
+  `livemark-<version>-macos-universal.zip`. Unzip it and move
+  `livemark.app` to Applications. The app is not notarized, so macOS blocks
+  the first launch: allow it in System Settings > Privacy & Security > Open
+  Anyway, or run `xattr -dr com.apple.quarantine /Applications/livemark.app`.
+
+Or run it from source:
 
 ```text
 cargo run --release -p livemark-app -- [file.md] [--dark|--light]
