@@ -177,6 +177,7 @@ fn markers_are_syntax_the_parser_never_calls_text() {
                 Syntax::Code => Some(b"`"),
                 Syntax::Link => None,
                 Syntax::Escape => Some(b"\\"),
+                Syntax::Highlight => Some(b"="),
             };
             for m in c.markers.iter().filter(|m| !m.is_empty()) {
                 assert!(
@@ -184,7 +185,9 @@ fn markers_are_syntax_the_parser_never_calls_text() {
                     "{markdown:?}: marker {m:?} of {c:?}"
                 );
                 for (leaf, code) in &leaves {
-                    let own = *code && c.syntax == Syntax::Code && *leaf == c.range;
+                    // Obsidian's `==` is found in text, beyond CommonMark.
+                    let own = (*code && c.syntax == Syntax::Code && *leaf == c.range)
+                        || c.syntax == Syntax::Highlight;
                     assert!(
                         own || leaf.end <= m.start || m.end <= leaf.start,
                         "{markdown:?}: marker {m:?} of {c:?} covers text {leaf:?}"
@@ -281,7 +284,19 @@ fn no_dimmed_marker_covers_what_the_parser_calls_text() {
             .filter(|(event, _)| matches!(event, Event::Text(_)))
             .map(|(_, range)| range)
             .collect();
-        for (run, _) in styled.runs().iter().filter(|(_, style)| style.marker) {
+        // Obsidian's `==` is found in text, beyond CommonMark.
+        let highlights: Vec<Range<usize>> = styled
+            .constructs()
+            .iter()
+            .filter(|c| c.syntax == Syntax::Highlight)
+            .flat_map(|c| c.markers.clone())
+            .collect();
+        for (run, _) in styled.runs().iter().filter(|(run, style)| {
+            style.marker
+                && !highlights
+                    .iter()
+                    .any(|h| h.start <= run.start && run.end <= h.end)
+        }) {
             for text in &texts {
                 assert!(
                     text.end <= run.start || run.end <= text.start,
@@ -595,4 +610,41 @@ fn front_matter_is_one_dimmed_code_font_block() {
             .iter()
             .any(|m| m.kind == MarkKind::Rule)
     );
+}
+
+#[test]
+fn highlights_pair_in_a_block_and_hide_like_strong() {
+    let text = "a ==mark== b == c ==x== y==\n\n==not\n\nclosed==\n";
+    let styled = Styled::new(text);
+    let highlighted: Vec<&str> = styled
+        .runs()
+        .iter()
+        .filter(|(_, s)| s.highlight)
+        .map(|(r, _)| &text[r.clone()])
+        .collect();
+    // `== c ==` has blanks inside its pair; a highlight never crosses a
+    // blank line.
+    assert_eq!(highlighted, ["mark", "x"]);
+    let hidden: Vec<&str> = styled
+        .hidden(0..0)
+        .iter()
+        .map(|r| &text[r.clone()])
+        .collect();
+    assert_eq!(hidden, ["==", "==", "==", "=="]);
+    // Touching it shows its markers.
+    assert_eq!(styled.hidden(4..4).len(), 2);
+    // Other inline spans inside it, and `===` is no marker.
+    let nested = Styled::new("==a **b** c== and a===b===c\n");
+    assert!(nested.runs().iter().any(|(_, s)| s.highlight && s.strong));
+    assert_eq!(
+        nested
+            .constructs()
+            .iter()
+            .filter(|c| c.syntax == Syntax::Highlight)
+            .count(),
+        1
+    );
+    // A highlight inside emphasis reveals with it.
+    let inside = Styled::new("*a ==b== c* d\n");
+    assert!(inside.hidden(1..1).is_empty(), "touching the emphasis");
 }

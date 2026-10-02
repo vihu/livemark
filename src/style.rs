@@ -39,6 +39,8 @@ pub struct Style {
     /// YAML front matter (Obsidian's properties): dimmed, in the code
     /// font (REFERENCE-001 section 11).
     pub meta: bool,
+    /// Inside `==highlight==`: drawn on a marker-pen band.
+    pub highlight: bool,
 }
 
 /// The syntax a [`Construct`] is.
@@ -58,6 +60,9 @@ pub enum Syntax {
     Link,
     /// A backslash escape (`\*`): the backslash hides.
     Escape,
+    /// `==highlight==`, Obsidian's (not CommonMark or GFM): found in text
+    /// by the walk, its `==` hide like `**`.
+    Highlight,
 }
 
 /// A parse node whose markers live preview can hide.

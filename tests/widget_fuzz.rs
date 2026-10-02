@@ -19,6 +19,7 @@ const SIZE: (f32, f32) = (500.0, 300.0);
 
 /// Markdown in pieces, long enough to wrap and to scroll.
 const PIECES: &[&str] = &[
+    "==",
     "# ",
     "## ",
     "- ",

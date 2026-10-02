@@ -33,6 +33,7 @@ pub(super) fn walk(text: &str) -> Styled {
         lazies: Vec::new(),
         inner_quotes: Vec::new(),
         nest: Vec::new(),
+        highlight: None,
         continuations: Vec::new(),
         task_bullets: Vec::new(),
         scanned: None,
@@ -89,6 +90,8 @@ struct Walk<'a> {
     inner_quotes: Vec<usize>,
     /// The quotes and items open around the current event, innermost last.
     nest: Vec<Open>,
+    /// An `==` waiting for its closing `==` in the same block.
+    highlight: Option<usize>,
     /// Lines of paragraphs in list items after the item's first line, and
     /// where the item's text starts.
     continuations: Vec<(Range<usize>, usize)>,
@@ -109,6 +112,24 @@ enum Open {
 
 impl Walk<'_> {
     fn event(&mut self, event: Event, range: Range<usize>) {
+        // A highlight does not cross blocks.
+        let inline = |tag: &Tag| {
+            matches!(
+                tag,
+                Tag::Emphasis
+                    | Tag::Strong
+                    | Tag::Strikethrough
+                    | Tag::Link { .. }
+                    | Tag::Image { .. }
+            )
+        };
+        match &event {
+            Event::Start(tag) if !inline(tag) => self.highlight = None,
+            Event::End(TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough)
+            | Event::End(TagEnd::Link | TagEnd::Image) => {}
+            Event::End(_) | Event::Rule | Event::Html(_) => self.highlight = None,
+            _ => {}
+        }
         match event {
             Event::Start(Tag::Heading { level, .. }) => self.heading(level as u8, range),
             Event::Start(tag @ (Tag::Emphasis | Tag::Strong | Tag::Strikethrough)) => {
@@ -160,7 +181,10 @@ impl Walk<'_> {
                 self.texts.push(range.clone());
                 match &mut self.code {
                     Some((_, texts)) => texts.push(range),
-                    None => self.content(&range),
+                    None => {
+                        self.content(&range);
+                        self.highlights(&range);
+                    }
                 }
             }
             Event::InlineHtml(_) | Event::InlineMath(_) | Event::FootnoteReference(_) => {

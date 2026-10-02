@@ -57,6 +57,9 @@ impl Editor {
             accent: palette.primary.base.color,
             tick: palette.primary.base.text,
         };
+        // A marker pen: yellow, lighter on a dark page.
+        let dark = palette.background.base.color.relative_luminance() < 0.5;
+        let highlight_color = Color::from_rgba8(255, 214, 0, if dark { 0.3 } else { 0.45 });
         let matches = self.find.as_ref().map_or(&[][..], |f| &f.matches[..]);
         let selection = self.doc.selection().range();
         let caret_rect = caret.then(|| self.caret()).flatten();
@@ -140,6 +143,20 @@ impl Editor {
                             Size::new(r.width + 4.0, r.height - 4.0),
                         );
                         quad(renderer, at(r), code_background);
+                    }
+                }
+                // `==highlight==` bands (REFERENCE-001 section 4).
+                let runs = source.styled.runs();
+                let first = runs.partition_point(|(r, _)| r.end <= range.start);
+                for (run, _) in runs[first..]
+                    .iter()
+                    .take_while(|(r, _)| r.start < range.end)
+                    .filter(|(_, style)| style.highlight)
+                {
+                    let from = shaped.line.to_display(run.start.max(range.start));
+                    let to = shaped.line.to_display(run.end.min(range.end));
+                    for (r, _) in shaped.stretches(from..to) {
+                        quad(renderer, at(r), highlight_color);
                     }
                 }
                 // Find matches on this line, except those in hidden text

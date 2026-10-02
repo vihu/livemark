@@ -6,7 +6,7 @@ use pulldown_cmark::CodeBlockKind;
 
 use super::{Walk, gaps, line_trim};
 use crate::style::sweep::Flag;
-use crate::style::{CodeBlock, Mark, MarkKind};
+use crate::style::{CodeBlock, Mark, MarkKind, Syntax};
 
 impl Walk<'_> {
     pub(super) fn code_start(&mut self, kind: CodeBlockKind, range: Range<usize>) {
@@ -196,6 +196,42 @@ impl Walk<'_> {
         // checkbox's room before the text.
         if task.len() == 3 {
             self.task_bullets.push((task.start..task.start + 1, touch));
+        }
+    }
+
+    /// `==` in the text at `range` (Obsidian's highlight, REFERENCE-001
+    /// section 4): a run of exactly two with no blank after it opens, one
+    /// with no blank before it closes the open one in the same block (as
+    /// GFM pairs `~~`). Each pair is a construct whose `==` hide like `**`.
+    pub(super) fn highlights(&mut self, range: &Range<usize>) {
+        let bytes = self.text.as_bytes();
+        let mut at = range.start;
+        while let Some(found) = self.text[at..range.end].find("==") {
+            let start = at + found;
+            let run = bytes[start..].iter().take_while(|&&b| b == b'=').count();
+            at = start + run;
+            if run != 2 || (start > 0 && bytes[start - 1] == b'=') {
+                continue;
+            }
+            let before = self.text[..start].chars().next_back();
+            let after = self.text[start + 2..].chars().next();
+            let closes = before.is_some_and(|c| !c.is_whitespace());
+            let opens = after.is_some_and(|c| !c.is_whitespace());
+            match self.highlight {
+                Some(open) if closes => {
+                    self.highlight = None;
+                    self.toggles.push((open + 2..start, Flag::Highlight));
+                    // It reveals with the outermost span open at its close
+                    // when that holds its opening `==` too, else alone.
+                    let index = self.inline(Syntax::Highlight, open..start + 2, 2);
+                    let group = self.constructs[index].group;
+                    if self.constructs[group].range.start > open {
+                        self.constructs[index].group = index;
+                    }
+                }
+                _ if opens => self.highlight = Some(start),
+                _ => {}
+            }
         }
     }
 
