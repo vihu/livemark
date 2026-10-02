@@ -169,8 +169,15 @@ impl Walk<'_> {
                 let cell = &self.text[range.clone()];
                 let start = range.start + cell.len() - cell.trim_start().len();
                 let end = (range.start + cell.trim_end().len()).max(start);
-                if let Some((_, cells)) = self.tables.last_mut().and_then(|t| t.rows.last_mut()) {
+                if let Some(table) = self.tables.last_mut()
+                    && let Some((_, cells)) = table.rows.last_mut()
+                {
                     cells.push(start..end);
+                    // The header row is bold, revealed too (REFERENCE-001
+                    // section 10).
+                    if table.rows.len() == 1 {
+                        self.toggles.push((start..end, Flag::Strong));
+                    }
                 }
             }
             Event::End(TagEnd::Table) => {

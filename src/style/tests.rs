@@ -465,4 +465,9 @@ fn a_table_records_its_rows_cells_and_alignment_for_the_grid() {
             .all(|m| m.touch != table.range),
         "a caret in the table shows all of it"
     );
+    assert_eq!(
+        picked(text, &styled, |s| s.strong),
+        ["a", "**", "b", "**"],
+        "the header"
+    );
 }
