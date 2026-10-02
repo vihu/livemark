@@ -6,6 +6,7 @@
 mod autolink;
 
 use std::collections::VecDeque;
+use std::iter::Peekable;
 use std::ops::Range;
 
 use pulldown_cmark::{CowStr, Event, LinkType, OffsetIter, Options, Parser, Tag, TagEnd};
@@ -23,7 +24,7 @@ pub const OPTIONS: Options = Options::ENABLE_TABLES
 pub fn events(text: &str) -> impl Iterator<Item = (Event<'_>, Range<usize>)> {
     Events {
         text,
-        inner: Parser::new_ext(text, OPTIONS).into_offset_iter(),
+        inner: Parser::new_ext(text, OPTIONS).into_offset_iter().peekable(),
         ready: VecDeque::new(),
         run: Vec::new(),
         code: 0,
@@ -36,7 +37,7 @@ pub fn events(text: &str) -> impl Iterator<Item = (Event<'_>, Range<usize>)> {
 /// only the current run of text is held back.
 struct Events<'a> {
     text: &'a str,
-    inner: OffsetIter<'a>,
+    inner: Peekable<OffsetIter<'a>>,
     /// Events worked out and not yet handed on.
     ready: VecDeque<(Event<'a>, Range<usize>)>,
     /// Adjacent text events (pulldown-cmark splits text at `_`, `&` and
@@ -76,7 +77,7 @@ impl<'a> Events<'a> {
         let text = self.text;
         // An escape or entity (text unlike its source) is never searched
         // and ends a run, as each is its own text node in cmark-gfm.
-        let literal = matches!(&event, Event::Text(t) if **t == text[range.clone()]);
+        let literal = matches!(&event, Event::Text(t) if is_source(t, &text[range.clone()]));
         let searched = literal && self.code == 0 && self.links == 0;
         let escaped = range.start > self.text_end && text[..range.start].ends_with('\\');
         if matches!(event, Event::Text(_) | Event::Code(_)) {
@@ -98,6 +99,14 @@ impl<'a> Events<'a> {
                 ));
             }
             return None;
+        }
+        // The usual case: a text alone, holding no link, goes straight on.
+        let alone = searched
+            && self.run.is_empty()
+            && self.ready.is_empty()
+            && !matches!(self.inner.peek(), Some((Event::Text(_), next)) if next.start == range.end);
+        if alone && !maybe_link(&text[range.clone()]) {
+            return Some((event, range));
         }
         if searched && self.run.last().is_none_or(|(_, r)| r.end == range.start) {
             self.run.push((event, range));
@@ -131,7 +140,7 @@ impl<'a> Events<'a> {
         let (start, end) = (first.start, last.end);
         let slice = &text[start..end];
         // Most text holds no link at all: a cheap look before the scan.
-        let found = if slice.contains("www.") || slice.contains("://") || slice.contains('@') {
+        let found = if maybe_link(slice) {
             autolink::find(slice)
         } else {
             Vec::new()
@@ -178,6 +187,18 @@ impl<'a> Events<'a> {
                 .push_back((Event::Text(CowStr::Borrowed(&text[range.clone()])), range));
         }
     }
+}
+
+/// Whether `text` could hold an extended autolink: a `www.`, a `://` or
+/// an `@` (the scan itself is in `autolink.rs`).
+fn maybe_link(text: &str) -> bool {
+    text.contains("www.") || text.contains("://") || text.contains('@')
+}
+
+/// Whether pulldown-cmark's `parsed` text is the source `source` as it
+/// stands (not an escape or entity): the same slice, or equal text.
+fn is_source(parsed: &str, source: &str) -> bool {
+    std::ptr::eq(parsed, source) || parsed == source
 }
 
 #[cfg(test)]
