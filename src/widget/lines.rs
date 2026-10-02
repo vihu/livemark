@@ -345,10 +345,18 @@ impl Lines {
         let index = source.doc.line_at(offset);
         let (_, row_top, row_height) = self.caret_in_line(source, offset, side);
         let Some(top) = self.top_of(source, index) else {
-            // Far away: put its line at the top, then centre-ish below.
+            // Far away: its row at the edge it comes in from, as if scrolled
+            // there (CodeMirror's "nearest"), so the end of the document
+            // ends at the bottom.
+            let below = index > self.anchor;
             self.anchor = index;
             self.offset = 0.0;
-            self.scroll_by(source, row_top + row_height - self.height / 2.0);
+            let dy = if below {
+                row_top + row_height - self.height
+            } else {
+                row_top
+            };
+            self.scroll_by(source, dy);
             return;
         };
         let (caret_top, caret_bottom) = (top + row_top, top + row_top + row_height);

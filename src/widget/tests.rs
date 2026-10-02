@@ -303,3 +303,16 @@ fn a_press_keeps_markers_as_drawn_until_the_release() {
     let _ = editor.update(Message(Input::Release));
     assert!(hidden(&editor).is_empty(), "revealed on release");
 }
+
+#[test]
+fn a_far_jump_brings_the_caret_in_at_the_nearest_edge() {
+    let text = "a line\n".repeat(300);
+    let mut editor = Editor::new(text.clone());
+    let height = editor.lines.borrow().height;
+    editor.select(text.len(), text.len());
+    let y = editor.caret().expect("on screen").y;
+    assert!(y > height * 0.8, "the end at the bottom: {y} of {height}");
+    editor.select(0, 0);
+    let y = editor.caret().expect("on screen").y;
+    assert!(y < height * 0.2, "the start at the top: {y}");
+}
