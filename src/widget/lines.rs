@@ -175,7 +175,13 @@ impl Lines {
         let quoted = self.shaped(source, source.doc.line_at(anchor));
         let target = super::marks::start_x(&quoted, anchor);
         let text = &source.doc.text()[range.clone()];
-        let indent = text.len() - text.trim_start_matches([' ', '\t']).len();
+        // A list item's line in a quote: past the quote's markers too.
+        let prefix: &[char] = if item {
+            &[' ', '\t', '>']
+        } else {
+            &[' ', '\t']
+        };
+        let indent = text.len() - text.trim_start_matches(prefix).len();
         let own = if indent == 0 {
             0.0
         } else {

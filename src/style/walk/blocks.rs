@@ -166,8 +166,8 @@ impl Walk<'_> {
     }
     /// The line holding `at`, text directly in a list item: when it is
     /// not the item's first line, its text lines up with the item's, at
-    /// `hang` (REFERENCE-001 section 7). Lines starting with a quote's `>`
-    /// line up by their bars instead.
+    /// `hang` (REFERENCE-001 section 7), after the markers of the quotes
+    /// the item is in.
     pub(super) fn continuation_line(&mut self, at: usize, hang: usize) {
         // Each line is looked at once: a long line holds many events.
         if self
@@ -181,7 +181,7 @@ impl Walk<'_> {
         let rest = &self.text[start..];
         let end = start + rest.find(['\n', '\r']).unwrap_or(rest.len());
         self.scanned = Some(start..end);
-        if !(start..=end).contains(&hang) && !rest.trim_start().starts_with('>') {
+        if !(start..=end).contains(&hang) {
             self.continuations.push((start..end, hang));
         }
     }

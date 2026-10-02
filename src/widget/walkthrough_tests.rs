@@ -82,6 +82,12 @@ fn later_lines_of_a_list_item_line_up_with_its_text() {
         ("para\n\n- item\nlazy\n", "item", "lazy"),
         ("para\n\n- item\n\tmore\n", "item", "more"),
         ("para\n\n- item\n      more\n", "item", "more"),
+        (
+            "para\n\n> [!note]\n> - [ ] task\n>   more\n",
+            "task",
+            "more",
+        ),
+        ("para\n\n> - item\n>   more\n", "item", "more"),
     ] {
         let mut editor = Editor::new(text.into());
         editor.select(0, 0);
