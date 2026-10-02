@@ -378,22 +378,30 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         _style: &iced::advanced::renderer::Style,
         layout: Layout,
         _cursor: mouse::Cursor,
-        _viewport: &Rectangle,
+        viewport: &Rectangle,
     ) {
         let state = tree.state.downcast_ref::<State>();
         let caret = state.focus.as_ref().is_some_and(Focus::caret_on);
-        // Everything clipped to the text's rows; the side padding stays
-        // open for code bands and the quote bar.
+        // Everything clipped to the text's rows (the side padding stays
+        // open for code bands and the quote bar) and to what the parent
+        // shows: a layer's clip does not narrow its parent's.
         let bounds = layout.bounds();
         let area = bounds.shrink(PADDING);
         let rows = Rectangle::new(
             Point::new(bounds.x, area.y),
             Size::new(bounds.width, area.height),
         );
-        renderer.with_layer(rows, |renderer| {
-            self.editor.draw(renderer, theme, area, caret);
-        });
-        self.editor.draw_scrollbar(renderer, theme, layout.bounds());
+        if let Some(rows) = rows.intersection(viewport) {
+            renderer.with_layer(rows, |renderer| {
+                self.editor.draw(renderer, theme, area, caret);
+            });
+        }
+        // Over the text's layer, not under it.
+        if let Some(shown) = bounds.intersection(viewport) {
+            renderer.with_layer(shown, |renderer| {
+                self.editor.draw_scrollbar(renderer, theme, bounds);
+            });
+        }
     }
 }
 

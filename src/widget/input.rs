@@ -6,7 +6,6 @@ use super::{Editor, Input, Key, Message, Mode, Press, Unit, Vertical};
 use crate::doc::Selection;
 use crate::edit::{self, Motion};
 use crate::layout::Affinity;
-use crate::style::MarkKind;
 use crate::style::Styled;
 
 impl Editor {
@@ -213,27 +212,7 @@ impl Editor {
     fn hit(&self, at: Point) -> (usize, Affinity) {
         self.with_lines(|lines, source| match lines.table_hit(source, at.x, at.y) {
             Some(offset) => (offset, Affinity::After),
-            None => {
-                let (mut offset, side) = lines.hit(source, at.x, at.y);
-                // On a bullet's dot or a quote's bar: the text after it, so
-                // the dot stays (REFERENCE-001 sections 6, 7, 14).
-                let text = source.doc.text();
-                // Past each such mark (`> > `), never back to where it was:
-                // an empty item's dash has nothing after it.
-                while let Some(mark) = source.concealed.iter().find(|m| {
-                    matches!(m.kind, MarkKind::Bullet | MarkKind::Quote)
-                        && m.range.start <= offset
-                        && offset <= m.range.end
-                }) {
-                    let after =
-                        mark.range.end + usize::from(text[mark.range.end..].starts_with(' '));
-                    if after <= offset {
-                        break;
-                    }
-                    offset = after;
-                }
-                (offset, side)
-            }
+            None => lines.hit(source, at.x, at.y),
         })
     }
 
@@ -270,6 +249,17 @@ impl Editor {
             view,
         });
         let (offset, side) = self.hit(at);
+        // On a bullet's dot or a quote marker, drawn: the item's or quote's
+        // text, so the dot stays (REFERENCE-001 sections 6, 7, 14). Drags,
+        // Shift+clicks and the margin keep the line's start.
+        let on_mark = clicks == 1 && plain;
+        let (offset, side) = match on_mark
+            .then(|| self.with_lines(|lines, source| lines.text_after_mark(source, at.x, at.y)))
+            .flatten()
+        {
+            Some(text) => (text, Affinity::After),
+            None => (offset, side),
+        };
         let (unit, first) = match clicks {
             1 => (Unit::Char, offset..offset),
             2 => (

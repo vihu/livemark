@@ -259,14 +259,14 @@ impl Styled {
         self.hang_at(quoted.clone())
     }
 
-    /// Where the first quote `>` on the line at `line` is, shown or not.
-    pub fn quote_mark_in(&self, line: Range<usize>) -> Option<usize> {
-        let i = self.marks.partition_point(|m| m.range.start < line.start);
-        self.marks[i..]
-            .iter()
-            .take_while(|m| m.range.start <= line.end)
-            .find(|m| m.kind == MarkKind::Quote)
-            .map(|m| m.range.start)
+    /// Where the outermost quote holding the line at `line` starts: its
+    /// first `>`, on its first line.
+    pub fn quote_start(&self, line: Range<usize>) -> Option<usize> {
+        let i = self.quotes.partition_point(|q| q.end < line.start);
+        self.quotes
+            .get(i)
+            .filter(|q| q.start <= line.end && line.start <= q.end)
+            .map(|q| q.start)
     }
 
     /// The marks drawn as something else with `selection` in place: those

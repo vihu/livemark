@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::advanced::text::{self, Renderer as _};
-use iced::{Border, Color, Pixels, Point, Rectangle, Size, Vector, border};
+use iced::{Border, Color, Padding, Pixels, Point, Rectangle, Size, Vector, border};
 
 use super::lines::Shaped;
 use super::shape::cursor;
@@ -216,4 +216,18 @@ pub(super) fn nested_bars<'a>(
         .filter_map(|m| box_of(shaped, m.range.clone()))
         .map(|(rect, _)| rect.center_x() - 1.5)
         .collect()
+}
+
+/// Whether `point` (in the line's coordinates) is on a concealed bullet or
+/// quote marker of the line `shaped`, as drawn there.
+pub(super) fn on_bullet_or_quote<'a>(
+    shaped: &Shaped,
+    mut marks: impl Iterator<Item = &'a Mark>,
+    point: Point,
+) -> bool {
+    marks.any(|m| {
+        matches!(m.kind, MarkKind::Bullet | MarkKind::Quote)
+            && box_of(shaped, m.range.clone())
+                .is_some_and(|(rect, _)| rect.expand(Padding::from([0.0, 2.0])).contains(point))
+    })
 }

@@ -628,7 +628,9 @@ fn a_click_on_a_bullet_dot_or_quote_bar_lands_at_the_text() {
     for (text, start) in [
         ("para\n- item text\n", 7),
         ("para\n> > quoted\n", 9),
-        ("para\n\n-\n", 7),
+        ("para\n>> nested\n", 8),
+        ("para\n- [ ] task text\n", 11),
+        ("para\n\n-\n", 6),
     ] {
         let mut editor = Editor::new(text.into());
         editor.select(0, 0);
@@ -637,7 +639,10 @@ fn a_click_on_a_bullet_dot_or_quote_bar_lands_at_the_text() {
             .position(|l| l.starts_with(['-', '>']))
             .unwrap();
         let top = editor.with_lines(|lines, source| lines.top_of(source, line).unwrap());
-        click_at(&mut editor, iced::Point::new(2.0, top + 10.0), 1);
+        let at = text.match_indices(['-', '>']).next().unwrap().0;
+        let x =
+            editor.with_lines(|lines, source| lines.caret_in_line(source, at, Affinity::After).0);
+        click_at(&mut editor, iced::Point::new(x + 2.0, top + 10.0), 1);
         assert_eq!(editor.selection().head, start, "{text:?}");
     }
 }
@@ -653,4 +658,37 @@ fn a_selection_made_before_the_first_layout_is_revealed_by_it() {
         "not yet: the size is unknown"
     );
     assert!(editor.lines.borrow().pending_reveal.is_some());
+}
+
+#[test]
+fn a_drag_from_the_margin_keeps_whole_list_lines() {
+    use super::{Input, Message};
+    let text = "para\n- one\n- two\n- three\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(0, 0);
+    let top = editor.with_lines(|lines, source| lines.top_of(source, 3).unwrap());
+    let press = Input::Press {
+        at: iced::Point::new(-4.0, 10.0),
+        shift: false,
+        clicks: 1,
+        command: false,
+        other: false,
+    };
+    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(Input::Drag(iced::Point::new(-4.0, top + 10.0))));
+    let _ = editor.update(Message(Input::Release));
+    assert_eq!(editor.selection().range(), 0..text.find("- three").unwrap());
+}
+
+#[test]
+fn a_wrap_inside_two_spaces_keeps_the_caret_on_a_row_by_them() {
+    let text = "The first sentence ends here.  Then another one follows and goes on for a while longer than the width allows it to.\n";
+    let editor = Editor::new(text.into());
+    editor.lines.borrow_mut().width = 210.0;
+    editor.with_lines(|lines, source| {
+        let (_, top, height) = lines.caret_in_line(source, 30, Affinity::After);
+        assert!(top <= height, "row 0 or 1, not {top}");
+        let row = lines.row_bounds(source, 30, Affinity::After);
+        assert!(row.end < 100, "a row, not the whole line: {row:?}");
+    });
 }

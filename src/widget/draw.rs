@@ -102,24 +102,12 @@ impl Editor {
                 }
                 if source.styled.in_quote(range.clone()) {
                     // In the gutter, or just left of the quote's first `>`
-                    // when the quote is indented (in a list item); a lazy
-                    // line takes its quoted line's.
-                    let lazy = source
+                    // when the quote is indented (in a list item): one x
+                    // for all its lines, from its first.
+                    let x = source
                         .styled
-                        .lazy_at(range.clone())
-                        .filter(|_| !lines.source);
-                    let marker = match lazy {
-                        Some(anchor) => {
-                            let line = source.doc.line_at(anchor);
-                            let quoted = source.doc.line_range(line);
-                            source.styled.quote_mark_in(quoted).map(|at| (line, at))
-                        }
-                        None => source
-                            .styled
-                            .quote_mark_in(range.clone())
-                            .map(|at| (index, at)),
-                    };
-                    let x = marker
+                        .quote_start(range.clone())
+                        .map(|at| (source.doc.line_at(at), at))
                         .map(|(line, at)| marks::start_x(&lines.shaped(source, line), at))
                         .filter(|&x| x > 1.0)
                         .map_or(-QUOTE_BAR.0, |x| x - QUOTE_BAR.1 - 1.0);

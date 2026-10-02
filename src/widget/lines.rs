@@ -413,8 +413,6 @@ impl Lines {
     }
 }
 
-/// A cosmic-text cursor at display offset `display`, on the given side of a
-/// soft wrap.
 /// The row a cursor is drawn on, and its x there. Where a row breaks with
 /// no space (after a hyphen, in a URL, in CJK text) the offset ends one row
 /// and starts the next: `After` takes the later.
@@ -426,12 +424,22 @@ fn row_of<'a, 'b>(
     let mut rows = runs
         .iter()
         .filter_map(|run| run.cursor_position(cursor).map(|x| (run, x)));
-    match side {
+    let found = match side {
         Affinity::Before => rows.next(),
         Affinity::After => rows.next_back(),
-    }
+    };
+    // A wrap inside a run of spaces leaves the offsets between them on no
+    // row: the end of the row they trail.
+    found.or_else(|| {
+        runs.iter()
+            .rev()
+            .find(|run| run.glyphs.first().is_some_and(|g| g.start <= cursor.index))
+            .map(|run| (run, run.line_w))
+    })
 }
 
+/// A cosmic-text cursor at display offset `display`, on the given side of a
+/// soft wrap.
 fn side_cursor(display: usize, side: Affinity) -> cosmic_text::Cursor {
     let affinity = match side {
         Affinity::Before => cosmic_text::Affinity::Before,
@@ -549,6 +557,22 @@ impl Lines {
             .stretches(display)
             .iter()
             .any(|(rect, _)| rect.contains(point))
+    }
+
+    /// Where the text of the item or quote starts when `x`, `y` in the text
+    /// area is on its concealed bullet or quote marker: after the marker,
+    /// any task box and nested `>` (where its wrapped rows hang).
+    pub fn text_after_mark(&mut self, source: &Source, x: f32, y: f32) -> Option<usize> {
+        let (index, top) = self.line_at_y(source, y);
+        let range = source.doc.line_range(index);
+        let shaped = self.shaped(source, index);
+        let point = iced::Point::new(x, y - top);
+        let on = super::marks::on_bullet_or_quote(
+            &shaped,
+            marks_in(source.concealed, range.clone()),
+            point,
+        );
+        on.then(|| source.styled.hang_at(range)).flatten()
     }
 
     /// The concealed task box whose checkbox is at `x`, `y` in the text
