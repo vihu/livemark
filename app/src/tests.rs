@@ -160,7 +160,7 @@ fn settings_remember_the_zoom_the_window_and_recent_notes() {
     use crate::settings::Settings;
     let dir = std::env::temp_dir().join(format!("livemark-settings-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("config").join("settings");
+    let file = dir.join("config").join("settings.toml");
     let note = dir.join("note.md");
     write(&note, "# Note\n", 0);
     let mut app =
@@ -169,7 +169,7 @@ fn settings_remember_the_zoom_the_window_and_recent_notes() {
     let _ = app.update(Message::Resized(iced::Size::new(900.0, 700.0)));
     let _ = app.update(Message::CloseRequested);
     // The next start finds them.
-    let saved = Settings::load(&file);
+    let saved = Settings::load(&file).unwrap();
     assert_eq!(saved.zoom, 1.1);
     assert_eq!(saved.window, Some((900.0, 700.0)));
     assert_eq!(saved.recent, [std::fs::canonicalize(&note).unwrap()]);

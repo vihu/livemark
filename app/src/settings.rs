@@ -1,9 +1,12 @@
 //! What the app remembers between starts (PLAN-002): the zoom, the theme,
 //! the window's size, the most recent files, where the side by side
-//! divider was (PLAN-003), the vault and whether the sidebar shows. One `key = value` a line,
-//! parsed by hand (no crate for it); unknown, misspelled or broken lines are
-//! ignored, so a hand edit never stops the app from starting.
+//! divider was (PLAN-003), the vault and whether the sidebar shows. A TOML
+//! file read and written by serde (PLAN-007); a key missing takes its
+//! default, a value out of range too, and a file that does not read is set
+//! aside as `settings.toml.broken`, never written over.
 use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
 
 /// How many recent files are kept.
 const RECENT: usize = 10;
@@ -13,8 +16,9 @@ pub const SIDEBAR_WIDTH: f32 = 260.0;
 pub const SIDEBAR_WIDTHS: std::ops::RangeInclusive<f32> = 200.0..=480.0;
 
 /// The theme: as the system is (between a light and a dark one picked),
-/// or one of iced's (PLAN-006).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// or one of iced's (PLAN-006); kept as `kanagawa-wave` and the like.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Theme {
     #[default]
     System,
@@ -72,17 +76,10 @@ impl Theme {
                 | Theme::GruvboxLight
         )
     }
-
-    /// The theme named `name` (any case, spaces or hyphens).
-    fn named(name: &str) -> Option<Theme> {
-        let wanted = name.trim().to_lowercase().replace('-', " ");
-        std::iter::once(Theme::System)
-            .chain(Theme::NAMED)
-            .find(|theme| theme.name().to_lowercase() == wanted)
-    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct Settings {
     /// The note's text size (`Editor::set_zoom`).
     pub zoom: f32,
@@ -90,7 +87,9 @@ pub struct Settings {
     pub scale: f32,
     pub theme: Theme,
     /// What System follows by day and by night.
+    #[serde(rename = "theme-by-day")]
     pub light: Theme,
+    #[serde(rename = "theme-by-night")]
     pub dark: Theme,
     /// The window's size when it was last closed.
     pub window: Option<(f32, f32)>,
@@ -131,28 +130,32 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// Where they are kept: `$XDG_CONFIG_HOME/livemark/settings` (or
-    /// `~/.config/...`) on Linux, `~/Library/Application Support/livemark/
-    /// settings` on macOS.
+    /// Where they are kept: `livemark/settings.toml` in the platform's
+    /// config folder (`~/.config` on Linux, `~/Library/Application Support`
+    /// on macOS).
     pub fn path() -> Option<PathBuf> {
-        let home = || std::env::var_os("HOME").map(PathBuf::from);
-        let base = if cfg!(target_os = "macos") {
-            home()?.join("Library/Application Support")
-        } else {
-            std::env::var_os("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .filter(|p| p.is_absolute())
-                .or_else(|| Some(home()?.join(".config")))?
-        };
-        Some(base.join("livemark").join("settings"))
+        Some(dirs::config_dir()?.join("livemark").join("settings.toml"))
     }
 
-    /// The settings in the file at `path`, or the defaults when it is
-    /// missing or unreadable.
-    pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .map(|text| Self::parse(&text))
-            .unwrap_or_default()
+    /// The settings in the file at `path`, the defaults when it is missing.
+    /// A file that does not read is moved aside, so it is not written over,
+    /// and the error says where it went.
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Ok(Self::default());
+        };
+        toml::from_str::<Self>(&text)
+            .map(Self::checked)
+            .map_err(|error| {
+                let aside = path.with_extension("toml.broken");
+                let _ = std::fs::rename(path, &aside);
+                format!(
+                    "Settings reset: {} did not read ({}); kept as {}",
+                    path.display(),
+                    error.message(),
+                    aside.display()
+                )
+            })
     }
 
     /// Writes them to `path`, making its folder.
@@ -160,105 +163,35 @@ impl Settings {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder)?;
         }
-        std::fs::write(path, self.render())
+        let text = toml::to_string(self).map_err(std::io::Error::other)?;
+        std::fs::write(path, text)
     }
 
-    pub fn parse(text: &str) -> Self {
-        let mut settings = Self::default();
-        for line in text.lines() {
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            let value = value.trim();
-            match key.trim() {
-                "zoom" => {
-                    if let Ok(zoom) = value.parse::<f32>()
-                        && (0.5..=3.0).contains(&zoom)
-                    {
-                        settings.zoom = zoom;
-                    }
-                }
-                "split" => {
-                    if let Ok(split) = value.parse::<f32>()
-                        && (0.2..=0.8).contains(&split)
-                    {
-                        settings.split = split;
-                    }
-                }
-                "scale" => {
-                    if let Ok(scale) = value.parse::<f32>()
-                        && (0.5..=2.0).contains(&scale)
-                    {
-                        settings.scale = scale;
-                    }
-                }
-                "theme" => settings.theme = Theme::named(value).unwrap_or_default(),
-                "theme by day" => {
-                    if let Some(theme) = Theme::named(value).filter(|t| !t.is_dark()) {
-                        settings.light = theme;
-                    }
-                }
-                "theme by night" => {
-                    if let Some(theme) = Theme::named(value).filter(|t| t.is_dark()) {
-                        settings.dark = theme;
-                    }
-                }
-                "window" => {
-                    let size = value.split_once('x').and_then(|(w, h)| {
-                        Some((w.trim().parse::<f32>().ok()?, h.trim().parse::<f32>().ok()?))
-                    });
-                    settings.window = size.filter(|&(w, h)| w >= 200.0 && h >= 150.0);
-                }
-                "vault" if !value.is_empty() => settings.vault = Some(PathBuf::from(value)),
-                "recent vault" if !value.is_empty() => settings.vaults.push(PathBuf::from(value)),
-                "sidebar" => settings.sidebar = value != "hidden",
-                "autosave" => settings.autosave = value != "off",
-                "sidebar width" => {
-                    if let Ok(width) = value.parse::<f32>()
-                        && SIDEBAR_WIDTHS.contains(&width)
-                    {
-                        settings.sidebar_width = width;
-                    }
-                }
-                "recent" if !value.is_empty() && settings.recent.len() < RECENT => {
-                    settings.recent.push(PathBuf::from(value));
-                }
-                _ => {}
-            }
+    /// Values out of range back to their defaults; System's pick by day a
+    /// light theme, by night a dark one; at most ten recent files.
+    fn checked(mut self) -> Self {
+        let default = Self::default();
+        if !(0.5..=3.0).contains(&self.zoom) {
+            self.zoom = default.zoom;
         }
-        settings
-    }
-
-    pub fn render(&self) -> String {
-        let mut text = String::from(
-            "# livemark's settings: one `key = value` a line; unknown lines are ignored.\n",
-        );
-        text += &format!("zoom = {}\n", self.zoom);
-        text += &format!("scale = {}\n", self.scale);
-        text += &format!("theme = {}\n", self.theme.name().to_lowercase());
-        text += &format!("theme by day = {}\n", self.light.name().to_lowercase());
-        text += &format!("theme by night = {}\n", self.dark.name().to_lowercase());
-        text += &format!("split = {}\n", self.split);
-        if let Some((width, height)) = self.window {
-            text += &format!("window = {}x{}\n", width.round(), height.round());
+        if !(0.5..=2.0).contains(&self.scale) {
+            self.scale = default.scale;
         }
-        if let Some(vault) = &self.vault {
-            text += &format!("vault = {}\n", vault.display());
+        if !(0.2..=0.8).contains(&self.split) {
+            self.split = default.split;
         }
-        for vault in &self.vaults {
-            text += &format!("recent vault = {}\n", vault.display());
+        if !SIDEBAR_WIDTHS.contains(&self.sidebar_width) {
+            self.sidebar_width = default.sidebar_width;
         }
-        if !self.sidebar {
-            text += "sidebar = hidden\n";
+        if self.light.is_dark() {
+            self.light = default.light;
         }
-        text += &format!("sidebar width = {}\n", self.sidebar_width.round());
-        if !self.autosave {
-            text += "autosave = off\n";
+        if !self.dark.is_dark() {
+            self.dark = default.dark;
         }
-        for path in &self.recent {
-            text += &format!("recent = {}\n", path.display());
-        }
-        text
+        self.window = self.window.filter(|&(w, h)| w >= 200.0 && h >= 150.0);
+        self.recent.truncate(RECENT);
+        self
     }
 
     /// `file` opened or saved: first among the recent files.
@@ -274,17 +207,21 @@ impl Settings {
 mod tests {
     use super::{Settings, Theme};
 
+    fn read(text: &str) -> Settings {
+        toml::from_str::<Settings>(text).unwrap().checked()
+    }
+
     #[test]
     fn settings_round_trip_and_survive_hand_edits() {
         let mut settings = Settings {
-            zoom: 1.3,
-            scale: 1.2,
+            zoom: 1.25,
+            scale: 1.5,
             theme: Theme::KanagawaWave,
             light: Theme::KanagawaLotus,
             dark: Theme::CatppuccinMocha,
             window: Some((1200.0, 800.0)),
             recent: Vec::new(),
-            split: 0.35,
+            split: 0.375,
             vault: Some("/notes".into()),
             vaults: vec!["/notes".into(), "/work".into()],
             sidebar: false,
@@ -294,33 +231,47 @@ mod tests {
         settings.opened(std::path::Path::new("/notes/a.md"));
         settings.opened(std::path::Path::new("/notes/b.md"));
         settings.opened(std::path::Path::new("/notes/a.md"));
-        assert_eq!(Settings::parse(&settings.render()), settings);
+        let text = toml::to_string(&settings).unwrap();
+        assert!(text.contains("theme = \"kanagawa-wave\""), "{text}");
+        assert_eq!(read(&text), settings);
         assert_eq!(
             settings.recent[0].to_str(),
             Some("/notes/a.md"),
             "most recent first, once"
         );
-        // Broken, unknown and out-of-range lines fall back to the defaults.
-        let broken = Settings::parse("zoom = huge\ntheme = purple\nwindow = 10x\ncolor = red\n=\n");
-        assert_eq!(broken, Settings::default());
-        assert_eq!(Settings::parse("zoom = 9\n").zoom, 1.0);
-        assert_eq!(Settings::parse("split = 0.9\n").split, 0.5);
-        // Themes by name, any case; a dark one is not System's by day.
+        // Missing keys and values out of range take the defaults.
+        assert_eq!(read(""), Settings::default());
         assert_eq!(
-            Settings::parse("theme = Gruvbox-Dark\n").theme,
-            Theme::GruvboxDark
+            read("zoom = 9\nsplit = 0.9\nwindow = [10, 10]\n"),
+            Settings::default()
         );
-        assert_eq!(Settings::parse("theme = light\n").theme, Theme::Light);
-        assert_eq!(Settings::parse("theme by day = dark\n").light, Theme::Light);
+        assert_eq!(read("zoom = 2\n").zoom, 2.0, "a whole number");
+        // A dark theme is not System's by day.
+        assert_eq!(read("theme-by-day = \"dark\"\n").light, Theme::Light);
         // At most ten recent files.
         let mut many = Settings::default();
         for i in 0..15 {
             many.opened(std::path::Path::new(&format!("/notes/{i}.md")));
         }
         assert_eq!(many.recent.len(), 10);
+    }
+
+    #[test]
+    fn a_file_that_does_not_read_is_set_aside_not_written_over() {
+        let dir = std::env::temp_dir().join(format!("livemark-broken-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("settings.toml");
+        assert_eq!(Settings::load(&file), Ok(Settings::default()), "missing");
+        std::fs::write(&file, "theme = \"purple\"\n").unwrap();
+        let error = Settings::load(&file).unwrap_err();
+        assert!(error.contains("settings.toml.broken"), "{error}");
+        assert!(!file.exists());
+        let aside = dir.join("settings.toml.broken");
         assert_eq!(
-            Settings::load(std::path::Path::new("/nonexistent/livemark")),
-            Settings::default()
+            std::fs::read_to_string(&aside).unwrap(),
+            "theme = \"purple\"\n"
         );
+        std::fs::remove_file(aside).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Settings are kept in `settings.toml`. The old `settings` file is not
+  read, so the theme, sizes, recent files and vaults start fresh once.
 - A calmer window: the sidebar runs to the top with the vault menu in
   File's place; the note's bar has the formatting buttons without boxes,
   the search, whether the note is saved, and the mode as three icons.

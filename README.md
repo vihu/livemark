@@ -121,8 +121,11 @@ colours; System follows the system between a light and a dark one you
 pick. It also sets the interface's size and the text's. The sizes, the
 window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click
-puts it back in the middle) and the ten most recent files are kept in `~/.config/livemark/settings` (macOS:
-`~/Library/Application Support/livemark/settings`), a `key = value` file.
+puts it back in the middle) and the ten most recent files are kept in
+`~/.config/livemark/settings.toml` (macOS:
+`~/Library/Application Support/livemark/settings.toml`). A key left out
+takes its default; a file that does not read is kept as
+`settings.toml.broken` and the app starts with the defaults.
 
 Keys in the editor (Cmd instead of Ctrl on macOS):
 

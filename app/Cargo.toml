@@ -14,11 +14,20 @@ name = "livemark"
 path = "src/main.rs"
 
 [dependencies]
-iced     = { workspace = true }
-jiff = "0.2"
-livemark = { path = ".." }
+# Where the settings file lives on each platform.
+dirs             = "7"
+iced             = { workspace = true }
+# Today's date in the system's time zone, for new notes.
+jiff             = "0.2"
+livemark         = { path = ".." }
+# `%20` and the like in link and picture paths (already in the tree).
 percent-encoding = "2"
 # Open and save dialogs (XDG portal on Linux).
-rfd      = "0.17"
-slug = "0.1"
-strsim = "0.11"
+rfd              = "0.17"
+# The settings file, read and written as TOML.
+serde            = { version = "1", features = ["derive"] }
+toml             = "1"
+# File names from titles in any script.
+slug             = "0.1"
+# Typo distances in title search and tag look-alikes.
+strsim           = "0.11"

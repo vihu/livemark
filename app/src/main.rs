@@ -66,10 +66,11 @@ pub fn main() -> iced::Result {
         .find(|a| !a.starts_with("--"))
         .map(PathBuf::from);
     let settings_file = Settings::path();
-    let settings = settings_file
-        .as_deref()
-        .map(Settings::load)
-        .unwrap_or_default();
+    let (settings, settings_error) = match settings_file.as_deref().map(Settings::load) {
+        Some(Ok(settings)) => (settings, None),
+        Some(Err(error)) => (Settings::default(), Some(error)),
+        None => (Settings::default(), None),
+    };
     // With a vault and no file asked for, the note last open in it.
     let path = path.or_else(|| {
         let vault = settings.vault.as_ref()?;
@@ -91,8 +92,11 @@ pub fn main() -> iced::Result {
         });
     iced::application(
         move || {
-            let app = App::open(path.clone(), theme.clone())
+            let mut app = App::open(path.clone(), theme.clone())
                 .with_settings(settings.clone(), settings_file.clone());
+            if let Some(error) = &settings_error {
+                app.error = Some(error.clone());
+            }
             // Whether the system is light or dark, for System's picks.
             let mode = iced::system::theme()
                 .map(|mode| Message::Appearance(appearance::AppearanceMessage::System(mode)));

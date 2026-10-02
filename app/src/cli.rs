@@ -59,7 +59,7 @@ pub fn run(args: &[String]) -> Option<i32> {
 /// The vault the app last opened, from its settings.
 fn saved_vault() -> Option<PathBuf> {
     Settings::path()
-        .map(|file| Settings::load(&file))
+        .and_then(|file| Settings::load(&file).ok())
         .and_then(|s| s.vault)
 }
 
