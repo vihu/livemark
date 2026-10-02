@@ -73,8 +73,18 @@ fn enter_continues_lists_and_quotes() {
 fn enter_on_an_empty_item_takes_away_one_level() {
     assert_eq!(
         enter("- a\n- |").as_deref(),
-        Some("- a\n|"),
-        "out of the list"
+        Some("- a\n\n|"),
+        "out of the list, a blank line between"
+    );
+    assert_eq!(
+        enter("> - a\n> - |").as_deref(),
+        Some("> - a\n>\n> |"),
+        "in a quote too"
+    );
+    assert_eq!(
+        enter("- a\n\n- |").as_deref(),
+        Some("- a\n\n|"),
+        "already apart"
     );
     // An empty item cannot interrupt a paragraph (CommonMark 5.2), so the
     // nested one needs a sibling before it to be an item at all.

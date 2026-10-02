@@ -175,3 +175,17 @@ fn word_motions_keep_a_combining_mark_with_its_letter() {
     delete(&mut doc, Motion::WordLeft, std::time::Duration::ZERO);
     assert_eq!(doc.text(), "", "the whole word");
 }
+
+#[test]
+fn enter_at_a_headings_text_start_opens_a_line_above() {
+    for caret in [9, 8] {
+        let mut doc = doc_at("intro\n## Data\nbody", caret);
+        enter(&mut doc, Duration::ZERO);
+        assert_eq!(doc.text(), "intro\n\n## Data\nbody");
+        assert_eq!(doc.selection().head, 10, "at the heading's text");
+    }
+    // Elsewhere in the heading, a plain line break.
+    let mut doc = doc_at("## Data", 5);
+    enter(&mut doc, Duration::ZERO);
+    assert_eq!(doc.text(), "## Da\nta");
+}

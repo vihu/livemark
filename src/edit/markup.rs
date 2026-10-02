@@ -103,13 +103,29 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
         let parent_here = next
             .as_ref()
             .is_some_and(|n| n.item.is_some() && inner_starts_here(&blocks, n, line_start));
+        let last = blocks.lists[list].items.last() == Some(&item);
+        let glued = last
+            && line_start > 0
+            && !line_at(doc, line_start - 1)
+                .1
+                .trim_start_matches([' ', '\t', '>'])
+                .trim()
+                .is_empty();
         let (del_to, insert) = match &next {
             Some(_) if parent_here => (offset(line_start, line, inner.from), String::new()),
             Some(next) if next.item.is_some() => (
                 offset(line_start, line, next.from),
                 next.marker(text, &blocks, 1),
             ),
+            // Out of the list: a line glued under its last item would take
+            // what is typed next as part of that item (a lazy line), so a
+            // blank line comes first (REFERENCE-001 section 7).
+            Some(next) if glued => {
+                let prefix = &line[..offset(0, line, next.to)];
+                (line_start, format!("{}{ending}{prefix}", prefix.trim_end()))
+            }
             Some(next) => (offset(line_start, line, next.to), String::new()),
+            None if glued => (line_start, ending.to_owned()),
             None => (line_start, String::new()),
         };
         let del_to = del_to.min(pos);

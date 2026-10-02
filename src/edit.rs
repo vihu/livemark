@@ -217,10 +217,43 @@ pub fn type_text(doc: &mut Doc, text: &str, now: Duration) {
 /// ([`markup::continue_markup`]); elsewhere the document's line ending
 /// (REFERENCE-001 sections 7, 13).
 pub fn enter(doc: &mut Doc, now: Duration) {
-    if !markup::continue_markup(doc, now) {
+    if !line_above_heading(doc, now) && !markup::continue_markup(doc, now) {
         let ending = line_ending(doc.text());
         replace_selection(doc, ending, Kind::Other, now);
     }
+}
+
+/// Enter at the start of a heading's text, right after its hidden `#`
+/// run (where a click on its first letter lands), or inside that run: a
+/// line above, the heading kept whole, rather than an empty heading and a
+/// paragraph (REFERENCE-001 section 3). Returns whether it applied.
+fn line_above_heading(doc: &mut Doc, now: Duration) -> bool {
+    let selection = doc.selection();
+    if !selection.range().is_empty() {
+        return false;
+    }
+    let pos = selection.head;
+    let range = doc.line_range(doc.line_at(pos));
+    let line = &doc.text()[range.clone()];
+    let indent = line.bytes().take(4).take_while(|&b| b == b' ').count();
+    let hashes = line[indent..].bytes().take_while(|&b| b == b'#').count();
+    let rest = &line[indent + hashes..];
+    let space = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+    let prefix = indent + hashes + space;
+    let heading = indent < 4 && (1..=6).contains(&hashes) && space > 0;
+    let col = pos - range.start;
+    if !heading || col == 0 || col > prefix || prefix == line.len() {
+        return false;
+    }
+    let ending = line_ending(doc.text()).to_owned();
+    let caret = range.start + ending.len() + prefix;
+    doc.apply(
+        vec![Change::insert(range.start, ending)],
+        Selection::caret(caret),
+        Kind::Other,
+        now,
+    );
+    true
 }
 
 /// Backspace: one level of list or quote markup right before the caret

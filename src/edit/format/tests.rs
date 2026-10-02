@@ -131,3 +131,24 @@ fn in_a_table_cell_the_format_toggles_off_too() {
         assert_eq!(doc.text(), after);
     }
 }
+
+#[test]
+fn a_selection_is_wrapped_line_by_line_without_markup_or_spaces() {
+    // A triple-clicked list line: the item stays, the stars hug its text.
+    assert_eq!(
+        apply("[- Book the room\n]next", Format::Bold),
+        "[- **Book the room**\n]next"
+    );
+    // A drag ending in a space.
+    assert_eq!(
+        apply("We meet [Thursday. ]We", Format::Bold),
+        "We meet **[Thursday.** ]We"
+    );
+    // Two items, a heading in a quote.
+    assert_eq!(apply("[- a\n- b]", Format::Italic), "[- *a*\n- *b]*");
+    assert_eq!(apply("[> # Title]", Format::Bold), "[> # **Title]**");
+    assert_eq!(
+        apply("[1. `a`\n2. b]", Format::Code),
+        "[1. ```a```\n2. ``b]``"
+    );
+}

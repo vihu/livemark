@@ -75,18 +75,24 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         return;
     }
     let text = doc.text();
-    let target = if range.is_empty() {
-        strictly_in_word(doc, range.start).unwrap_or(range.clone())
+    // A selection is wrapped line by line, each without its spaces at
+    // either end and its block markup (`- `, `> `, `# `): `**- a\n**` would
+    // break the item and draw the stars.
+    let segments = if range.is_empty() {
+        vec![strictly_in_word(doc, range.start).unwrap_or(range.clone())]
     } else {
-        range.clone()
+        Some(content_lines(text, range.clone()))
+            .filter(|lines| !lines.is_empty())
+            .unwrap_or_else(|| vec![range.clone()])
     };
     let marker = match format {
         Format::Bold => "**".to_owned(),
         Format::Italic => "*".to_owned(),
         // A code span's fence is longer than any backtick run inside it.
         Format::Code => {
-            let longest = text[target.clone()]
-                .split(|c| c != '`')
+            let longest = segments
+                .iter()
+                .flat_map(|s| text[s.clone()].split(|c| c != '`'))
                 .map(str::len)
                 .max()
                 .unwrap_or(0);
@@ -94,32 +100,101 @@ pub fn toggle(doc: &mut Doc, styled: &Styled, format: Format, now: Duration) {
         }
     };
     let width = marker.len();
+    // Past every opening marker at or before it and every closing one
+    // before it: a selection keeps to the text between the markers.
     let moved = |at: usize| {
-        if at < target.start || (at == target.start && !range.is_empty()) {
-            at + if at == target.start { width } else { 0 }
-        } else if at <= target.end {
-            at + width
-        } else {
-            at + 2 * width
-        }
+        let opens = segments.iter().filter(|s| s.start <= at).count();
+        let closes = segments.iter().filter(|s| s.end < at).count();
+        at + width * (opens + closes)
     };
     let selection = if range.is_empty() {
-        Selection::caret(moved(range.start))
+        Selection::caret(range.start + width)
     } else {
         Selection {
             anchor: moved(selection.anchor),
             head: moved(selection.head),
         }
     };
-    doc.apply(
-        vec![
-            Change::insert(target.start, marker.clone()),
-            Change::insert(target.end, marker),
-        ],
-        selection,
-        Kind::Other,
-        now,
-    );
+    let changes = segments
+        .iter()
+        .flat_map(|s| {
+            [
+                Change::insert(s.start, marker.clone()),
+                Change::insert(s.end, marker.clone()),
+            ]
+        })
+        .collect();
+    doc.apply(changes, selection, Kind::Other, now);
+}
+
+/// The lines `range` covers, each cut to `range`, without its block
+/// markup and without spaces at either end; empty ones left out.
+fn content_lines(text: &str, range: std::ops::Range<usize>) -> Vec<std::ops::Range<usize>> {
+    let mut lines = Vec::new();
+    let mut start = text[..range.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    while start <= range.end {
+        let rest = &text[start..];
+        let end = start + rest.find(['\n', '\r']).unwrap_or(rest.len());
+        let from = range.start.max(start + block_prefix(&text[start..end]));
+        let to = range.end.min(end);
+        if from < to {
+            let cut = &text[from..to];
+            let lead = cut.len() - cut.trim_start().len();
+            let content = from + lead..from + cut.trim_end().len();
+            if !content.is_empty() {
+                lines.push(content);
+            }
+        }
+        let ending = if text[end..].starts_with("\r\n") {
+            2
+        } else {
+            1
+        };
+        if end >= text.len() {
+            break;
+        }
+        start = end + ending;
+    }
+    lines
+}
+
+/// How long the block markup at the start of `line` is: indentation and
+/// quote markers, then a heading's hashes or a list marker (with a task
+/// box) and the spaces after it.
+fn block_prefix(line: &str) -> usize {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    while matches!(bytes.get(at), Some(b' ' | b'\t' | b'>')) {
+        at += 1;
+    }
+    let rest = &line[at..];
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    let hashes = rest.bytes().take_while(|&b| b == b'#').count();
+    let marker = if (1..=6).contains(&hashes) {
+        hashes
+    } else if rest.starts_with(['-', '+', '*']) {
+        1
+    } else if (1..=9).contains(&digits) && rest[digits..].starts_with(['.', ')']) {
+        digits + 1
+    } else {
+        return at;
+    };
+    let after = &rest[marker..];
+    if !(after.is_empty() || after.starts_with([' ', '\t'])) {
+        return at;
+    }
+    let mut at = at + marker + after.len() - after.trim_start_matches([' ', '\t']).len();
+    let task = &line[at..];
+    if hashes == 0
+        && task.len() >= 3
+        && task.starts_with('[')
+        && matches!(task.as_bytes()[1], b' ' | b'x' | b'X')
+        && task.as_bytes()[2] == b']'
+    {
+        at += 3;
+        at += line[at..].len() - line[at..].trim_start_matches([' ', '\t']).len();
+    }
+    at
 }
 
 /// The word the caret at `at` is strictly inside: word characters on both
