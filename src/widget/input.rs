@@ -17,6 +17,13 @@ impl Editor {
         let mut side = Affinity::After;
         let mut vertical = false;
         let mut task = Task::none();
+        // Any input but scrolling places the caret (REFERENCE-001
+        // section 2); a press only on release, so the text clicked does
+        // not move under the pointer.
+        self.placed |= !matches!(
+            input,
+            Input::Scroll(_) | Input::ScrollTo(_) | Input::Press { .. } | Input::Drag(_)
+        );
         match input {
             Input::Press { at, shift, clicks } => side = self.press(at, shift, clicks),
             Input::Drag(at) => side = self.drag(at),

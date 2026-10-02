@@ -78,3 +78,34 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_caret() {
     assert_eq!(editor.text(), "- [ ] task\nnext");
     assert!(editor.selection().head < end);
 }
+
+#[test]
+fn nothing_is_revealed_before_the_caret_is_first_placed() {
+    let mut editor = Editor::new("# Title\n\n- item\n".into());
+    let hidden = |editor: &Editor| editor.with_lines(|_, source| source.hidden.to_vec());
+    let concealed = |editor: &Editor| editor.with_lines(|_, source| source.concealed.len());
+    assert_eq!(
+        hidden(&editor),
+        std::slice::from_ref(&(0..2)),
+        "the heading's `# ` with the caret at 0"
+    );
+    assert_eq!(concealed(&editor), 1);
+    // The first click lands where the clean heading was drawn.
+    let at = iced::Point::new(40.0, 10.0);
+    let (offset, _) = editor.with_lines(|lines, source| lines.hit(source, at.x, at.y));
+    assert!(offset > 2, "on the heading's text");
+    let press = super::Input::Press {
+        at,
+        shift: false,
+        clicks: 1,
+    };
+    let _ = editor.update(super::Message(press));
+    assert_eq!(
+        hidden(&editor),
+        std::slice::from_ref(&(0..2)),
+        "still clean while pressed"
+    );
+    let _ = editor.update(super::Message(super::Input::Release));
+    assert_eq!(editor.selection().head, offset);
+    assert!(hidden(&editor).is_empty(), "placed at the heading");
+}

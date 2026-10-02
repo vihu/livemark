@@ -62,6 +62,9 @@ pub struct Editor {
     /// The find bar, when it is open.
     find: Option<find::Find>,
     mode: Mode,
+    /// Whether the caret has been placed since the document was loaded:
+    /// until then nothing is revealed (REFERENCE-001 section 2).
+    placed: bool,
     lines: RefCell<Lines>,
     /// The last `reveal` worked out, by document version and selection:
     /// several calls per frame ask for it (backlog 12).
@@ -181,6 +184,7 @@ impl Editor {
             linewise: None,
             find: None,
             mode: Mode::Live,
+            placed: false,
             lines: RefCell::new(Lines::new(Colors {
                 text: Color::BLACK,
                 marker: Color::BLACK,
@@ -223,6 +227,7 @@ impl Editor {
             head: fit(head),
         };
         self.doc.set_selection(selection);
+        self.placed = true;
         self.goal_x = None;
         self.side = Affinity::After;
         self.with_lines(|lines, source| lines.reveal(source, selection.head, Affinity::After));
@@ -282,11 +287,15 @@ impl Editor {
         if self.mode == Mode::Source {
             return (Arc::new([]), Arc::new([]));
         }
-        let selection = self
-            .press
-            .as_ref()
-            .map_or(self.doc.selection(), |press| press.frozen)
-            .range();
+        let selection = if self.placed {
+            self.press
+                .as_ref()
+                .map_or(self.doc.selection(), |press| press.frozen)
+                .range()
+        } else {
+            // Touches nothing.
+            usize::MAX..usize::MAX
+        };
         let version = self.doc.version();
         let mut cache = self.reveal.borrow_mut();
         match &*cache {
