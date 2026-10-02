@@ -64,6 +64,7 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_caret() {
             at,
             shift: false,
             clicks: 1,
+            command: false,
         };
         let _ = editor.update(Message(press));
         let _ = editor.update(Message(Input::Release));
@@ -98,6 +99,7 @@ fn nothing_is_revealed_before_the_caret_is_first_placed() {
         at,
         shift: false,
         clicks: 1,
+        command: false,
     };
     let _ = editor.update(super::Message(press));
     assert_eq!(
@@ -128,8 +130,63 @@ fn a_click_on_a_grid_cell_puts_the_caret_in_its_source() {
         at,
         shift: false,
         clicks: 1,
+        command: false,
     }));
     let _ = editor.update(Message(Input::Release));
     let head = editor.selection().head;
     assert_eq!(&text[head..head + 2], "dd", "after the hidden `**`");
+}
+
+#[test]
+fn ctrl_click_and_alt_enter_hand_a_link_to_the_host() {
+    use super::{Input, Key, Message};
+    let text = "see [the docs](https://x.y/d) and www.a.b now\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    let x_of = |editor: &Editor, offset: usize| {
+        editor.with_lines(|lines, source| lines.caret_in_line(source, offset, Affinity::After).0)
+    };
+    let press = |at: iced::Point, command: bool| {
+        Message(Input::Press {
+            at,
+            shift: false,
+            clicks: 1,
+            command,
+        })
+    };
+    // Ctrl+click on the link text (its markers hidden, the caret elsewhere).
+    let at = iced::Point::new(x_of(&editor, 8) + 1.0, 10.0);
+    let links = |task| -> Vec<String> {
+        outputs(task)
+            .iter()
+            .filter_map(|m| m.link().map(str::to_owned))
+            .collect()
+    };
+    let task = editor.update(press(at, true));
+    assert_eq!(links(task), ["https://x.y/d"]);
+    assert_eq!(editor.selection().head, text.len(), "the caret stays");
+    assert_eq!(editor.styled.link_at(8), Some("https://x.y/d"));
+    assert_eq!(editor.styled.link_at(36), Some("http://www.a.b"));
+    assert_eq!(editor.styled.link_at(1), None);
+    // A plain click places the caret, as before.
+    let _ = editor.update(press(at, false));
+    let _ = editor.update(Message(Input::Release));
+    assert!(editor.selection().head < 15);
+    let task = editor.update(Message(Input::Key(Key::Follow)));
+    assert_eq!(links(task), ["https://x.y/d"], "Alt+Enter at the caret");
+}
+
+/// The messages a task from `Editor::update` resolves to.
+fn outputs(task: iced::Task<super::Message>) -> Vec<super::Message> {
+    use iced::futures::StreamExt;
+    let Some(stream) = iced_runtime::task::into_stream(task) else {
+        return Vec::new();
+    };
+    iced::futures::executor::block_on(stream.collect::<Vec<_>>())
+        .into_iter()
+        .filter_map(|action| match action {
+            iced_runtime::Action::Output(message) => Some(message),
+            _ => None,
+        })
+        .collect()
 }

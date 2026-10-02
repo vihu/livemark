@@ -201,7 +201,16 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                         mouse::click::Kind::Double => 2,
                         mouse::click::Kind::Triple => 3,
                     };
-                    publish(shell, Input::Press { at, shift, clicks });
+                    let command = state.modifiers.command();
+                    publish(
+                        shell,
+                        Input::Press {
+                            at,
+                            shift,
+                            clicks,
+                            command,
+                        },
+                    );
                     shell.capture_event();
                 } else if state.focus.take().is_some() {
                     shell.request_redraw();
@@ -315,14 +324,23 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 
     fn mouse_interaction(
         &self,
-        _tree: &Tree,
+        tree: &Tree,
         layout: Layout,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &iced::Renderer,
     ) -> mouse::Interaction {
+        let state = tree.state.downcast_ref::<State>();
+        let text = layout.bounds().shrink(PADDING);
+        let on_link = state.modifiers.command()
+            && cursor.position_over(text).is_some_and(|at| {
+                let at = at - Vector::new(text.x, text.y);
+                self.editor.link_under(at).is_some()
+            });
         if self.thumb_at(layout.bounds(), cursor).is_some() {
             mouse::Interaction::default()
+        } else if on_link {
+            mouse::Interaction::Pointer
         } else if cursor.is_over(layout.bounds()) {
             mouse::Interaction::Text
         } else {

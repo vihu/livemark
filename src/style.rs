@@ -164,6 +164,8 @@ pub struct Styled {
     /// Sorted by start.
     marks: Vec<Mark>,
     tables: Vec<Table>,
+    /// Links and where they go, sorted.
+    links: Vec<(Range<usize>, String)>,
 }
 
 impl Styled {
@@ -216,6 +218,17 @@ impl Styled {
             .last()
             .copied()
             .filter(|&h| h >= line.start)
+    }
+
+    /// Where the link at `offset` goes (inclusive at both ends, like a
+    /// touch): the destination as written, `http://` before a `www.`
+    /// link, `mailto:` before an email address.
+    pub fn link_at(&self, offset: usize) -> Option<&str> {
+        let i = self.links.partition_point(|(r, _)| r.end < offset);
+        self.links
+            .get(i)
+            .filter(|(r, _)| r.start <= offset)
+            .map(|(_, dest)| dest.as_str())
     }
 
     /// The tables, in order; [`MarkKind::TableRow`] indexes them.

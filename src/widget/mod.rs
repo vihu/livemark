@@ -104,6 +104,18 @@ enum Unit {
 #[derive(Debug, Clone)]
 pub struct Message(Input);
 
+impl Message {
+    /// The destination of a link the user asked to follow (Ctrl/Cmd+click
+    /// on it, or Alt+Enter with the caret in it), for the host to open;
+    /// the editor does nothing with it.
+    pub fn link(&self) -> Option<&str> {
+        match &self.0 {
+            Input::Follow(dest) => Some(dest),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Input {
     /// A press at a point of the text area: the click count (1 to 3), and
@@ -112,7 +124,11 @@ enum Input {
         at: Point,
         shift: bool,
         clicks: u8,
+        /// Ctrl, or Cmd on macOS: a click on a link follows it.
+        command: bool,
     },
+    /// A link to follow: the host's to open (REFERENCE-001 section 5).
+    Follow(String),
     Drag(Point),
     Release,
     /// Pixels to scroll, positive further down.
@@ -149,6 +165,8 @@ enum Key {
     DeleteLines,
     /// Ctrl/Cmd+Enter: a blank line below.
     BlankLine,
+    /// Alt+Enter: follow the link at the caret.
+    Follow,
     Delete(Motion),
     Move(Motion, bool),
     Vertical(Vertical, bool),

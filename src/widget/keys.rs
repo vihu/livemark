@@ -29,6 +29,12 @@ pub(super) fn shortcut(
             })
         }
         keyboard::Key::Named(Named::Enter) if command && !modifiers.shift() => Some(Key::BlankLine),
+        // Alt+Enter follows the link at the caret (REFERENCE-001 section 5).
+        keyboard::Key::Named(Named::Enter)
+            if modifiers.alt() && !modifiers.command() && !modifiers.shift() =>
+        {
+            Some(Key::Follow)
+        }
         _ if command && modifiers.shift() => match letter? {
             // The user's pick.
             'e' => Some(Key::ToggleMode),

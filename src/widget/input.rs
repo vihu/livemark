@@ -25,7 +25,22 @@ impl Editor {
             Input::Scroll(_) | Input::ScrollTo(_) | Input::Press { .. } | Input::Drag(_)
         );
         match input {
-            Input::Press { at, shift, clicks } => side = self.press(at, shift, clicks),
+            Input::Press {
+                at,
+                command: true,
+                clicks: 1,
+                ..
+            } if self.link_under(at).is_some() => {
+                // Ctrl/Cmd+click on a link follows it and moves nothing
+                // (REFERENCE-001 section 5).
+                let dest = self.link_under(at).unwrap_or_default();
+                task = Task::done(Message(Input::Follow(dest)));
+                side = self.side;
+            }
+            Input::Press {
+                at, shift, clicks, ..
+            } => side = self.press(at, shift, clicks),
+            Input::Follow(_) => side = self.side,
             Input::Drag(at) => side = self.drag(at),
             Input::Release => {
                 self.press = None;
@@ -63,6 +78,11 @@ impl Editor {
                 Key::CopyLines(down) => edit::lines::copy_lines(&mut self.doc, down, now),
                 Key::DeleteLines => edit::lines::delete_lines(&mut self.doc, now),
                 Key::BlankLine => edit::lines::blank_line(&mut self.doc, now),
+                Key::Follow => {
+                    if let Some(dest) = self.styled.link_at(self.doc.selection().head) {
+                        task = Task::done(Message(Input::Follow(dest.to_owned())));
+                    }
+                }
                 Key::ToggleMode => self.set_mode(match self.mode {
                     Mode::Live => Mode::Source,
                     Mode::Source => Mode::Live,
@@ -115,6 +135,12 @@ impl Editor {
         self.with_lines(|lines, source| lines.reveal(source, head, side));
         self.refresh_matches();
         task
+    }
+
+    /// Where the link under `at` goes, if one is there.
+    pub(super) fn link_under(&self, at: Point) -> Option<String> {
+        let (offset, _) = self.hit(at);
+        self.styled.link_at(offset).map(str::to_owned)
     }
 
     /// The source offset under `at`: in a table drawn as a grid, the

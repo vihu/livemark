@@ -7,7 +7,8 @@
 //!
 //! Light or dark follows the system unless `--dark` or `--light` says.
 //! Ctrl+O opens, Ctrl+S saves (asking where for a new file), Ctrl+Shift+S
-//! saves as. The title shows `*` while there are unsaved changes; closing
+//! saves as. Ctrl+click on a web or mail link (or Alt+Enter in it) opens it
+//! in the system's browser or mail program. The title shows `*` while there are unsaved changes; closing
 //! the window or opening another file then asks first.
 mod file;
 
@@ -122,7 +123,12 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Editor(message) => return self.editor.update(message).map(Message::Editor),
+            Message::Editor(message) => {
+                if let Some(link) = message.link() {
+                    self.error = open_link(link).err();
+                }
+                return self.editor.update(message).map(Message::Editor);
+            }
             Message::Open if self.unsaved() => self.pending = Some(After::Open),
             Message::Open => return Task::perform(pick_file(), Message::Opened),
             Message::Opened(Some(path)) => match file::load(&path) {
@@ -227,6 +233,29 @@ impl App {
         let close = window::close_requests().map(|_| Message::CloseRequested);
         Subscription::batch([keys, close])
     }
+}
+
+/// Opens a web or mail link with the system's opener. Other links (local
+/// files, other schemes) are refused: a note must not start programs.
+fn open_link(link: &str) -> Result<(), String> {
+    let web = ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|scheme| link.starts_with(scheme));
+    if !web {
+        return Err(format!("Not opened (web and mail links only): {link}"));
+    }
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let mut child = std::process::Command::new(opener)
+        .arg(link)
+        .spawn()
+        .map_err(|e| format!("{opener}: {e}"))?;
+    // Reaped in the background, so no zombie is left behind.
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 
 async fn pick_file() -> Option<PathBuf> {

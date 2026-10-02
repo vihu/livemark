@@ -29,6 +29,7 @@ pub(super) fn walk(text: &str) -> Styled {
         item: None,
         marks: Vec::new(),
         tables: Vec::new(),
+        links: Vec::new(),
     };
     for (event, range) in parse::events(text) {
         walk.inside_span(&range);
@@ -75,6 +76,7 @@ struct Walk<'a> {
     /// Finished tables, and the last one is being read while `cells` is
     /// set.
     tables: Vec<Table>,
+    links: Vec<(Range<usize>, String)>,
 }
 
 impl Walk<'_> {
@@ -99,8 +101,18 @@ impl Walk<'_> {
             Event::End(TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough) => {
                 self.open.pop();
             }
-            Event::Start(Tag::Link { link_type, .. }) => {
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            }) => {
                 self.content(&range);
+                let dest = if link_type == LinkType::Email && !dest_url.starts_with("mailto:") {
+                    format!("mailto:{dest_url}")
+                } else {
+                    dest_url.into_string()
+                };
+                self.links.push((range.clone(), dest));
                 self.span_start(range, link_type, false);
             }
             Event::Start(Tag::Image { link_type, .. }) => {
@@ -397,6 +409,7 @@ impl Walk<'_> {
             hangs: self.hangs,
             marks: self.marks,
             tables: self.tables,
+            links: self.links,
         }
     }
 }

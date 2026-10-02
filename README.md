@@ -39,9 +39,12 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | Ctrl+C, Ctrl+X | With nothing selected, copy or cut the whole line (pasted back as a line) |
 | Home, End | The start or end of the row, then of the line; Home skips list and quote markup |
 | Double, triple click | Selects a word, a line; dragging extends by words or lines |
+| Ctrl+click on a link, Alt+Enter in one | Opens it (web and mail links) |
+| Click on a checkbox | Checks or clears the task |
 
 Markers (`**`, `#`, `[`, `](url)`) stay hidden until the caret touches
-them. The scroll bar on the right drags, and a click on its track jumps.
+them; bullets show as dots, task boxes as checkboxes, rules as lines, code
+fences as a language label, and tables as grids until the caret enters. The scroll bar on the right drags, and a click on its track jumps.
 
 ## Embedding
 
@@ -57,6 +60,10 @@ fn main() -> iced::Result {
 }
 
 fn update(editor: &mut Editor, message: Message) -> Task<Message> {
+    // Ctrl/Cmd+click on a link, or Alt+Enter in it: the host opens it.
+    if let Some(link) = message.link() {
+        println!("open {link}");
+    }
     // The task writes the clipboard after a copy or cut.
     editor.update(message)
 }
