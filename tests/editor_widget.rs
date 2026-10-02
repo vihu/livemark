@@ -533,3 +533,41 @@ fn the_editor_keeps_focus_when_the_find_bar_opens() {
     let _ = frame(&mut editor, cache, at, &[typed]);
     assert_eq!(editor.text(), "one two!\n", "the editor still had focus");
 }
+
+#[test]
+fn ctrl_with_the_wheel_zooms_and_without_it_scrolls() {
+    let mut editor = Editor::new("line\n".repeat(200));
+    let wheel = |y: f32| {
+        Event::Mouse(mouse::Event::WheelScrolled {
+            delta: mouse::ScrollDelta::Lines { x: 0.0, y },
+        })
+    };
+    run(&mut editor, |ui| {
+        ui.point_at(Point::new(30.0, 30.0));
+        ui.simulate([
+            Event::Keyboard(keyboard::Event::ModifiersChanged(
+                keyboard::Modifiers::COMMAND,
+            )),
+            wheel(1.0),
+            wheel(1.0),
+        ]);
+    });
+    assert!((editor.zoom() - 1.2).abs() < 1e-6, "{}", editor.zoom());
+    run(&mut editor, |ui| {
+        ui.point_at(Point::new(30.0, 30.0));
+        ui.simulate([
+            Event::Keyboard(keyboard::Event::ModifiersChanged(
+                keyboard::Modifiers::COMMAND,
+            )),
+            wheel(-1.0),
+            Event::Keyboard(keyboard::Event::ModifiersChanged(
+                keyboard::Modifiers::empty(),
+            )),
+            wheel(-3.0),
+        ]);
+    });
+    assert!(
+        (editor.zoom() - 1.1).abs() < 1e-6,
+        "the plain wheel scrolls"
+    );
+}

@@ -253,6 +253,20 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 publish(shell, Input::Release);
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) if cursor.is_over(bounds) => {
+                // With Ctrl/Cmd, zoom: a tenth a notch, as the app's keys
+                // step; a touchpad's pixels zoom smoothly.
+                if state.modifiers.command() {
+                    let zoom = match delta {
+                        // Not `signum`: it is 1 for a sideways scroll's 0.
+                        mouse::ScrollDelta::Lines { y, .. } => {
+                            Input::ZoomSteps(f32::from(i8::from(*y > 0.0) - i8::from(*y < 0.0)))
+                        }
+                        mouse::ScrollDelta::Pixels { y, .. } => Input::ZoomBy(1.0 + y * 0.002),
+                    };
+                    publish(shell, zoom);
+                    shell.capture_event();
+                    return;
+                }
                 let dy = match delta {
                     mouse::ScrollDelta::Lines { y, .. } => {
                         -y * WHEEL_LINES * TEXT_SIZE * self.editor.zoom() * 1.5

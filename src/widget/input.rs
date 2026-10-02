@@ -28,6 +28,8 @@ impl Editor {
             input,
             Input::Scroll(_)
                 | Input::ScrollTo(_)
+                | Input::ZoomSteps(_)
+                | Input::ZoomBy(_)
                 | Input::Shift(_)
                 | Input::Press { .. }
                 | Input::Drag(_)
@@ -92,6 +94,14 @@ impl Editor {
             }
             Input::ScrollTo(t) => {
                 self.scroll_to(t);
+                return Task::none();
+            }
+            Input::ZoomSteps(steps) => {
+                self.set_zoom(((self.zoom() * 10.0).round() + steps) / 10.0);
+                return Task::none();
+            }
+            Input::ZoomBy(factor) => {
+                self.set_zoom(self.zoom() * factor);
                 return Task::none();
             }
             Input::Shift(held) => {

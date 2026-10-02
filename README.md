@@ -21,8 +21,8 @@ cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 
 Light or dark follows the system unless a flag says. Ctrl+N starts a new
 note, Ctrl+O opens, Ctrl+S saves (asking where for a new note),
-Ctrl+Shift+S saves as; Ctrl+= and Ctrl+- make the text bigger or smaller
-(50% to 300%), Ctrl+0 resets it. A `*` in the
+Ctrl+Shift+S saves as; Ctrl+= and Ctrl+- (or Ctrl with the mouse wheel)
+make the text bigger or smaller (50% to 300%), Ctrl+0 resets it. A `*` in the
 title marks unsaved changes; closing or opening another file then asks.
 When the window comes back into focus and the file changed on disk (git,
 another editor), it is loaded again; with unsaved changes the app asks

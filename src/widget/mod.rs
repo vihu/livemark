@@ -150,6 +150,11 @@ enum Input {
     /// The scroll bar's thumb dragged or the track pressed: how far down
     /// its travel, from 0 to 1.
     ScrollTo(f32),
+    /// Ctrl/Cmd with the wheel: notches up (positive) or down, a tenth of
+    /// the text size each, as the app's keys step.
+    ZoomSteps(f32),
+    /// Ctrl/Cmd with a touchpad: the text size times this, smoothly.
+    ZoomBy(f32),
     /// Shift went down or up: Enter in the find field steps back while it
     /// is held (the field submits whatever the modifiers).
     Shift(bool),
