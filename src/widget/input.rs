@@ -18,8 +18,8 @@ impl Editor {
         let mut vertical = false;
         let mut task = Task::none();
         // Inputs that move nothing keep the view where it is, even with the
-        // caret off screen: following a link, ticking a checkbox, letting
-        // go of the button, copying, selecting all.
+        // caret off screen: following a link, ticking a checkbox, copying,
+        // selecting all.
         let mut keep_view = false;
         // Any input but scrolling places the caret (REFERENCE-001
         // section 2); a press only on release, so the text clicked does
@@ -63,11 +63,18 @@ impl Editor {
                 side = self.side;
                 keep_view = true;
             }
-            Input::Drag(at) => side = self.drag(at),
-            Input::Release => {
-                self.press = None;
+            // The pointer moving after a tick or a link click, which start
+            // no press: nothing moves.
+            Input::Drag(_) if self.press.is_none() => {
                 side = self.side;
                 keep_view = true;
+            }
+            Input::Drag(at) => side = self.drag(at),
+            // The end of a press shows the markers it froze, which can move
+            // the caret: it is brought into view. Otherwise nothing moved.
+            Input::Release => {
+                keep_view = self.press.take().is_none();
+                side = self.side;
             }
             Input::Scroll(dy) => {
                 self.with_lines(|lines, source| lines.scroll_by(source, dy));

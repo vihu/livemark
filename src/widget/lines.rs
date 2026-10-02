@@ -118,15 +118,31 @@ impl Lines {
     pub fn shaped(&mut self, source: &Source, index: usize) -> Shaped {
         let range = source.doc.line_range(index);
         // A lazy line in a quote lines up with the quoted line's text (not
-        // in source mode, which shows the markdown as written).
+        // in source mode, which shows the markdown as written), its own
+        // indentation taken off.
         let lazy = source
             .styled
             .lazy_at(range.clone())
             .filter(|_| !self.source);
-        let lead = lazy.map_or(0.0, |anchor| {
-            let quoted = self.shaped(source, source.doc.line_at(anchor));
-            super::marks::start_x(&quoted, anchor)
-        });
+        let Some(anchor) = lazy else {
+            return self.shape_line(source, index, 0.0);
+        };
+        let quoted = self.shaped(source, source.doc.line_at(anchor));
+        let target = super::marks::start_x(&quoted, anchor);
+        let text = &source.doc.text()[range.clone()];
+        let indent = text.len() - text.trim_start_matches([' ', '\t']).len();
+        let own = if indent == 0 {
+            0.0
+        } else {
+            let plain = self.shape_line(source, index, 0.0);
+            super::marks::start_x(&plain, range.start + indent)
+        };
+        self.shape_line(source, index, (target - own).max(0.0))
+    }
+
+    /// Line `index` shaped with all its rows `lead` to the right.
+    fn shape_line(&mut self, source: &Source, index: usize, lead: f32) -> Shaped {
+        let range = source.doc.line_range(index);
         let line = Line::new(
             source.doc.text(),
             range.clone(),

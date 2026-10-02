@@ -162,14 +162,15 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     doc.apply(changes, selection, Kind::Other, now);
 }
 
-/// The length of up to `depth` quote markers (`>` with up to three spaces
-/// before and one after) at the start of `line`.
+/// The length of up to `depth` quote markers (`>` with the indentation
+/// before it, which can be a list item's, and one space after) at the start
+/// of `line`.
 fn quote_prefix(line: &str, depth: usize) -> usize {
     let bytes = line.as_bytes();
     let mut at = 0;
     for _ in 0..depth {
         let mut i = at;
-        while i < bytes.len() && i - at < 3 && bytes[i] == b' ' {
+        while matches!(bytes.get(i), Some(b' ' | b'\t')) {
             i += 1;
         }
         if bytes.get(i) != Some(&b'>') {

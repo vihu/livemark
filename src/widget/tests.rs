@@ -358,6 +358,8 @@ fn ticking_a_checkbox_far_from_the_caret_keeps_the_view() {
         other: false,
     };
     let _ = editor.update(Message(press));
+    // The hand moves a little before letting go.
+    let _ = editor.update(Message(Input::Drag(iced::Point::new(at.x + 1.0, at.y))));
     let _ = editor.update(Message(Input::Release));
     assert!(editor.text().ends_with("- [x] task\n"));
     assert_eq!(editor.selection().head, 0, "the caret stays");
@@ -408,4 +410,50 @@ fn a_grid_follows_links_only_on_cell_text_and_its_rule_maps_by_column() {
         cell.contains(&offset),
         "{offset} in the header's second cell {cell:?}"
     );
+}
+
+#[test]
+fn a_release_that_reveals_markers_keeps_the_caret_in_view() {
+    use super::{Input, Message};
+    let url = format!("https://example.com/{}", "a".repeat(120));
+    let text = format!("{}see [x]({url}) tail\nafter\n", "line\n".repeat(15));
+    let mut editor = Editor::new(text.clone());
+    editor.select(0, 0);
+    let height = editor.lines.borrow().height;
+    // Just after a link on line 15, the last line in view, its URL
+    // hidden: on release the URL shows before the caret and wraps.
+    let after = text.find(") tail").unwrap() + 1;
+    let at = editor.with_lines(|lines, source| {
+        let top = lines.top_of(source, 15).expect("on screen");
+        let (x, _, _) = lines.caret_in_line(source, after, Affinity::After);
+        iced::Point::new(x + 1.0, top + 5.0)
+    });
+    assert!(at.y + 24.0 <= height, "the line is in view");
+    let press = Input::Press {
+        at,
+        shift: false,
+        clicks: 1,
+        command: false,
+        other: false,
+    };
+    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(Input::Release));
+    assert_eq!(editor.selection().head, after, "touching the link");
+    let caret = editor.caret().expect("still on screen");
+    assert!(
+        caret.y + caret.height <= height + 0.5,
+        "{caret:?} in {height}"
+    );
+}
+
+#[test]
+fn an_indented_lazy_line_lines_up_too() {
+    let text = "- > quoted\n  lazy\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    editor.with_lines(|lines, source| {
+        let (quoted, _, _) = lines.caret_in_line(source, 4, Affinity::After);
+        let (lazy, _, _) = lines.caret_in_line(source, 13, Affinity::After);
+        assert!((lazy - quoted).abs() < 0.5, "{lazy} vs {quoted}");
+    });
 }

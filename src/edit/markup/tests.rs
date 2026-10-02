@@ -219,4 +219,13 @@ fn in_a_quote_items_move_after_the_quote_marker() {
         "> - a\n>   - b|\n>     more 😀\n> - c",
         "every line of the item"
     );
+    // A quote inside an indented list item.
+    assert_eq!(
+        tab("- a\n    > - x\n    > - y|", false),
+        "- a\n    > - x\n    >   - y|"
+    );
+    assert_eq!(
+        tab("- x\n  - a\n    > - b\n    >   - c|", true),
+        "- x\n  - a\n    > - b\n    > - c|"
+    );
 }
