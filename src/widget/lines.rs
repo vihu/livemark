@@ -60,6 +60,27 @@ fn blank_in_item(source: &Source, index: usize) -> Option<usize> {
     None
 }
 
+/// Where the text of the ATX heading at `line` starts when its `#` run
+/// shows (not hidden), for that run to hang left of it.
+fn revealed_heading(source: &Source, line: Range<usize>) -> Option<usize> {
+    let text = &source.doc.text()[line.clone()];
+    let indent = text.bytes().take(4).take_while(|&b| b == b' ').count();
+    let hashes = text[indent..].bytes().take_while(|&b| b == b'#').count();
+    let rest = &text[indent + hashes..];
+    let space = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+    if indent > 3
+        || !(1..=6).contains(&hashes)
+        || space == 0
+        || super::shape::heading_level(source.styled, line.clone()) == 0
+    {
+        return None;
+    }
+    let open = line.start + indent;
+    let i = source.hidden.partition_point(|h| h.end <= open);
+    let hidden = source.hidden.get(i).is_some_and(|h| h.start <= open);
+    (!hidden).then_some(open + hashes + space)
+}
+
 /// A source line shaped for drawing.
 pub struct Shaped {
     pub buffer: Arc<cosmic_text::Buffer>,
@@ -67,9 +88,13 @@ pub struct Shaped {
     /// (equal lines elsewhere share the buffer, not the offsets).
     pub line: Line,
     pub height: f32,
-    /// How far rows after the first are drawn right of it: the width of a
-    /// list marker or quote prefix (REFERENCE-001 sections 6, 7).
+    /// How far rows after the first are drawn right: the width of a list
+    /// marker or quote prefix (REFERENCE-001 sections 6, 7), when
+    /// `hanging`.
     pub hang: f32,
+    /// Whether rows after the first are drawn at `hang` rather than at
+    /// `lead`.
+    pub hanging: bool,
     /// How far all its rows are drawn right: a lazy line in a quote lines
     /// up with the quoted text before it (section 6).
     pub lead: f32,
@@ -80,7 +105,7 @@ pub struct Shaped {
 impl Shaped {
     /// How far the row starting `line_top` down is drawn to the right.
     pub fn shift(&self, line_top: f32) -> f32 {
-        if line_top > 0.0 && self.hang > 0.0 {
+        if line_top > 0.0 && self.hanging {
             self.hang
         } else {
             self.lead
@@ -136,6 +161,9 @@ pub struct Lines {
     pub source: bool,
     /// Every text size times this (`Editor::set_zoom`).
     pub zoom: f32,
+    /// How far left of the text a revealed heading's `#` run may hang:
+    /// the gutter and the padding.
+    pub room: f32,
     highlights: Highlights,
     cache: HashMap<u64, Cached>,
     /// Tables as grids, by table text and styling, width and colors, and
@@ -158,6 +186,7 @@ impl Lines {
             pending_reveal: None,
             source: false,
             zoom: 1.0,
+            room: 0.0,
             highlights: Highlights::default(),
             grids: HashMap::new(),
             grids_used: Vec::new(),
@@ -184,8 +213,17 @@ impl Lines {
                     .map(|at| (at, true))
             })
             .filter(|_| !self.source);
+        // A heading whose `#` run shows: the run hangs left of the text,
+        // into the gutter, so the heading text stays where it is with the
+        // run hidden (REFERENCE-001 section 3), as far as the room allows.
+        if let Some(text_at) = revealed_heading(source, range.clone()).filter(|_| !self.source) {
+            let plain = self.shape_line(source, index, (0.0, None));
+            let run = super::marks::start_x(&plain, text_at);
+            let hang = run.min(self.room);
+            return self.shape_line(source, index, (-hang, Some(run - hang)));
+        }
         let Some((anchor, item)) = lazy else {
-            return self.shape_line(source, index, (0.0, 0.0));
+            return self.shape_line(source, index, (0.0, None));
         };
         let quoted = self.shaped(source, source.doc.line_at(anchor));
         let target = super::marks::start_x(&quoted, anchor);
@@ -200,18 +238,27 @@ impl Lines {
         let own = if indent == 0 {
             0.0
         } else {
-            let plain = self.shape_line(source, index, (0.0, 0.0));
+            let plain = self.shape_line(source, index, (0.0, None));
             super::marks::start_x(&plain, range.start + indent)
         };
         // Its first row past its own indentation, the rest at the quoted
         // text or the item's; a line indented further keeps its place (a
         // shift left would put its start, and a caret there, in the margin).
-        self.shape_line(source, index, ((target - own).max(0.0), target.max(own)))
+        self.shape_line(
+            source,
+            index,
+            ((target - own).max(0.0), Some(target.max(own))),
+        )
     }
 
     /// Line `index` shaped with its first row `lead` to the right and,
     /// when `rest` is not 0, its other rows `rest` to the right.
-    fn shape_line(&mut self, source: &Source, index: usize, (lead, rest): (f32, f32)) -> Shaped {
+    fn shape_line(
+        &mut self,
+        source: &Source,
+        index: usize,
+        (lead, rest): (f32, Option<f32>),
+    ) -> Shaped {
         let range = source.doc.line_range(index);
         let line = Line::new(
             source.doc.text(),
@@ -258,7 +305,7 @@ impl Lines {
             self.width.to_bits(),
             self.zoom.to_bits(),
             lead.to_bits(),
-            rest.to_bits(),
+            rest.map(f32::to_bits),
         )
             .hash(&mut hasher);
         for color in [
@@ -277,7 +324,8 @@ impl Lines {
             Some(cached) => cached.clone(),
             None => {
                 let looks = (level, mono, self.colors, compact, self.zoom);
-                let cached = shape(&line, looks, hang, self.width - lead.max(rest), &tokens);
+                let narrower = lead.max(rest.unwrap_or(0.0));
+                let cached = shape(&line, looks, hang, self.width - narrower, &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
             }
@@ -286,7 +334,8 @@ impl Lines {
             buffer: cached.buffer,
             line,
             height: cached.height,
-            hang: if rest > 0.0 { rest } else { cached.hang },
+            hang: rest.unwrap_or(cached.hang),
+            hanging: rest.is_some() || cached.hang > 0.0,
             lead,
             first_row: cached.first_row,
         }

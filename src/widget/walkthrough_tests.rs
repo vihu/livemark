@@ -188,3 +188,34 @@ fn zoom_scales_every_line_and_keeps_the_caret_row_in_place() {
     editor.set_zoom(1.0);
     assert!((at(&editor).1 - height).abs() < 0.5);
 }
+
+#[test]
+fn a_revealed_heading_run_hangs_left_and_the_text_stays() {
+    for text in ["# Title\n\npara\n", "### Title\n\npara\n"] {
+        let title = text.find("Title").unwrap();
+        let mut editor = Editor::new(text.into());
+        // As the surface gives it: padding and gutter, less the edge.
+        editor.lines.borrow_mut().room = 48.0;
+        let x = |editor: &mut Editor, at: usize| {
+            editor.with_lines(|lines, source| {
+                lines
+                    .caret_in_line(source, at, crate::layout::Affinity::After)
+                    .0
+            })
+        };
+        // Hidden with the caret in the paragraph, shown with it on the line.
+        editor.select(text.len() - 1, text.len() - 1);
+        let hidden = x(&mut editor, title);
+        editor.select(title + 2, title + 2);
+        let shown = x(&mut editor, title);
+        assert!(
+            (shown - hidden).abs() < 0.5,
+            "{text:?}: {shown} vs {hidden}"
+        );
+        // The run is left of the text, and a click there lands in it.
+        let run = x(&mut editor, 0);
+        assert!(run < -1.0, "{text:?}");
+        let (offset, _) = editor.with_lines(|lines, source| lines.hit(source, run + 2.0, 10.0));
+        assert!(offset < title, "{text:?}: {offset}");
+    }
+}

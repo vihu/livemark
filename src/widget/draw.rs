@@ -183,7 +183,12 @@ impl Editor {
                         quad(renderer, at(sliver), selection_color);
                     }
                 }
-                draw_text(renderer, &shaped, origin, area, text);
+                // Into the gutter too, where a heading's `#` run hangs.
+                let clip = Rectangle::new(
+                    Point::new(area.x - lines.room, area.y),
+                    Size::new(area.width + lines.room, area.height),
+                );
+                draw_text(renderer, &shaped, origin, clip, text);
                 // A table outside the selection: its grid over the rows.
                 for mark in marks_in(source.concealed, range.clone()) {
                     let (MarkKind::TableRow(table, _) | MarkKind::TableRule(table)) = mark.kind
@@ -256,7 +261,13 @@ impl Editor {
         });
         if let Some(rect) = caret_rect {
             let bounds = Rectangle::new(area.position() + Vector::new(rect.x, rect.y), rect.size());
-            if let Some(bounds) = bounds.intersection(&area) {
+            // In the gutter too: a caret in a heading's hanging `#` run.
+            let room = self.lines.borrow().room;
+            let shown = Rectangle::new(
+                Point::new(area.x - room, area.y),
+                Size::new(area.width + room, area.height),
+            );
+            if let Some(bounds) = bounds.intersection(&shown) {
                 quad(renderer, bounds, text);
             }
         }
@@ -274,7 +285,7 @@ fn draw_text(
     color: Color,
 ) {
     let buffer = std::sync::Arc::downgrade(&shaped.buffer);
-    if shaped.hang == 0.0 {
+    if !shaped.hanging {
         renderer.fill_raw(Raw {
             buffer,
             position: origin + Vector::new(shaped.lead, 0.0),

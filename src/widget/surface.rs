@@ -20,6 +20,15 @@ use crate::edit::Motion;
 /// Space between the widget's edge and the text.
 const PADDING: f32 = 16.0;
 
+/// The gutter left of the text, at 100%, where a revealed heading's `#`
+/// run hangs (REFERENCE-001 section 3): with the padding, room for `### `
+/// at its size; a wider run (`#### ` and on) pushes its text right by the
+/// rest.
+const GUTTER: f32 = 2.25 * TEXT_SIZE;
+
+/// What a hanging `#` run keeps clear of the widget's left edge.
+const EDGE: f32 = 4.0;
+
 /// How long the caret stays on, then off.
 const BLINK_MILLIS: u128 = 500;
 
@@ -94,10 +103,12 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 
     fn layout(&mut self, tree: &mut Tree, _renderer: &iced::Renderer, limits: &layout::Limits) {
         let size = limits.resolve(Length::Fill, Length::Fill, Size::ZERO);
+        let area = self.text_area(Rectangle::new(Point::ORIGIN, size));
         let pending = {
             let mut lines = self.editor.lines.borrow_mut();
-            lines.width = (size.width - 2.0 * PADDING).max(1.0);
-            lines.height = (size.height - 2.0 * PADDING).max(1.0);
+            lines.width = area.width;
+            lines.height = area.height;
+            lines.room = area.x - EDGE;
             lines.sized = true;
             lines.pending_reveal.take()
         };
@@ -135,7 +146,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
     ) {
         let state = tree.state.downcast_mut::<State>();
         let bounds = layout.bounds();
-        let text = bounds.shrink(PADDING).position();
+        let text = self.text_area(bounds).position();
         let publish = |shell: &mut Shell<'_, Message>, input| shell.publish(Message(input));
         match event {
             Event::Window(window::Event::Unfocused) => {
@@ -364,7 +375,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         _renderer: &iced::Renderer,
     ) -> mouse::Interaction {
         let state = tree.state.downcast_ref::<State>();
-        let text = layout.bounds().shrink(PADDING);
+        let text = self.text_area(layout.bounds());
         let on_link = state.modifiers.command()
             && cursor.position_over(text).is_some_and(|at| {
                 let at = at - Vector::new(text.x, text.y);
@@ -397,7 +408,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         // open for code bands and the quote bar) and to what the parent
         // shows: a layer's clip does not narrow its parent's.
         let bounds = layout.bounds();
-        let area = bounds.shrink(PADDING);
+        let area = self.text_area(bounds);
         let rows = Rectangle::new(
             Point::new(bounds.x, area.y),
             Size::new(bounds.width, area.height),
@@ -417,6 +428,19 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 }
 
 impl Surface<'_> {
+    /// Where the text goes in the widget's `bounds`: inside the padding,
+    /// right of the gutter (which grows with the zoom).
+    fn text_area(&self, bounds: Rectangle) -> Rectangle {
+        let gutter = GUTTER * self.editor.zoom();
+        Rectangle::new(
+            Point::new(bounds.x + PADDING + gutter, bounds.y + PADDING),
+            Size::new(
+                (bounds.width - 2.0 * PADDING - gutter).max(1.0),
+                (bounds.height - 2.0 * PADDING).max(1.0),
+            ),
+        )
+    }
+
     /// The scroll bar's track and thumb when the pointer is over the track
     /// (a little wider, to be easy to hit), with the pointer's y.
     fn thumb_at(
