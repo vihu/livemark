@@ -5,11 +5,14 @@
 //! Lezer tree.
 use std::time::Duration;
 
-use self::context::{Blocks, contexts, item_number, renumber};
+use self::context::{Blocks, contexts, renumber};
 use super::line_ending;
 use crate::doc::{Change, Doc, Kind, Selection};
 
 mod context;
+mod indent;
+
+pub use indent::indent;
 
 /// `line_start` plus column `col` of `line`, kept inside the line and on a
 /// character boundary: a context's columns come from the line its
@@ -263,137 +266,6 @@ pub fn delete_markup(doc: &mut Doc, now: Duration) -> bool {
     false
 }
 
-/// Tab and Shift+Tab (REFERENCE-001 section 7). In a list item: the item
-/// and its children move under the item before it (a first item stays), or
-/// back out to its parent's column. Elsewhere Tab types a tab and
-/// Shift+Tab takes one indent unit off the line.
-pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
-    let text = doc.text();
-    let selection = doc.selection();
-    let pos = selection.head;
-    let blocks = Blocks::new(text);
-    let item = contexts(text, &blocks, pos)
-        .into_iter()
-        .rev()
-        .find_map(|c| c.item);
-    let Some((item, list)) = item else {
-        if outdent {
-            let (line_start, line) = line_at(doc, pos);
-            let unit = if line.starts_with('\t') {
-                1
-            } else {
-                line.bytes().take(4).take_while(|&b| b == b' ').count()
-            };
-            if unit > 0 {
-                let moved = |at: usize| {
-                    if at >= line_start + unit {
-                        at - unit
-                    } else {
-                        at.min(line_start)
-                    }
-                };
-                let selection = Selection {
-                    anchor: moved(selection.anchor),
-                    head: moved(selection.head),
-                };
-                doc.apply(
-                    vec![Change::delete(line_start..line_start + unit)],
-                    selection,
-                    Kind::Other,
-                    now,
-                );
-            }
-        } else {
-            let range = selection.range();
-            let caret = range.start + 1;
-            doc.apply(
-                vec![Change {
-                    range,
-                    text: "\t".into(),
-                }],
-                Selection::caret(caret),
-                Kind::Other,
-                now,
-            );
-        }
-        return;
-    };
-    let column = |start: usize| start - text[..start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
-    let item_start = blocks.containers[item].range.start;
-    let items = &blocks.lists[list].items;
-    let position = items.iter().position(|&i| i == item).unwrap_or(0);
-    let shift: i64 = if outdent {
-        // Out to the parent item's marker, or the line start.
-        let parent = blocks
-            .containers
-            .iter()
-            .enumerate()
-            .filter(|(i, c)| {
-                *i != item
-                    && c.list.is_some()
-                    && c.range.start < item_start
-                    && item_start <= c.range.end
-            })
-            .map(|(_, c)| column(c.range.start))
-            .next_back();
-        -((column(item_start) - parent.unwrap_or(0)) as i64)
-    } else {
-        // Under the previous item's text.
-        let Some(&previous) = position.checked_sub(1).and_then(|p| items.get(p)) else {
-            return;
-        };
-        let prev_start = blocks.containers[previous].range.start;
-        let Some(prev) = contexts(text, &blocks, prev_start).pop() else {
-            return;
-        };
-        prev.to as i64 - column(item_start) as i64
-    };
-    if shift == 0 {
-        return;
-    }
-    // Every line of the item and its children moves.
-    let range = &blocks.containers[item].range;
-    let first_line = item_start - column(item_start);
-    let mut changes = Vec::new();
-    let mut line = first_line;
-    loop {
-        let rest = &text[line..range.end];
-        let len = rest.find(['\n', '\r']).unwrap_or(rest.len());
-        if shift > 0 && len > 0 {
-            changes.push(Change::insert(line, " ".repeat(shift as usize)));
-        } else if shift < 0 {
-            let spaces = rest
-                .bytes()
-                .take(-shift as usize)
-                .take_while(|&b| b == b' ')
-                .count();
-            changes.push(Change::delete(line..line + spaces));
-        }
-        match rest.find('\n') {
-            Some(i) if line + i < range.end => line += i + 1,
-            _ => break,
-        }
-    }
-    // An ordered item moved in starts its own list at 1, and the items
-    // after it in the old list move up a number.
-    if !outdent && blocks.lists[list].ordered {
-        if let Some((spaces, number)) = item_number(text, item_start) {
-            let at = item_start + spaces;
-            changes.push(Change {
-                range: at..at + number.to_string().len(),
-                text: "1".into(),
-            });
-        }
-        renumber_after(text, &blocks, list, position, &mut changes);
-    }
-    changes.sort_by_key(|c| c.range.start);
-    let selection = Selection {
-        anchor: map(&changes, selection.anchor),
-        head: map(&changes, selection.head),
-    };
-    doc.apply(changes, selection, Kind::Other, now);
-}
-
 /// Where offset `at` of the old text lands after `changes` (sorted): after
 /// text inserted right at it, at the start of text removed around it.
 fn map(changes: &[Change], at: usize) -> usize {
@@ -406,39 +278,6 @@ fn map(changes: &[Change], at: usize) -> usize {
         }
     }
     at.wrapping_add_signed(delta)
-}
-
-/// After an ordered item moved into its own list, the consecutive items
-/// that followed it move up a number.
-fn renumber_after(
-    text: &str,
-    blocks: &Blocks,
-    list: usize,
-    position: usize,
-    changes: &mut Vec<Change>,
-) {
-    let items = &blocks.lists[list].items;
-    let Some((_, mut expected)) = items
-        .get(position)
-        .and_then(|&i| item_number(text, blocks.containers[i].range.start))
-    else {
-        return;
-    };
-    for &next in &items[position + 1..] {
-        let start = blocks.containers[next].range.start;
-        let Some((spaces, number)) = item_number(text, start) else {
-            return;
-        };
-        if number != expected + 1 {
-            return;
-        }
-        let at = start + spaces;
-        changes.push(Change {
-            range: at..at + number.to_string().len(),
-            text: expected.to_string(),
-        });
-        expected = number;
-    }
 }
 
 #[cfg(test)]

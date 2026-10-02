@@ -148,3 +148,36 @@ fn tab_moves_an_item_and_its_children_under_the_one_before() {
     assert_eq!(tab("    x|", true), "x|");
     assert_eq!(tab("\tx|", true), "x|");
 }
+
+#[test]
+fn tab_moves_every_item_a_selection_reaches() {
+    // `[` and `]` mark the selection here.
+    let tab_over = |text: &str, outdent: bool| {
+        let (anchor, head) = (text.find('[').unwrap(), text.find(']').unwrap() - 1);
+        let mut doc = Doc::new(text.replacen('[', "", 1).replacen(']', "", 1));
+        doc.set_selection(Selection { anchor, head });
+        indent(&mut doc, outdent, Duration::ZERO);
+        let range = doc.selection().range();
+        let mut shown = doc.text().to_owned();
+        shown.insert(range.end, ']');
+        shown.insert(range.start, '[');
+        shown
+    };
+    assert_eq!(
+        tab_over("- a\n- [b\n- c]\n- d", false),
+        "- a\n  - [b\n  - c]\n- d"
+    );
+    assert_eq!(
+        tab_over("- a\n  - [b\n  - c]\n- d", true),
+        "- a\n- [b\n- c]\n- d"
+    );
+    assert_eq!(
+        tab_over("- a\n- [b\n]- c", false),
+        "- a\n  - [b\n]- c",
+        "a selection ending at a line's start leaves that line"
+    );
+    assert_eq!(
+        tab_over("1. a\n2. [b\n3. c]\n4. d\n5. e", false),
+        "1. a\n   1. [b\n   2. c]\n2. d\n3. e"
+    );
+}
