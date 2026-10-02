@@ -232,8 +232,18 @@ pub fn backspace(doc: &mut Doc, now: Duration) {
 }
 
 /// Replaces the selection with pasted `text`, its line breaks turned into
-/// the document's line ending (REFERENCE-001 section 18).
+/// the document's line ending (REFERENCE-001 section 18). A web URL pasted
+/// over a selection makes a link of it, `[selection](url)` (SilverBullet's
+/// `editor_paste.ts:101-114`, section 5), when the paste is the URL alone.
 pub fn paste(doc: &mut Doc, text: &str, now: Duration) {
+    let range = doc.selection().range();
+    let url = text.trim();
+    let web = url.starts_with("http://") || url.starts_with("https://");
+    if !range.is_empty() && web && !url.contains(char::is_whitespace) {
+        let link = format!("[{}]({url})", &doc.text()[range]);
+        replace_selection(doc, &link, Kind::Other, now);
+        return;
+    }
     let text = convert_endings(text, line_ending(doc.text()));
     replace_selection(doc, &text, Kind::Other, now);
 }

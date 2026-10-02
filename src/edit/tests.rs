@@ -141,3 +141,27 @@ fn home_stops_after_list_and_quote_markup_first() {
     assert_eq!(home(8), 0, "then the line's start");
     assert_eq!(home(0), 8, "and back");
 }
+
+#[test]
+fn a_url_pasted_over_a_selection_makes_a_link() {
+    let paste_over = |text: &str, anchor: usize, head: usize, pasted: &str| {
+        let mut doc = Doc::new(text.into());
+        doc.set_selection(Selection { anchor, head });
+        paste(&mut doc, pasted, Duration::ZERO);
+        (doc.text().to_owned(), doc.selection().head)
+    };
+    assert_eq!(
+        paste_over("see docs now", 4, 8, "https://x.y/d\n"),
+        ("see [docs](https://x.y/d) now".into(), 25)
+    );
+    assert_eq!(
+        paste_over("see docs", 4, 4, "https://x.y"),
+        ("see https://x.ydocs".into(), 15),
+        "nothing selected: plain"
+    );
+    assert_eq!(
+        paste_over("see docs", 4, 8, "https://x.y and more").0,
+        "see https://x.y and more",
+        "not a URL alone"
+    );
+}
