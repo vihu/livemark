@@ -147,7 +147,16 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
                 insert += &context.marker(text, &blocks, 1);
             } else {
                 let width = (i < last).then(|| contexts[i + 1].from.saturating_sub(insert.len()));
-                insert += &context.blank(width, true);
+                // The line's own whitespace up to the next markup (tabs
+                // kept), else spaces.
+                let own = (i < last)
+                    .then(|| line.get(insert.len()..contexts[i + 1].from))
+                    .flatten()
+                    .filter(|gap| !gap.is_empty() && gap.trim().is_empty());
+                match own {
+                    Some(gap) => insert += gap,
+                    None => insert += &context.blank(width, true),
+                }
             }
         }
     }
@@ -170,6 +179,12 @@ pub fn soft_break(doc: &mut Doc, now: Duration) {
     let text = doc.text();
     let pos = doc.selection().range().start;
     let blocks = Blocks::new(text);
+    // In fenced code, as Enter: the line's indentation (its list item's
+    // too) kept.
+    if blocks.fenced.iter().any(|f| f.start < pos && pos < f.end) {
+        continue_markup(doc, now);
+        return;
+    }
     let line_start = line_at(doc, pos).0;
     let mut contexts = contexts(text, &blocks, pos);
     while contexts.last().is_some_and(|c| c.from > pos - line_start) {

@@ -37,8 +37,13 @@ impl Blocks {
             fenced: Vec::new(),
         };
         let mut open_lists = Vec::new();
+        // Without line endings at the end, nor at the start: pulldown-cmark
+        // can start a nested item at the line ending before its line.
         let trim = |range: Range<usize>| {
-            range.start..range.start + text[range].trim_end_matches(['\n', '\r']).len()
+            let lead = text[range.clone()].len()
+                - text[range.clone()].trim_start_matches(['\n', '\r']).len();
+            let start = range.start + lead;
+            start..start + text[start..range.end].trim_end_matches(['\n', '\r']).len()
         };
         for (event, range) in parse::events(text) {
             match event {
@@ -156,7 +161,12 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
         let line_start = text[..start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
         let rest = &text[start..];
         let from = start - line_start;
-        let spaces = rest.bytes().take_while(|&b| b == b' ').count();
+        // Tabs too: Obsidian indents lists with tabs.
+        let spaces = rest
+            .bytes()
+            .take_while(|&b| b == b' ' || b == b'\t')
+            .count();
+        let indent = &rest[..spaces];
         let after = &rest[spaces..];
         let context = match container.list {
             None => after.strip_prefix('>').map(|tail| {
@@ -164,7 +174,7 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
                 Context {
                     from,
                     to: from + spaces + 1 + space.len(),
-                    space_before: String::new(),
+                    space_before: indent.to_owned(),
                     space_after: space.into(),
                     kind: ">".into(),
                     quote: true,
@@ -188,7 +198,7 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
                     Context {
                         from,
                         to: from + len,
-                        space_before: " ".repeat(spaces),
+                        space_before: indent.to_owned(),
                         space_after: " ".repeat(space),
                         kind: delimiter.to_string(),
                         quote: false,
@@ -208,7 +218,7 @@ pub(super) fn contexts(text: &str, blocks: &Blocks, pos: usize) -> Vec<Context> 
                 Context {
                     from,
                     to: from + len,
-                    space_before: " ".repeat(spaces),
+                    space_before: indent.to_owned(),
                     space_after: " ".repeat(space_after),
                     kind,
                     quote: false,

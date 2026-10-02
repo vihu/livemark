@@ -229,3 +229,47 @@ fn in_a_quote_items_move_after_the_quote_marker() {
         "- x\n  - a\n    > - b\n    > - c|"
     );
 }
+
+#[test]
+fn tab_indented_lists_continue_and_end_with_their_tabs() {
+    assert_eq!(enter("- a\n\t- b|").as_deref(), Some("- a\n\t- b\n\t- |"));
+    assert_eq!(
+        enter("- a\n\t- b\n\t- |").as_deref(),
+        Some("- a\n\t- b\n- |"),
+        "an empty nested item moves out"
+    );
+    assert_eq!(
+        enter("1. a\n\t1. b|").as_deref(),
+        Some("1. a\n\t1. b\n\t2. |")
+    );
+    assert_eq!(enter("- a\n\t> q|").as_deref(), Some("- a\n\t> q\n\t> |"));
+    let deleted = backspace("- a\n\t- b\n\t- |").expect("markup taken");
+    assert!(!deleted.contains("\t-|"), "not one space: {deleted:?}");
+}
+
+#[test]
+fn tab_and_shift_tab_follow_the_lists_own_indentation() {
+    assert_eq!(tab("- a\n\t- b\n\t- c|", false), "- a\n\t- b\n\t\t- c|");
+    assert_eq!(tab("- a\n\t- b|", true), "- a\n- b|");
+    assert_eq!(tab("- a\n    - b|", true), "- a\n- b|", "a 4-space nesting");
+}
+
+#[test]
+fn shift_tab_on_an_ordered_item_renumbers_both_lists() {
+    assert_eq!(
+        tab("1. a\n   1. b|\n   2. c\n2. d", true),
+        "1. a\n2. b|\n   1. c\n3. d",
+        "c stays under b as a list from 1; d moves up"
+    );
+    assert_eq!(
+        tab("1. a\n2. b\n   1. x|\n3. c", true),
+        "1. a\n2. b\n3. x|\n4. c"
+    );
+}
+
+#[test]
+fn shift_enter_in_fenced_code_in_a_list_item_keeps_the_indentation() {
+    let mut doc = doc("- ```\n  code|\n  ```\n");
+    soft_break(&mut doc, Duration::ZERO);
+    assert_eq!(shown(&doc), "- ```\n  code\n  |\n  ```\n");
+}

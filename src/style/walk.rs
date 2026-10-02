@@ -31,6 +31,7 @@ pub(super) fn walk(text: &str) -> Styled {
         tables: Vec::new(),
         links: Vec::new(),
         lazies: Vec::new(),
+        inner_quotes: Vec::new(),
     };
     for (event, range) in parse::events(text) {
         walk.inside_span(&range);
@@ -80,6 +81,8 @@ struct Walk<'a> {
     links: Vec<(Range<usize>, String)>,
     /// Lazy continuation lines in quotes and the quoted line before each.
     lazies: Vec<(Range<usize>, Range<usize>)>,
+    /// Where quotes inside other quotes start.
+    inner_quotes: Vec<usize>,
 }
 
 impl Walk<'_> {
@@ -200,6 +203,8 @@ impl Walk<'_> {
                 if self.quote_depth == 0 {
                     let end = range.start + line_trim(&self.text[range.clone()]);
                     self.quotes.push(range.start..end);
+                } else {
+                    self.inner_quotes.push(range.start);
                 }
                 self.quote_depth += 1;
             }
@@ -455,6 +460,19 @@ impl Walk<'_> {
     fn finish(mut self) -> Styled {
         for quote in self.quotes.clone() {
             self.quote_markers(quote);
+        }
+        // A quote inside a list inside a quote (`> - > x`): the scan above
+        // stops at the list marker, so its first `>` is marked here.
+        for start in std::mem::take(&mut self.inner_quotes) {
+            let rest = &self.text[start..];
+            let at = start + rest.len() - rest.trim_start_matches([' ', '\t']).len();
+            let marked = self.marks.iter().any(|m| m.range.start == at);
+            if !marked && self.text[at..].starts_with('>') && !self.in_text(at) {
+                self.toggles.push((at..at + 1, Flag::Marker));
+                self.mark(at..at + 1, MarkKind::Quote);
+                let space = usize::from(self.text[at + 1..].starts_with(' '));
+                self.hangs.push(at + 1 + space);
+            }
         }
         self.hangs.sort_unstable();
         self.hangs.dedup();

@@ -165,3 +165,13 @@ fn a_url_pasted_over_a_selection_makes_a_link() {
         "not a URL alone"
     );
 }
+
+#[test]
+fn word_motions_keep_a_combining_mark_with_its_letter() {
+    let doc = doc_at("cafe\u{301} bar", 0);
+    assert_eq!(target(&doc, 0, Motion::WordRight), 6, "past the accent");
+    assert_eq!(target(&doc, 6, Motion::WordLeft), 0);
+    let mut doc = doc_at("cafe\u{301}", 6);
+    delete(&mut doc, Motion::WordLeft, std::time::Duration::ZERO);
+    assert_eq!(doc.text(), "", "the whole word");
+}

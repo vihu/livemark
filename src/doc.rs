@@ -175,7 +175,12 @@ impl Doc {
     /// When the changes are out of order, overlap, or cut a character, or
     /// the selection does not fit the new text.
     pub fn apply(&mut self, changes: Vec<Change>, selection: Selection, kind: Kind, now: Duration) {
-        if changes.is_empty() {
+        // Changes that change nothing make no undo step and no new
+        // version (CodeMirror adds no history event for an empty set).
+        let noop = changes
+            .iter()
+            .all(|c| self.text.get(c.range.clone()) == Some(c.text.as_str()));
+        if noop {
             self.set_selection(selection);
             return;
         }

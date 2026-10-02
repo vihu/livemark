@@ -323,62 +323,67 @@ fn class(c: char) -> Class {
 /// Skips spaces, then one run of a class; a line ending is a step alone
 /// (REFERENCE-001 section 13).
 fn word_right(text: &str, from: usize) -> usize {
-    let mut chars = text[from..].char_indices().peekable();
+    // By grapheme, classed by its first character, so a combining mark
+    // stays with its letter (CodeMirror's `byGroup`).
+    let mut graphemes = text[from..]
+        .grapheme_indices(true)
+        .map(|(i, g)| (from + i, g))
+        .peekable();
+    let first = |g: &str| class(g.chars().next().unwrap_or(' '));
     let mut end = from;
-    if chars.peek().is_some_and(|&(_, c)| class(c) == Class::Break) {
-        return text[from..]
-            .graphemes(true)
-            .next()
-            .map_or(from, |g| from + g.len());
+    if let Some(&(i, g)) = graphemes.peek()
+        && first(g) == Class::Break
+    {
+        return i + g.len();
     }
-    while let Some(&(i, c)) = chars.peek() {
-        if class(c) != Class::Space {
+    while let Some(&(i, g)) = graphemes.peek() {
+        if first(g) != Class::Space {
             break;
         }
-        end = from + i + c.len_utf8();
-        chars.next();
+        end = i + g.len();
+        graphemes.next();
     }
-    let Some(&(_, first)) = chars.peek() else {
+    let Some(&(_, g)) = graphemes.peek() else {
         return end;
     };
-    let run = class(first);
+    let run = first(g);
     if run == Class::Break {
         return end;
     }
-    for (i, c) in chars {
-        if class(c) != run {
+    for (i, g) in graphemes {
+        if first(g) != run {
             break;
         }
-        end = from + i + c.len_utf8();
+        end = i + g.len();
     }
     end
 }
 
 fn word_left(text: &str, from: usize) -> usize {
-    let mut chars = text[..from].char_indices().rev().peekable();
+    let mut graphemes = text[..from].grapheme_indices(true).rev().peekable();
+    let first = |g: &str| class(g.chars().next().unwrap_or(' '));
     let mut start = from;
-    if chars.peek().is_some_and(|&(_, c)| class(c) == Class::Break) {
-        return text[..from]
-            .grapheme_indices(true)
-            .next_back()
-            .map_or(0, |(i, _)| i);
+    if let Some(&(i, g)) = graphemes.peek()
+        && first(g) == Class::Break
+    {
+        return i;
     }
-    while let Some(&(i, c)) = chars.peek() {
-        if class(c) != Class::Space {
+    while let Some(&(i, g)) = graphemes.peek() {
+        if first(g) != Class::Space {
             break;
         }
         start = i;
-        chars.next();
+        graphemes.next();
     }
-    let Some(&(_, first)) = chars.peek() else {
+    let Some(&(_, g)) = graphemes.peek() else {
         return start;
     };
-    let run = class(first);
+    let run = first(g);
     if run == Class::Break {
         return start;
     }
-    for (i, c) in chars {
-        if class(c) != run {
+    for (i, g) in graphemes {
+        if first(g) != run {
             break;
         }
         start = i;

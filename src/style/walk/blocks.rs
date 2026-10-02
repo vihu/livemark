@@ -116,7 +116,9 @@ impl Walk<'_> {
             {
                 self.lazies.push((line..end, quoted.clone()));
             }
-            match self.text[line..quote.end].find('\n') {
+            // The next line, after any line ending (a lone `\r` too).
+            match self.text[line..quote.end].find(['\n', '\r']) {
+                Some(i) if self.text[line + i..].starts_with("\r\n") => line += i + 2,
                 Some(i) => line += i + 1,
                 None => break,
             }

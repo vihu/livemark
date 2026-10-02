@@ -81,21 +81,37 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         .take_while(|&(_, &i)| blocks.containers[i].range.start < reach.end)
         .last()
         .map_or(position, |(j, _)| j);
+    // Columns are measured at markers: an item's range can start at its
+    // parent's text, before its own indentation.
+    let marker = |start: usize| {
+        start + text[start..].len() - text[start..].trim_start_matches([' ', '\t']).len()
+    };
+    // The parent item: the innermost other item around this one.
+    let parent = blocks
+        .containers
+        .iter()
+        .enumerate()
+        .filter(|(i, c)| {
+            *i != item
+                && c.list.is_some()
+                && c.range.start < item_start
+                && item_start <= c.range.end
+        })
+        .map(|(i, _)| i)
+        .next_back();
+    // Lists indented with tabs get tabs (REFERENCE-001 section 7).
+    let tabs = blocks
+        .containers
+        .iter()
+        .filter(|c| c.list.is_some())
+        .any(|c| {
+            let at = marker(c.range.start);
+            text[at - column(at)..at].contains('\t')
+        });
     let shift: i64 = if outdent {
         // Out to the parent item's marker, or the line start.
-        let parent = blocks
-            .containers
-            .iter()
-            .enumerate()
-            .filter(|(i, c)| {
-                *i != item
-                    && c.list.is_some()
-                    && c.range.start < item_start
-                    && item_start <= c.range.end
-            })
-            .map(|(_, c)| column(c.range.start))
-            .next_back();
-        -((column(item_start) - parent.unwrap_or(0)) as i64)
+        let parent = parent.map_or(0, |p| column(marker(blocks.containers[p].range.start)));
+        -((column(marker(item_start)) - parent) as i64)
     } else {
         // Under the previous item's text.
         let Some(&previous) = position.checked_sub(1).and_then(|p| items.get(p)) else {
@@ -105,7 +121,7 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         let Some(prev) = contexts(text, &blocks, prev_start).pop() else {
             return;
         };
-        prev.to as i64 - column(item_start) as i64
+        prev.to as i64 - column(marker(item_start)) as i64
     };
     if shift == 0 {
         return;
@@ -126,33 +142,71 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         let len = rest.find(['\n', '\r']).unwrap_or(rest.len());
         let at = line + quote_prefix(&rest[..len], quotes);
         if shift > 0 && at < line + len {
-            changes.push(Change::insert(at, " ".repeat(shift as usize)));
+            let indent = if tabs {
+                "\t".to_owned()
+            } else {
+                " ".repeat(shift as usize)
+            };
+            changes.push(Change::insert(at, indent));
         } else if shift < 0 {
-            let spaces = text[at..end]
+            let blank = text[at..end]
                 .bytes()
                 .take(-shift as usize)
-                .take_while(|&b| b == b' ')
+                .take_while(|&b| b == b' ' || b == b'\t')
                 .count();
-            changes.push(Change::delete(at..at + spaces));
+            changes.push(Change::delete(at..at + blank));
         }
         match rest.find('\n') {
             Some(i) if line + i < end => line += i + 1,
             _ => break,
         }
     }
-    // Ordered items moved in start their own list at 1, and the items
-    // after them in the old list move up as many numbers.
-    if !outdent && blocks.lists[list].ordered {
-        for (n, &moved) in items[position..=last].iter().enumerate() {
-            let start = blocks.containers[moved].range.start;
-            if let Some((digits, _)) = item_number(text, start) {
+    if blocks.lists[list].ordered {
+        let number = |item: usize, n: u64, changes: &mut Vec<Change>| {
+            if let Some((digits, _)) = item_number(text, blocks.containers[item].range.start) {
                 changes.push(Change {
                     range: digits,
-                    text: (n + 1).to_string(),
+                    text: n.to_string(),
                 });
             }
+        };
+        if outdent {
+            // Out: the lifted items join their parent's list after it when
+            // that list is ordered too, and the items after them in their
+            // old list stay under the last one, a list from 1 (an ordered
+            // list starting elsewhere cannot interrupt its text).
+            for (n, &after) in items[last + 1..].iter().enumerate() {
+                number(after, n as u64 + 1, &mut changes);
+            }
+            let outer = parent.and_then(|p| Some((p, blocks.containers[p].list?)));
+            if let Some((p, outer)) = outer.filter(|&(_, l)| blocks.lists[l].ordered) {
+                let start =
+                    item_number(text, blocks.containers[p].range.start).map_or(1, |(_, n)| n);
+                let lifted = (last - position + 1) as u64;
+                for (n, &moved) in items[position..=last].iter().enumerate() {
+                    number(moved, start + 1 + n as u64, &mut changes);
+                }
+                let siblings = &blocks.lists[outer].items;
+                let at = siblings.iter().position(|&i| i == p).unwrap_or(0);
+                let mut previous = start;
+                for &after in &siblings[at + 1..] {
+                    match item_number(text, blocks.containers[after].range.start) {
+                        Some((_, n)) if n == previous + 1 => {
+                            number(after, n + lifted, &mut changes);
+                            previous = n;
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        } else {
+            // In: ordered items moved in start their own list at 1, and the
+            // items after them in the old list move up as many numbers.
+            for (n, &moved) in items[position..=last].iter().enumerate() {
+                number(moved, n as u64 + 1, &mut changes);
+            }
+            renumber_after(text, &blocks, list, position..=last, &mut changes);
         }
-        renumber_after(text, &blocks, list, position..=last, &mut changes);
     }
     changes.sort_by_key(|c| c.range.start);
     let selection = Selection {

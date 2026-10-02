@@ -221,3 +221,22 @@ fn a_caret_inside_a_crlf_moves_before_it() {
     );
     assert_eq!(doc.selection(), Selection::caret(2));
 }
+
+#[test]
+fn changes_that_change_nothing_make_no_step() {
+    let mut doc = Doc::new("ab".into());
+    let version = doc.version();
+    doc.apply(
+        vec![Change::delete(1..1), Change::insert(2, String::new())],
+        Selection::caret(1),
+        Kind::Other,
+        Duration::ZERO,
+    );
+    assert_eq!(doc.version(), version);
+    assert!(!doc.undo(), "nothing to undo");
+    assert_eq!(
+        doc.selection(),
+        Selection::caret(1),
+        "the selection still moves"
+    );
+}

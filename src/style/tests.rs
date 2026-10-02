@@ -523,3 +523,24 @@ fn a_lazy_quote_line_lines_up_with_the_quoted_text_before_it() {
     let text = "> - item\nlazy\n";
     assert_eq!(Styled::new(text).lazy_at(9..13), Some(4), "after `> - `");
 }
+
+#[test]
+fn every_quote_marker_is_one_after_a_list_marker_and_lone_crs_too() {
+    let text = "> - > x\n";
+    let styled = Styled::new(text);
+    let quotes: Vec<usize> = styled
+        .concealed(text.len()..text.len())
+        .iter()
+        .filter(|m| m.kind == MarkKind::Quote)
+        .map(|m| m.range.start)
+        .collect();
+    assert_eq!(quotes, [0, 4]);
+    let text = "a\r\r> b\r> c\r";
+    let styled = Styled::new(text);
+    let quotes = styled
+        .concealed(0..0)
+        .iter()
+        .filter(|m| m.kind == MarkKind::Quote)
+        .count();
+    assert_eq!(quotes, 2, "both lines of the quote");
+}
