@@ -629,7 +629,6 @@ fn a_click_on_a_bullet_dot_or_quote_bar_lands_at_the_text() {
         ("para\n- item text\n", 7),
         ("para\n> > quoted\n", 9),
         ("para\n>> nested\n", 8),
-        ("para\n- [ ] task text\n", 11),
         ("para\n\n-\n", 6),
     ] {
         let mut editor = Editor::new(text.into());

@@ -164,6 +164,41 @@ impl Walk<'_> {
         }
         self.marks.extend(marks);
     }
+    /// A task box at `task`: the checkbox stands in for its item's bullet
+    /// (REFERENCE-001 section 8). While the box is not touched the bullet,
+    /// the spaces up to the box and its opening bracket are hidden and no
+    /// dot is drawn: the checkbox, drawn over the rest of the box, sits in
+    /// the bullet's place.
+    /// Touching any of `- [ ]` shows it all.
+    pub(super) fn task_box(&mut self, task: &Range<usize>) {
+        let line = self.text[..task.start]
+            .rfind(['\n', '\r'])
+            .map_or(0, |i| i + 1);
+        let bullet = self
+            .marks
+            .iter()
+            .rposition(|m| {
+                matches!(m.kind, MarkKind::Bullet)
+                    && line <= m.range.start
+                    && m.range.end <= task.start
+            })
+            .map(|i| self.marks.remove(i).range);
+        let touch = bullet.as_ref().map_or(task.clone(), |b| b.start..task.end);
+        if let Some(mark) = self.marks.last_mut().filter(|m| m.range == *task) {
+            mark.touch = touch.clone();
+        }
+        if let Some(bullet) = bullet {
+            self.toggles.push((bullet.start..task.start, Flag::Marker));
+            self.task_bullets
+                .push((bullet.start..task.start, touch.clone()));
+        }
+        // The opening bracket too; the closing one stays laid out, the
+        // checkbox's room before the text.
+        if task.len() == 3 {
+            self.task_bullets.push((task.start..task.start + 1, touch));
+        }
+    }
+
     /// The line holding `at`, text directly in a list item: when it is
     /// not the item's first line, its text lines up with the item's, at
     /// `hang` (REFERENCE-001 section 7), after the markers of the quotes

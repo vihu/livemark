@@ -176,6 +176,9 @@ pub struct Styled {
     /// line each continues, sorted.
     lazies: Vec<(Range<usize>, Range<usize>)>,
     continuations: Vec<(Range<usize>, usize)>,
+    /// Task items' bullets with the spaces up to the box, and the box's
+    /// opening bracket, with the range a selection must touch to show them.
+    task_bullets: Vec<(Range<usize>, Range<usize>)>,
 }
 
 impl Styled {
@@ -305,6 +308,12 @@ impl Styled {
             .filter(|c| c.hides && !touches(&self.constructs[c.group].range))
             .flat_map(|c| c.markers.clone())
             .filter(|m| !m.is_empty())
+            .chain(
+                self.task_bullets
+                    .iter()
+                    .filter(|(_, touch)| !touches(touch))
+                    .map(|(bullet, _)| bullet.clone()),
+            )
             .collect();
         hidden.sort_by_key(|m| m.start);
         let mut merged: Vec<Range<usize>> = Vec::with_capacity(hidden.len());

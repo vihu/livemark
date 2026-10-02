@@ -348,7 +348,8 @@ fn list_markers_dim_task_boxes_and_done_text_mute_and_rows_hang() {
     let styled = Styled::new(text);
     assert_eq!(
         picked(text, &styled, |s| s.marker),
-        ["-", "-", "[x]", "10.", "-", "[ ]"]
+        // A task's bullet and the space up to its box dim together.
+        ["-", "-", " ", "[x]", "10.", "-", " ", "[ ]"]
     );
     assert_eq!(picked(text, &styled, |s| s.done), ["done"]);
     let hang = |line: std::ops::Range<usize>| styled.hang_at(line);
@@ -396,7 +397,7 @@ fn bullets_boxes_quote_marks_and_rules_conceal_until_touched() {
         all,
         [
             ("-", MarkKind::Bullet),
-            ("*", MarkKind::Bullet),
+            // A task's box stands in for its bullet (section 8).
             ("[x]", MarkKind::Task(true)),
             (">", MarkKind::Quote),
             (">", MarkKind::Quote),
@@ -410,6 +411,10 @@ fn bullets_boxes_quote_marks_and_rules_conceal_until_touched() {
         "touching it"
     );
     assert!(!concealed(9).iter().any(|m| m.1 == MarkKind::Task(true)));
+    assert!(
+        !concealed(6).iter().any(|m| m.1 == MarkKind::Task(true)),
+        "touching its bullet shows the box too"
+    );
     assert!(
         !concealed(26).iter().any(|m| m.1 == MarkKind::Rule),
         "a caret at the start of the indented rule line"
@@ -543,4 +548,21 @@ fn every_quote_marker_is_one_after_a_list_marker_and_lone_crs_too() {
         .filter(|m| m.kind == MarkKind::Quote)
         .count();
     assert_eq!(quotes, 2, "both lines of the quote");
+}
+
+#[test]
+fn a_task_items_bullet_hides_with_its_box_concealed() {
+    let text = "para\n- [ ] task\n";
+    let styled = Styled::new(text);
+    // The caret elsewhere: `- [` hidden, the box drawn in its place, its
+    // `]` laid out as the room before the text.
+    let hidden = styled.hidden(0..0);
+    assert!(
+        hidden.contains(&(5..8)) && !hidden.iter().any(|h| h.contains(&9)),
+        "{hidden:?}"
+    );
+    // Touching the bullet, the box or the space after it shows them.
+    for at in [5, 7, 10] {
+        assert!(styled.hidden(at..at).iter().all(|h| h.end <= 5), "{at}");
+    }
 }

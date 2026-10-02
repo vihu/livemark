@@ -34,6 +34,7 @@ pub(super) fn walk(text: &str) -> Styled {
         inner_quotes: Vec::new(),
         nest: Vec::new(),
         continuations: Vec::new(),
+        task_bullets: Vec::new(),
         scanned: None,
     };
     for (event, range) in parse::events(text) {
@@ -91,6 +92,10 @@ struct Walk<'a> {
     /// Lines of paragraphs in list items after the item's first line, and
     /// where the item's text starts.
     continuations: Vec<(Range<usize>, usize)>,
+    /// A task item's bullet with the spaces before its box, and the box's
+    /// opening bracket: hidden while the box is drawn, with the range a selection
+    /// must touch to show them.
+    task_bullets: Vec<(Range<usize>, Range<usize>)>,
     /// The last line `continuation_line` looked at.
     scanned: Option<Range<usize>>,
 }
@@ -253,6 +258,7 @@ impl Walk<'_> {
             }
             Event::TaskListMarker(checked) => {
                 self.mark(range.clone(), MarkKind::Task(checked));
+                self.task_box(&range);
                 self.toggles.push((range.clone(), Flag::Marker));
                 self.toggles.push((range.clone(), Flag::Mono));
                 if checked {
@@ -523,6 +529,7 @@ impl Walk<'_> {
             links: self.links,
             lazies: self.lazies,
             continuations: self.continuations,
+            task_bullets: self.task_bullets,
         }
     }
 }

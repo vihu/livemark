@@ -242,13 +242,16 @@ impl Lines {
             super::marks::start_x(&plain, range.start + indent)
         };
         // Its first row past its own indentation, the rest at the quoted
-        // text or the item's; a line indented further keeps its place (a
-        // shift left would put its start, and a caret there, in the margin).
-        self.shape_line(
-            source,
-            index,
-            ((target - own).max(0.0), Some(target.max(own))),
-        )
+        // text or the item's. An item's line indented further (written for
+        // `- [ ] ` as source, wider than the drawn checkbox) shifts left as
+        // far as the gutter's room, where its start and a caret there still
+        // show; a lazy quote line keeps its place.
+        let lead = if item {
+            (target - own).max(-self.room)
+        } else {
+            (target - own).max(0.0)
+        };
+        self.shape_line(source, index, (lead, Some(target.max(own + lead))))
     }
 
     /// Line `index` shaped with its first row `lead` to the right and,

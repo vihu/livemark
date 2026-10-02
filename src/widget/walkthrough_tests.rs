@@ -115,6 +115,8 @@ fn the_caret_on_a_blank_line_in_an_item_stands_where_text_will_go() {
         let x = |text: &str, at: usize| {
             let mut editor = Editor::new(text.into());
             editor.select(0, 0);
+            // As the surface gives it: padding and gutter, less the edge.
+            editor.lines.borrow_mut().room = 48.0;
             editor.with_lines(|lines, source| {
                 lines
                     .caret_in_line(source, at, crate::layout::Affinity::After)
