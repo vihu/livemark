@@ -7,6 +7,7 @@ mod highlight;
 mod input;
 mod keys;
 mod lines;
+mod marks;
 mod scrollbar;
 mod shape;
 mod surface;
@@ -25,7 +26,7 @@ use crate::doc::{Doc, Selection};
 use crate::edit::Motion;
 use crate::edit::format::Format;
 use crate::layout::Affinity;
-use crate::style::Styled;
+use crate::style::{Mark, Styled};
 
 /// The id the editor widget takes, for [`Editor::focus`].
 const ID: Id = Id::new("livemark-editor");
@@ -62,13 +63,17 @@ pub struct Editor {
     find: Option<find::Find>,
     mode: Mode,
     lines: RefCell<Lines>,
-    /// The last `hidden` worked out, by document version and selection:
+    /// The last `reveal` worked out, by document version and selection:
     /// several calls per frame ask for it (backlog 12).
-    hidden: RefCell<Option<HiddenFor>>,
+    reveal: RefCell<Option<RevealFor>>,
 }
 
-/// Hidden markers and the document version and selection they are for.
-type HiddenFor = (u64, Range<usize>, Arc<[Range<usize>]>);
+/// What live preview hides and draws over, and the document version and
+/// selection it is for.
+type RevealFor = (u64, Range<usize>, Reveal);
+
+/// Hidden markers and concealed marks.
+type Reveal = (Arc<[Range<usize>]>, Arc<[Mark]>);
 
 /// A mouse press being held.
 #[derive(Debug, Clone)]
@@ -182,7 +187,7 @@ impl Editor {
                 code: Color::BLACK,
                 link: Color::BLACK,
             })),
-            hidden: RefCell::new(None),
+            reveal: RefCell::new(None),
         }
     }
 
@@ -271,11 +276,11 @@ impl Editor {
         iced::widget::operation::focus(ID)
     }
 
-    /// The markers hidden with the selection drawn now; none in source
-    /// mode.
-    fn hidden(&self) -> Arc<[Range<usize>]> {
+    /// The markers hidden and the marks drawn over with the selection
+    /// drawn now; none in source mode.
+    fn reveal(&self) -> Reveal {
         if self.mode == Mode::Source {
-            return Arc::new([]);
+            return (Arc::new([]), Arc::new([]));
         }
         let selection = self
             .press
@@ -283,23 +288,27 @@ impl Editor {
             .map_or(self.doc.selection(), |press| press.frozen)
             .range();
         let version = self.doc.version();
-        let mut cache = self.hidden.borrow_mut();
+        let mut cache = self.reveal.borrow_mut();
         match &*cache {
-            Some((v, s, hidden)) if *v == version && *s == selection => hidden.clone(),
+            Some((v, s, reveal)) if *v == version && *s == selection => reveal.clone(),
             _ => {
-                let hidden: Arc<[Range<usize>]> = self.styled.hidden(selection.clone()).into();
-                *cache = Some((version, selection, hidden.clone()));
-                hidden
+                let reveal: Reveal = (
+                    self.styled.hidden(selection.clone()).into(),
+                    self.styled.concealed(selection.clone()).into(),
+                );
+                *cache = Some((version, selection, reveal.clone()));
+                reveal
             }
         }
     }
 
     fn with_lines<R>(&self, f: impl FnOnce(&mut Lines, &Source) -> R) -> R {
-        let hidden = self.hidden();
+        let (hidden, concealed) = self.reveal();
         let source = Source {
             doc: &self.doc,
             styled: &self.styled,
             hidden: &hidden,
+            concealed: &concealed,
         };
         let mut lines = self.lines.borrow_mut();
         lines.anchor = lines.anchor.min(self.doc.line_count() - 1);

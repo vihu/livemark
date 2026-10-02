@@ -113,6 +113,15 @@ impl Editor {
     /// A press: a caret (Shift extends the selection), a word on a double
     /// click, a line on a triple click (REFERENCE-001 section 14).
     fn press(&mut self, at: Point, shift: bool, clicks: u8) -> Affinity {
+        // A checkbox toggles its task and leaves the caret where it is
+        // (REFERENCE-001 section 8).
+        if clicks == 1 && !shift {
+            let task = self.with_lines(|lines, source| lines.task_at(source, at.x, at.y));
+            if let Some(task) = task {
+                edit::format::toggle_task(&mut self.doc, task, self.started.elapsed());
+                return self.side;
+            }
+        }
         let (offset, side) = self.with_lines(|lines, source| lines.hit(source, at.x, at.y));
         let frozen = self.doc.selection();
         let (unit, first) = match clicks {

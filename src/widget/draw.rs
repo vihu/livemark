@@ -8,7 +8,8 @@ use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Color, Point, Rectangle, Size, Theme, Vector};
 
 use super::Editor;
-use super::lines::Shaped;
+use super::lines::{Shaped, marks_in};
+use super::marks;
 use super::shape::{Colors, TEXT_SIZE};
 use crate::style::Style;
 
@@ -42,6 +43,12 @@ impl Editor {
         let match_color = Color {
             a: 0.35,
             ..palette.warning.base.color
+        };
+        let mark_palette = marks::Palette {
+            marker: colors.marker,
+            line: quote_bar,
+            accent: palette.primary.base.color,
+            tick: palette.primary.base.text,
         };
         let matches = self.find.as_ref().map_or(&[][..], |f| &f.matches[..]);
         let selection = self.doc.selection().range();
@@ -132,6 +139,16 @@ impl Editor {
                     }
                 }
                 draw_text(renderer, &shaped, origin, area, text);
+                let line_text = &source.doc.text()[range.clone()];
+                marks::draw(
+                    renderer,
+                    &shaped,
+                    marks_in(source.concealed, range.clone()),
+                    (line_text, range.start),
+                    origin,
+                    area.width,
+                    &mark_palette,
+                );
                 // Strike lines through struck text and done tasks, a line
                 // under link text: iced's renderers draw no text
                 // decorations.

@@ -5,7 +5,7 @@ use std::ops::Range;
 use pulldown_cmark::Event;
 use serde::Deserialize;
 
-use super::{Construct, Style, Styled, Syntax};
+use super::{Construct, MarkKind, Style, Styled, Syntax};
 use crate::parse;
 
 fn heading(level: u8, marker: bool) -> Style {
@@ -336,4 +336,40 @@ fn bare_urls_are_link_text_without_markers() {
         ["www.example.com", "https://a.b/c", "me@x.yz"]
     );
     assert!(styled.constructs().is_empty(), "nothing to hide");
+}
+
+#[test]
+fn bullets_boxes_quote_marks_and_rules_conceal_until_touched() {
+    let text = "- a\n  * [x] b\n1. c\n> > q\n\n  ---\n";
+    let styled = Styled::new(text);
+    let concealed = |at: usize| -> Vec<(&str, MarkKind)> {
+        styled
+            .concealed(at..at)
+            .into_iter()
+            .map(|m| (&text[m.range], m.kind))
+            .collect()
+    };
+    let all = concealed(text.len());
+    assert_eq!(
+        all,
+        [
+            ("-", MarkKind::Bullet),
+            ("*", MarkKind::Bullet),
+            ("[x]", MarkKind::Task(true)),
+            (">", MarkKind::Quote),
+            (">", MarkKind::Quote),
+            ("  ---", MarkKind::Rule),
+        ],
+        "ordered numbers always show"
+    );
+    assert_eq!(concealed(2).len(), all.len(), "a caret at the item's text");
+    assert!(
+        !concealed(1).contains(&("-", MarkKind::Bullet)),
+        "touching it"
+    );
+    assert!(!concealed(9).iter().any(|m| m.1 == MarkKind::Task(true)));
+    assert!(
+        !concealed(26).iter().any(|m| m.1 == MarkKind::Rule),
+        "a caret at the start of the indented rule line"
+    );
 }

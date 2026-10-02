@@ -160,6 +160,23 @@ pub fn link(doc: &mut Doc, now: Duration) {
     );
 }
 
+/// A click on a task's checkbox (REFERENCE-001 section 8): the box at
+/// `task` (`[ ]`, `[x]` or `[X]`) checked or cleared, the selection kept.
+pub fn toggle_task(doc: &mut Doc, task: std::ops::Range<usize>, now: Duration) {
+    let checked = doc.text()[task.clone()] != *"[ ]";
+    let mark = if checked { " " } else { "x" };
+    let selection = doc.selection();
+    doc.apply(
+        vec![Change {
+            range: task.start + 1..task.end - 1,
+            text: mark.to_owned(),
+        }],
+        selection,
+        Kind::Other,
+        now,
+    );
+}
+
 /// An absolute URL: a scheme, `:`, and no whitespace (what SilverBullet's
 /// `new URL` check accepts, near enough).
 fn is_url(text: &str) -> bool {

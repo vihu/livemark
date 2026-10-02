@@ -111,7 +111,9 @@ pub fn shape(
         let token = tokens
             .iter()
             .find(|t| t.range.start <= from && from < t.range.end);
-        if let Some(token) = token.filter(|_| !style.marker) {
+        // Syntax colors leave markers dimmed; a transparent token (a
+        // concealed mark) hides one.
+        if let Some(token) = token.filter(|t| !style.marker || t.color.a == 0.0) {
             attrs = attrs.color(to_color(token.color));
             if token.italic {
                 attrs = attrs.style(cosmic_text::Style::Italic);
@@ -154,7 +156,7 @@ pub fn shape(
 }
 
 fn attrs(style: Style, colors: Colors, mono: bool) -> cosmic_text::Attrs<'static> {
-    let font = if mono || style.code || style.code_block || style.table {
+    let font = if mono || style.code || style.code_block || style.table || style.mono {
         Font::new(fonts::MONO)
     } else {
         Font::DEFAULT

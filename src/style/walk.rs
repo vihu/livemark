@@ -6,7 +6,7 @@ use std::ops::Range;
 use pulldown_cmark::{CodeBlockKind, Event, LinkType, Tag, TagEnd};
 
 use super::sweep::{Flag, sweep};
-use super::{CodeBlock, Construct, Styled, Syntax};
+use super::{CodeBlock, Construct, Mark, MarkKind, Styled, Syntax};
 use crate::parse;
 
 /// Styles `text`.
@@ -25,6 +25,7 @@ pub(super) fn walk(text: &str) -> Styled {
         cells: None,
         quote_depth: 0,
         item: None,
+        marks: Vec::new(),
     };
     for (event, range) in parse::events(text) {
         walk.inside_span(&range);
@@ -67,6 +68,7 @@ struct Walk<'a> {
     quote_depth: usize,
     /// The start of a list item whose first inline content is to come.
     item: Option<usize>,
+    marks: Vec<Mark>,
 }
 
 impl Walk<'_> {
@@ -151,12 +153,23 @@ impl Walk<'_> {
                 let digits = item.bytes().take_while(u8::is_ascii_digit).count();
                 let width = if digits > 0 { digits + 1 } else { 1 };
                 let marker = range.start..(range.start + width).min(range.end);
+                if digits == 0 {
+                    self.marks.push(Mark {
+                        range: marker.clone(),
+                        kind: MarkKind::Bullet,
+                    });
+                }
                 self.toggles.push((marker, Flag::Marker));
                 self.item = Some(range.start);
             }
             Event::End(TagEnd::Item) => self.item = None,
             Event::TaskListMarker(checked) => {
+                self.marks.push(Mark {
+                    range: range.clone(),
+                    kind: MarkKind::Task(checked),
+                });
                 self.toggles.push((range.clone(), Flag::Marker));
+                self.toggles.push((range.clone(), Flag::Mono));
                 if checked {
                     let rest = &self.text[range.end..];
                     let line = &rest[..rest.find(['\n', '\r']).unwrap_or(rest.len())];
@@ -167,6 +180,14 @@ impl Walk<'_> {
             }
             Event::Rule => {
                 let end = range.start + line_trim(&self.text[range.clone()]);
+                // The whole line, so a caret anywhere on it shows the source.
+                let line = self.text[..range.start]
+                    .rfind(['\n', '\r'])
+                    .map_or(0, |i| i + 1);
+                self.marks.push(Mark {
+                    range: line..end,
+                    kind: MarkKind::Rule,
+                });
                 self.toggles.push((range.start..end, Flag::Marker));
             }
             _ => {}
@@ -363,6 +384,10 @@ impl Walk<'_> {
                     break;
                 }
                 self.toggles.push((at..at + 1, Flag::Marker));
+                self.marks.push(Mark {
+                    range: at..at + 1,
+                    kind: MarkKind::Quote,
+                });
                 at += 1;
                 if bytes.get(at) == Some(&b' ') {
                     at += 1;
@@ -388,12 +413,14 @@ impl Walk<'_> {
         }
         self.hangs.sort_unstable();
         self.hangs.dedup();
+        self.marks.sort_by_key(|m| m.range.start);
         Styled {
             runs: sweep(self.toggles),
             constructs: self.constructs,
             code_blocks: self.code_blocks,
             quotes: self.quotes,
             hangs: self.hangs,
+            marks: self.marks,
         }
     }
 }

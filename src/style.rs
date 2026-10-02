@@ -33,6 +33,9 @@ pub struct Style {
     /// Markdown syntax (`#`, `**`, backticks, `>`, list markers, a setext
     /// underline): dimmed.
     pub marker: bool,
+    /// In the code font without being code: a task box, so `[ ]` and
+    /// `[x]` are as wide and checking one moves nothing.
+    pub mono: bool,
 }
 
 /// The syntax a [`Construct`] is.
@@ -80,6 +83,30 @@ pub struct CodeBlock {
     pub lines: Vec<Range<usize>>,
 }
 
+/// Markup live preview draws as something else while the selection does
+/// not touch it (inclusive, REFERENCE-001 section 2): the source stays in
+/// place, so nothing moves when it shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mark {
+    /// The source drawn over; touching it shows the source.
+    pub range: Range<usize>,
+    /// What it is drawn as.
+    pub kind: MarkKind,
+}
+
+/// What a [`Mark`] is drawn as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkKind {
+    /// `-`, `+` or `*` before a list item: a dot (section 7).
+    Bullet,
+    /// `[ ]`, or `[x]` with `true`: a checkbox (section 8).
+    Task(bool),
+    /// A quote's `>`: a bar (section 6).
+    Quote,
+    /// A thematic break's line: a horizontal line (section 11).
+    Rule,
+}
+
 /// A document's styling, worked out once per edit.
 #[derive(Debug, Default)]
 pub struct Styled {
@@ -91,6 +118,8 @@ pub struct Styled {
     /// Where wrapped rows of a line line up: after a list marker (and task
     /// box) or a quote's `>` prefix (REFERENCE-001 sections 6, 7). Sorted.
     hangs: Vec<usize>,
+    /// Sorted by start.
+    marks: Vec<Mark>,
 }
 
 impl Styled {
@@ -143,6 +172,16 @@ impl Styled {
             .last()
             .copied()
             .filter(|&h| h >= line.start)
+    }
+
+    /// The marks drawn as something else with `selection` in place: those
+    /// it does not touch.
+    pub fn concealed(&self, selection: Range<usize>) -> Vec<Mark> {
+        self.marks
+            .iter()
+            .filter(|m| !(selection.start <= m.range.end && m.range.start <= selection.end))
+            .cloned()
+            .collect()
     }
 
     /// The markers live preview hides with `selection` in place: those of

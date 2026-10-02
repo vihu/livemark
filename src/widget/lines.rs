@@ -10,11 +10,11 @@ use std::sync::Arc;
 use iced::Theme;
 use iced::advanced::graphics::text::cosmic_text;
 
-use super::highlight::Highlights;
+use super::highlight::{Highlights, Token};
 use super::shape::{Cached, Colors, cursor, heading_level, shape};
 use crate::doc::Doc;
 use crate::layout::{Affinity, Line};
-use crate::style::Styled;
+use crate::style::{Mark, Styled};
 
 /// A source line shaped for drawing.
 pub struct Shaped {
@@ -57,6 +57,8 @@ pub struct Source<'a> {
     pub doc: &'a Doc,
     pub styled: &'a Styled,
     pub hidden: &'a [Range<usize>],
+    /// Marks drawn as something else (`draw.rs`), sorted.
+    pub concealed: &'a [Mark],
 }
 
 /// Shaped lines and the scroll position.
@@ -116,13 +118,22 @@ impl Lines {
             .styled
             .hang_at(range.clone())
             .map(|at| line.to_display(at));
-        let tokens = match &self.theme {
-            Some(theme) => {
-                self.highlights
-                    .tokens(source.doc.text(), source.styled, range, &line, theme)
-            }
+        let mut tokens = match &self.theme {
+            Some(theme) => self.highlights.tokens(
+                source.doc.text(),
+                source.styled,
+                range.clone(),
+                &line,
+                theme,
+            ),
             None => Vec::new(),
         };
+        // Concealed marks keep their place but are not drawn.
+        tokens.extend(marks_in(source.concealed, range).map(|mark| Token {
+            range: line.to_display(mark.range.start)..line.to_display(mark.range.end),
+            color: iced::Color::TRANSPARENT,
+            italic: false,
+        }));
         let mut hasher = DefaultHasher::new();
         let mono = self.source;
         (
@@ -339,4 +350,25 @@ fn side_cursor(display: usize, side: Affinity) -> cosmic_text::Cursor {
         Affinity::After => cosmic_text::Affinity::After,
     };
     cosmic_text::Cursor::new_with_affinity(0, display, affinity)
+}
+
+/// The marks of the sorted `marks` on the line at `range`.
+pub fn marks_in(marks: &[Mark], range: Range<usize>) -> impl Iterator<Item = &Mark> {
+    let first = marks.partition_point(|m| m.range.end < range.start);
+    marks[first..]
+        .iter()
+        .take_while(move |m| m.range.start <= range.end)
+        .filter(move |m| range.start <= m.range.start && m.range.end <= range.end)
+}
+
+impl Lines {
+    /// The concealed task box whose checkbox is at `x`, `y` in the text
+    /// area, if any.
+    pub fn task_at(&mut self, source: &Source, x: f32, y: f32) -> Option<Range<usize>> {
+        let (index, top) = self.line_at_y(source, y);
+        let shaped = self.shaped(source, index);
+        let range = source.doc.line_range(index);
+        let point = iced::Point::new(x, y - top);
+        super::marks::task_at(&shaped, marks_in(source.concealed, range), point)
+    }
 }
