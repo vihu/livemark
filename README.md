@@ -4,8 +4,41 @@ A live-preview markdown editor for [iced]: you type markdown and it renders
 in place as you type, like Obsidian's Live Preview. The markdown text is the
 document. Nothing else is stored, so other tools edit the same file.
 
-Status: L0 spike (live preview of headings and inline styles, typing, IME), not on crates.io. Targets Linux (Wayland) and macOS. It is
+Status: working towards v0.1.0, not on crates.io. Live preview of headings,
+emphasis, links, lists, quotes, task lists, code (syntax colors in fenced
+blocks) and tables (in the code font); list-aware editing; formatting keys;
+find and replace; a source mode. Targets Linux (Wayland) and macOS. It is
 both a library for iced apps and a standalone editor (the `livemark` app).
+
+## The app
+
+```text
+cargo run --release -p livemark-app -- [file.md] [--dark|--light]
+```
+
+Light or dark follows the system unless a flag says. Ctrl+O opens, Ctrl+S
+saves (asking where for a new note), Ctrl+Shift+S saves as. A `*` in the
+title marks unsaved changes; closing or opening another file then asks.
+
+Keys in the editor (Cmd instead of Ctrl on macOS):
+
+| Keys | Does |
+| --- | --- |
+| Ctrl+B, Ctrl+I, Ctrl+E | Bold, italic, inline code: on the selection or the word, off inside one |
+| Ctrl+K | A link: `[text]()` around the selection, `[](url)` around a URL |
+| Ctrl+Shift+E | Live preview or the markdown as written |
+| Ctrl+F, Ctrl+H | Find, find and replace; Enter, F3 or Ctrl+G for the next match, with Shift the previous; Escape closes |
+| Enter | Continues a list item (next number, unchecked box) or quote; on an empty item, one level less |
+| Shift+Enter | A new line indented to the item's text, without a marker |
+| Tab, Shift+Tab | Nests a list item (with its children) under the one before, or moves it back out |
+| Backspace | After a list marker or `>`, removes that markup first |
+| Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z | Undo, redo (typing undoes in bursts) |
+| Ctrl+C, Ctrl+X | With nothing selected, copy or cut the whole line (pasted back as a line) |
+| Home, End | The start or end of the row, then of the line; Home skips list and quote markup |
+| Double, triple click | Selects a word, a line; dragging extends by words or lines |
+
+Markers (`**`, `#`, `[`, `](url)`) stay hidden until the caret touches
+them. The scroll bar on the right drags, and a click on its track jumps.
 
 ## Embedding
 

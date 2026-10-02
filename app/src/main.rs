@@ -1,10 +1,11 @@
 //! livemark: a desktop editor for markdown files.
 //!
 //! ```text
-//! livemark [file.md] [--dark]
-//! cargo run --release -p livemark-app -- [file.md] [--dark]
+//! livemark [file.md] [--dark|--light]
+//! cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 //! ```
 //!
+//! Light or dark follows the system unless `--dark` or `--light` says.
 //! Ctrl+O opens, Ctrl+S saves (asking where for a new file), Ctrl+Shift+S
 //! saves as. The title shows `*` while there are unsaved changes; closing
 //! the window or opening another file then asks first.
@@ -24,9 +25,11 @@ pub fn main() -> iced::Result {
         .find(|a| !a.starts_with("--"))
         .map(PathBuf::from);
     let theme = if args.iter().any(|a| a == "--dark") {
-        Theme::Dark
+        Some(Theme::Dark)
+    } else if args.iter().any(|a| a == "--light") {
+        Some(Theme::Light)
     } else {
-        Theme::Light
+        None
     };
     iced::application(
         move || (App::open(path.clone(), theme.clone()), Editor::focus()),
@@ -34,6 +37,14 @@ pub fn main() -> iced::Result {
         App::view,
     )
     .title(App::title)
+    .window(window::Settings {
+        #[cfg(target_os = "linux")]
+        platform_specific: window::settings::PlatformSpecific {
+            application_id: "livemark".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    })
     .theme(|app: &App| app.theme.clone())
     .subscription(App::subscription)
     .exit_on_close_request(false)
@@ -48,7 +59,8 @@ struct App {
     saved: u64,
     /// The last open or save error, until the next success.
     error: Option<String>,
-    theme: Theme,
+    /// `None` follows the system.
+    theme: Option<Theme>,
     /// What waits on an answer about unsaved changes.
     pending: Option<After>,
 }
@@ -77,7 +89,7 @@ enum Message {
 }
 
 impl App {
-    fn open(path: Option<PathBuf>, theme: Theme) -> Self {
+    fn open(path: Option<PathBuf>, theme: Option<Theme>) -> Self {
         let (text, error) = match path.as_deref().map(file::load) {
             Some(Ok(text)) => (text, None),
             Some(Err(error)) => (String::new(), Some(error)),
