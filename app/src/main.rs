@@ -18,6 +18,7 @@
 //! `sidebar.rs`); with one and no file given, the note last open in it
 //! opens.
 mod file;
+mod note;
 mod pictures;
 mod settings;
 mod sidebar;
@@ -120,6 +121,8 @@ struct App {
     vault: Option<vault::Vault>,
     /// The tag the sidebar's notes are filtered by.
     tag: Option<String>,
+    /// The title being typed for a new note in the vault.
+    naming: Option<String>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -199,6 +202,7 @@ impl App {
             menu: false,
             vault: None,
             tag: None,
+            naming: None,
         }
         .with_images()
     }
@@ -341,6 +345,10 @@ impl App {
                 self.load_images();
                 self.remember_zoom();
                 return task;
+            }
+            // In a vault a new note is named first and made there.
+            Message::New if self.vault.is_some() => {
+                return self.vault_update(sidebar::VaultMessage::NewNote);
             }
             Message::New if self.unsaved() => self.pending = Some(After::New),
             Message::New => return self.new_note(),

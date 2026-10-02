@@ -38,6 +38,25 @@ impl App {
                 .align_y(iced::Center)
                 .into(),
             )
+        } else if let Some(title) = &self.naming {
+            use super::sidebar::{TITLE, VaultMessage};
+            Some(
+                row![
+                    text("New note"),
+                    iced::widget::text_input("Title", title)
+                        .id(TITLE)
+                        .on_input(|title| Message::Vault(VaultMessage::Title(title)))
+                        .on_submit(Message::Vault(VaultMessage::Create))
+                        .width(Length::Fill),
+                    button("Create").on_press(Message::Vault(VaultMessage::Create)),
+                    button("Cancel")
+                        .style(button::secondary)
+                        .on_press(Message::Vault(VaultMessage::CancelNew)),
+                ]
+                .spacing(8)
+                .align_y(iced::Center)
+                .into(),
+            )
         } else if self.pending.is_some() {
             Some(
                 row![

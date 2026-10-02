@@ -26,7 +26,18 @@ pub enum VaultMessage {
     /// Show only the notes with this tag; the same again, or `None`, shows
     /// all.
     Tag(Option<String>),
+    /// Ctrl+N in a vault: ask for the new note's title.
+    NewNote,
+    /// The title typed so far.
+    Title(String),
+    /// Make the note with that title, and open it.
+    Create,
+    /// No new note after all.
+    CancelNew,
 }
+
+/// The new note's title field, focused when it opens.
+pub const TITLE: iced::widget::Id = iced::widget::Id::new("livemark-new-note");
 
 impl App {
     pub(crate) fn vault_update(&mut self, message: VaultMessage) -> Task<Message> {
@@ -50,8 +61,47 @@ impl App {
             VaultMessage::Tag(tag) => {
                 self.tag = if tag == self.tag { None } else { tag };
             }
+            VaultMessage::NewNote => {
+                self.menu = false;
+                self.naming = Some(String::new());
+                return iced::widget::operation::focus(TITLE);
+            }
+            VaultMessage::Title(title) => self.naming = Some(title),
+            VaultMessage::CancelNew => self.naming = None,
+            VaultMessage::Create => return self.create_note(),
         }
         Task::none()
+    }
+
+    /// The note named in the title field, made in the vault's folder and
+    /// opened with the caret after its front matter.
+    fn create_note(&mut self) -> Task<Message> {
+        let (Some(vault), Some(title)) = (&self.vault, self.naming.take()) else {
+            return Task::none();
+        };
+        let title = title.trim();
+        let title = if title.is_empty() { "Untitled" } else { title };
+        let header = crate::note::Header {
+            title,
+            tags: &[],
+            created: &crate::note::today(),
+            by: None,
+        };
+        match crate::note::create(&vault.root, &header, "") {
+            Ok(path) => {
+                self.refresh_vault();
+                let task = self.update(Message::Opened(Some(path.clone())));
+                if self.path.as_ref() == Some(&path) {
+                    let end = self.editor.text().len();
+                    self.editor.select(end, end);
+                }
+                task
+            }
+            Err(error) => {
+                self.error = Some(format!("{}: {error}", vault.root.display()));
+                Task::none()
+            }
+        }
     }
 
     /// Reads again what changed in the vault on disk.

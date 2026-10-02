@@ -359,3 +359,39 @@ fn five_thousand_notes_are_read_quickly() {
     assert_eq!(vault.notes.len(), 5000);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn ctrl_n_in_a_vault_names_a_note_and_opens_it_ready_to_type() {
+    use crate::sidebar::VaultMessage;
+    let dir = std::env::temp_dir().join(format!("livemark-new-note-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let _ = app.update(Message::New);
+    assert_eq!(app.naming.as_deref(), Some(""), "asks for a title");
+    let _ = app.view();
+    let _ = app.update(Message::Vault(VaultMessage::Title("Lisbon hotels".into())));
+    let _ = app.update(Message::Vault(VaultMessage::Create));
+    let path = app.path.clone().expect("opened");
+    let name = path.file_name().unwrap().to_string_lossy().into_owned();
+    assert!(
+        name.ends_with("-lisbon-hotels.md") && name.len() == "2026-10-02-lisbon-hotels.md".len()
+    );
+    assert!(
+        app.editor
+            .text()
+            .starts_with("---\ntitle: Lisbon hotels\ntags: []\ncreated: ")
+    );
+    assert_eq!(
+        app.editor.selection().head,
+        app.editor.text().len(),
+        "caret after it"
+    );
+    assert_eq!(app.vault.as_ref().unwrap().notes[0].title, "Lisbon hotels");
+    // Cancelling makes nothing; outside a vault Ctrl+N is still a blank note.
+    let _ = app.update(Message::New);
+    let _ = app.update(Message::Vault(VaultMessage::CancelNew));
+    assert_eq!(app.naming, None);
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

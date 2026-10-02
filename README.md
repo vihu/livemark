@@ -58,7 +58,11 @@ repository; the app never runs git): a sidebar lists its notes, most
 recently changed first, and their tags (front matter `tags: [work,
 travel]` and inline `#tags`) with counts, a click on one showing only its
 notes. Nothing is stored but the notes: they are read into memory (5,000
-notes in about 0.1 s) and read again when the window comes back.
+notes in about 0.1 s) and read again when the window comes back. In a
+vault Ctrl+N asks for a title and makes `2026-10-02-lisbon-hotels.md`
+(the date, then the title in lowercase with hyphens; `-2` when taken) with
+front matter for its title, tags and date; the file keeps its name when
+the title changes.
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
 the theme (System, Light, Dark). The zoom, the window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click
