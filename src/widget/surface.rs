@@ -447,6 +447,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
             && cursor.position_over(text).is_some_and(|at| {
                 let at = at - Vector::new(text.x, text.y);
                 self.editor.link_under(self.pane, at).is_some()
+                    || self.editor.tag_under(self.pane, at).is_some()
             });
         if self.thumb_at(layout.bounds(), cursor).is_some() {
             mouse::Interaction::default()

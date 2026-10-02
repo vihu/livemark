@@ -51,13 +51,17 @@ impl Editor {
                 command: true,
                 clicks,
                 ..
-            } if self.link_under(Pane::Text, at).is_some() => {
-                // Ctrl/Cmd+click on a link follows it and moves nothing
-                // (REFERENCE-001 section 5); a quick second one does
-                // nothing more.
+            } if self.link_under(Pane::Text, at).is_some()
+                || self.tag_under(Pane::Text, at).is_some() =>
+            {
+                // Ctrl/Cmd+click on a link follows it, on a tag shows it,
+                // and moves nothing (REFERENCE-001 section 5); a quick
+                // second one does nothing more.
                 if clicks == 1 {
-                    let dest = self.link_under(Pane::Text, at).unwrap_or_default();
-                    task = Task::done(Message(Input::Follow(dest)));
+                    task = Task::done(Message(match self.link_under(Pane::Text, at) {
+                        Some(dest) => Input::Follow(dest),
+                        None => Input::Tag(self.tag_under(Pane::Text, at).unwrap_or_default()),
+                    }));
                 }
                 side = self.side;
                 keep_view = true;
@@ -75,7 +79,7 @@ impl Editor {
                     keep_view = true;
                 }
             },
-            Input::Follow(_) => {
+            Input::Follow(_) | Input::Tag(_) => {
                 side = self.side;
                 keep_view = true;
             }
@@ -170,8 +174,11 @@ impl Editor {
                 Key::DeleteLines => edit::lines::delete_lines(&mut self.doc, now),
                 Key::BlankLine => edit::lines::blank_line(&mut self.doc, now),
                 Key::Follow => {
-                    if let Some(dest) = self.styled.link_at(self.doc.selection().head) {
+                    let head = self.doc.selection().head;
+                    if let Some(dest) = self.styled.link_at(head) {
                         task = Task::done(Message(Input::Follow(dest.to_owned())));
+                    } else if let Some((_, name)) = self.styled.tag_at(head) {
+                        task = Task::done(Message(Input::Tag(name.to_owned())));
                     }
                 }
                 // Live, Source, Split, Live (the user's pick).
@@ -254,6 +261,16 @@ impl Editor {
             lines.covers(source, range, at.x, at.y)
         });
         over.then(|| dest.to_owned())
+    }
+
+    /// The name of the `#tag` under `at` in `pane`, if one is there.
+    pub(super) fn tag_under(&self, pane: Pane, at: Point) -> Option<String> {
+        let (offset, _) = self.hit(pane, at);
+        let (range, name) = self.styled.tag_at(offset)?;
+        let over = self.with_pane(pane, |lines, source| {
+            lines.covers(source, range, at.x, at.y)
+        });
+        over.then(|| name.to_owned())
     }
 
     /// The source offset under `at` in `pane`: in a table drawn as a grid,

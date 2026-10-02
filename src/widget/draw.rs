@@ -159,6 +159,30 @@ impl Editor {
                         quad(renderer, at(r), code_background);
                     }
                 }
+                // `#tag` pills (PLAN-004), behind the tag's accent text.
+                let pill = Color {
+                    a: 0.14,
+                    ..palette.primary.base.color
+                };
+                for tag in spans(&shaped.line.runs, |s| s.tag)
+                    .into_iter()
+                    .filter(|_| !in_grid)
+                {
+                    for (r, _) in shaped.stretches(tag) {
+                        let r = Rectangle::new(
+                            Point::new(r.x - 3.0, r.y + 2.0),
+                            Size::new(r.width + 6.0, r.height - 4.0),
+                        );
+                        renderer.fill_quad(
+                            renderer::Quad {
+                                bounds: at(r),
+                                border: iced::border::rounded(r.height / 2.0),
+                                ..renderer::Quad::default()
+                            },
+                            pill,
+                        );
+                    }
+                }
                 // `==highlight==` bands (REFERENCE-001 section 4).
                 let runs = source.styled.runs();
                 let first = runs.partition_point(|(r, _)| r.end <= range.start);

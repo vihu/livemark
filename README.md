@@ -95,6 +95,7 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | Home, End | The start or end of the row, then of the line; Home skips list and quote markup |
 | Double, triple click | Selects a word, a line; dragging extends by words or lines |
 | Ctrl+click on a link, Alt+Enter in one | Opens it (web and mail links) |
+| Ctrl+click on a `#tag`, Alt+Enter in one | Shows the vault's notes with that tag |
 | Click on a checkbox | Checks or clears the task |
 
 Markers (`**`, `#`, `[`, `](url)`) stay hidden until the caret touches
@@ -135,7 +136,8 @@ compare it with the value from the last save to know when to autosave.
 list, task, quote, the mode) to show where the host likes; each runs its
 key's command. A paste with no text but a picture comes to the host as
 `Message::pasted_image` (PNG bytes); keep it and answer with
-`Editor::insert_text`. `Editor::image_urls` lists where the note's images point; hand each
+`Editor::insert_text`. `Message::tag` is a `#tag` the user Ctrl+clicked (drawn as a pill), for the
+host to show. `Editor::image_urls` lists where the note's images point; hand each
 picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn
 under its line while its markdown hides. `Editor::set_zoom` scales the
 text; `Editor::split_ratio` and `set_split_ratio` are the markdown's share

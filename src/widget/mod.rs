@@ -146,6 +146,16 @@ impl Message {
         }
     }
 
+    /// The name of an inline `#tag` (without its `#`) the user asked to
+    /// see (Ctrl/Cmd+click on it, Alt+Enter in it), for the host to show
+    /// what has it (PLAN-004); the editor does nothing with it.
+    pub fn tag(&self) -> Option<&str> {
+        match &self.0 {
+            Input::Tag(name) => Some(name),
+            _ => None,
+        }
+    }
+
     /// A picture the user pasted (the clipboard held no text), as PNG
     /// bytes, for the host to keep somewhere and answer with the markdown to
     /// insert (`Editor::insert_text`); the editor does nothing with it
@@ -179,6 +189,8 @@ enum Input {
     },
     /// A link to follow: the host's to open (REFERENCE-001 section 5).
     Follow(String),
+    /// A `#tag` to show: the host's (PLAN-004).
+    Tag(String),
     Drag(Point),
     Release,
     /// A press in side by side's rendered pane, at a point of its text
@@ -580,6 +592,8 @@ impl Editor {
 
 #[cfg(test)]
 mod split_tests;
+#[cfg(test)]
+mod tag_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

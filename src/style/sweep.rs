@@ -20,6 +20,7 @@ pub(super) enum Flag {
     Mono,
     Meta,
     Highlight,
+    Tag,
 }
 
 /// Flattens nested styled ranges into runs of one style each.
@@ -31,7 +32,7 @@ pub(super) fn sweep(toggles: Vec<(Range<usize>, Flag)>) -> Vec<(Range<usize>, St
         .collect();
     edges.sort_by_key(|&(at, _, _)| at);
     let mut runs = Vec::new();
-    let mut counts = [0i32; 12];
+    let mut counts = [0i32; 13];
     let mut heading = 0;
     let mut from = 0;
     let mut i = 0;
@@ -51,6 +52,7 @@ pub(super) fn sweep(toggles: Vec<(Range<usize>, Flag)>) -> Vec<(Range<usize>, St
             mono: counts[9] > 0,
             meta: counts[10] > 0,
             highlight: counts[11] > 0,
+            tag: counts[12] > 0,
         };
         if at > from && style != Style::default() {
             runs.push((from..at, style));
@@ -71,6 +73,7 @@ pub(super) fn sweep(toggles: Vec<(Range<usize>, Flag)>) -> Vec<(Range<usize>, St
                 Flag::Mono => counts[9] += delta,
                 Flag::Meta => counts[10] += delta,
                 Flag::Highlight => counts[11] += delta,
+                Flag::Tag => counts[12] += delta,
             }
             i += 1;
         }

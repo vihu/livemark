@@ -223,7 +223,7 @@ fn ctrl_click_and_alt_enter_hand_a_link_to_the_host() {
 }
 
 /// The messages a task from `Editor::update` resolves to.
-fn outputs(task: iced::Task<super::Message>) -> Vec<super::Message> {
+pub(super) fn outputs(task: iced::Task<super::Message>) -> Vec<super::Message> {
     use iced::futures::StreamExt;
     let Some(stream) = iced_runtime::task::into_stream(task) else {
         return Vec::new();

@@ -109,7 +109,6 @@ pub fn front_matter_text(text: &str) -> Option<&str> {
 /// (a URL's `#fragment` is no tag), and not escaped. Each range covers the
 /// `#` and the name.
 pub fn tags(text: &str) -> Vec<Range<usize>> {
-    let name = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '/');
     let mut found: Vec<Range<usize>> = Vec::new();
     let (mut code, mut links) = (0usize, 0usize);
     for (event, range) in events(text) {
@@ -119,26 +118,29 @@ pub fn tags(text: &str) -> Vec<Range<usize>> {
             Event::Start(Tag::Link { .. } | Tag::Image { .. }) => links += 1,
             Event::End(TagEnd::Link | TagEnd::Image) => links -= 1,
             Event::Text(_) if code == 0 && links == 0 => {
-                for (at, _) in text[range.clone()].match_indices('#') {
-                    let start = range.start + at;
-                    let before = text[..start].chars().next_back();
-                    if before.is_some_and(|c| !c.is_whitespace()) {
-                        continue;
-                    }
-                    // The name may run on past this event: pulldown-cmark
-                    // splits text at `_` and the like.
-                    let rest = &text[start + 1..];
-                    let len = rest.find(|c: char| !name(c)).unwrap_or(rest.len());
-                    let tag = &rest[..len];
-                    if !tag.is_empty() && !tag.chars().all(|c| c.is_ascii_digit()) {
-                        found.push(start..start + 1 + len);
-                    }
-                }
+                let hashes = text[range.clone()].match_indices('#');
+                found.extend(hashes.filter_map(|(at, _)| tag_at(text, range.start + at)));
             }
             _ => {}
         }
     }
     found
+}
+
+/// The tag whose `#` is at `start`, by [`tags`]' rule, when the text
+/// there is one (code, links and front matter are the caller's to rule
+/// out). The name may run on past a text event: pulldown-cmark splits
+/// text at `_` and the like.
+pub fn tag_at(text: &str, start: usize) -> Option<Range<usize>> {
+    let name = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '/');
+    let before = text[..start].chars().next_back();
+    if before.is_some_and(|c| !c.is_whitespace()) || !text[start..].starts_with('#') {
+        return None;
+    }
+    let rest = &text[start + 1..];
+    let len = rest.find(|c: char| !name(c)).unwrap_or(rest.len());
+    let tag = &rest[..len];
+    (!tag.is_empty() && !tag.chars().all(|c| c.is_ascii_digit())).then(|| start..start + 1 + len)
 }
 
 /// pulldown-cmark's events with extended autolinks spliced in, lazily:

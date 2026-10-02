@@ -104,6 +104,14 @@ impl App {
         }
     }
 
+    /// A `#tag` clicked in a note: the sidebar shows the notes with it.
+    pub(crate) fn show_tag(&mut self, tag: &str) {
+        if self.vault.is_some() {
+            self.search = None;
+            self.tag = Some(tag.to_lowercase());
+        }
+    }
+
     /// Reads again what changed in the vault on disk.
     pub(crate) fn refresh_vault(&mut self) {
         if let Some(vault) = &mut self.vault {

@@ -526,3 +526,21 @@ fn search_finds_notes_by_their_words_and_opens_at_the_match() {
     assert!(app.search.is_none());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_tag_clicked_in_a_note_filters_the_sidebar() {
+    use crate::sidebar::VaultMessage;
+    let dir = std::env::temp_dir().join(format!("livemark-tag-click-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    write(&dir.join("a.md"), "Plans #Travel\n", 0);
+    let mut app = App::open(None, None);
+    // Outside a vault, nothing to show.
+    app.show_tag("travel");
+    assert_eq!(app.tag, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let _ = app.update(Message::Search(crate::search::SearchMessage::Open));
+    app.show_tag("Travel");
+    assert_eq!(app.tag.as_deref(), Some("travel"));
+    assert!(app.search.is_none(), "back to the notes");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

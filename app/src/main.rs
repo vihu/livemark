@@ -351,6 +351,9 @@ impl App {
             Message::Quick(message) => return self.quick_update(message),
             Message::Search(message) => return self.search_update(message),
             Message::Editor(message) => {
+                if let Some(tag) = message.tag() {
+                    self.show_tag(tag);
+                }
                 // Only a failure is reported; an open or save error stays.
                 if let Some(Err(error)) = message.link().map(open_link) {
                     self.error = Some(error);

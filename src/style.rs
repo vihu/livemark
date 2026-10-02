@@ -41,6 +41,8 @@ pub struct Style {
     pub meta: bool,
     /// Inside `==highlight==`: drawn on a marker-pen band.
     pub highlight: bool,
+    /// An inline `#tag` (PLAN-004): in the link color on a pill.
+    pub tag: bool,
 }
 
 /// The syntax a [`Construct`] is.
@@ -189,6 +191,8 @@ pub struct Styled {
     task_bullets: Vec<(Range<usize>, Range<usize>)>,
     /// Images (`![alt](url)`), in order, and where each points.
     images: Vec<(Range<usize>, String)>,
+    /// Inline `#tags` (`#` included) with their names, in order.
+    tags: Vec<(Range<usize>, String)>,
 }
 
 impl Styled {
@@ -257,6 +261,16 @@ impl Styled {
             .get(i)
             .filter(|(r, _)| r.start <= offset)
             .map(|(r, dest)| (r.clone(), dest.as_str()))
+    }
+
+    /// The inline `#tag` at `offset`: its source, `#` included, and its
+    /// name, without it.
+    pub fn tag_at(&self, offset: usize) -> Option<(Range<usize>, &str)> {
+        let i = self.tags.partition_point(|(r, _)| r.end < offset);
+        self.tags
+            .get(i)
+            .filter(|(r, _)| r.start <= offset)
+            .map(|(r, name)| (r.clone(), name.as_str()))
     }
 
     /// The images (`![alt](url)`), in order: the source of each and its

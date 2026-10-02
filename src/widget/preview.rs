@@ -93,6 +93,9 @@ impl Editor {
         if command && let Some(dest) = self.link_under(Pane::Preview, at) {
             return Task::done(Message(Input::Follow(dest)));
         }
+        if command && let Some(name) = self.tag_under(Pane::Preview, at) {
+            return Task::done(Message(Input::Tag(name)));
+        }
         let task = self.with_pane(Pane::Preview, |lines, source| {
             lines.task_at(source, at.x, at.y)
         });

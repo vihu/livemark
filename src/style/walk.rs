@@ -30,6 +30,7 @@ pub(super) fn walk(text: &str) -> Styled {
         marks: Vec::new(),
         tables: Vec::new(),
         links: Vec::new(),
+        tags: Vec::new(),
         lazies: Vec::new(),
         inner_quotes: Vec::new(),
         nest: Vec::new(),
@@ -88,6 +89,8 @@ struct Walk<'a> {
     /// set.
     tables: Vec<Table>,
     links: Vec<(Range<usize>, String)>,
+    /// Inline `#tags` with their names.
+    tags: Vec<(Range<usize>, String)>,
     /// Lazy continuation lines in quotes and the quoted line before each.
     lazies: Vec<(Range<usize>, Range<usize>)>,
     /// Where quotes inside other quotes start.
@@ -216,6 +219,18 @@ impl Walk<'_> {
                         let url = self.spans.last().is_some_and(|s| s.bare || s.angle);
                         if !self.in_meta && !url {
                             self.highlights(&range);
+                        }
+                        // Inline `#tags`, not in front matter or links
+                        // (PLAN-004).
+                        if !self.in_meta && self.spans.is_empty() {
+                            for (at, _) in self.text[range.clone()].match_indices('#') {
+                                if let Some(tag) = crate::parse::tag_at(self.text, range.start + at)
+                                {
+                                    let name = self.text[tag.start + 1..tag.end].to_owned();
+                                    self.toggles.push((tag.clone(), Flag::Tag));
+                                    self.tags.push((tag, name));
+                                }
+                            }
                         }
                     }
                 }
@@ -597,6 +612,7 @@ impl Walk<'_> {
             continuations: self.continuations,
             task_bullets: self.task_bullets,
             images: self.images,
+            tags: self.tags,
         }
     }
 }

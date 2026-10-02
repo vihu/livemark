@@ -201,7 +201,7 @@ fn attrs(style: Style, colors: Colors, mono: bool) -> cosmic_text::Attrs<'static
         colors.marker
     } else if style.code {
         colors.code
-    } else if style.link {
+    } else if style.link || style.tag {
         colors.link
     } else {
         colors.text
