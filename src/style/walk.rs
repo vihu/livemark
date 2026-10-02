@@ -34,6 +34,7 @@ pub(super) fn walk(text: &str) -> Styled {
         inner_quotes: Vec::new(),
         nest: Vec::new(),
         continuations: Vec::new(),
+        scanned: None,
     };
     for (event, range) in parse::events(text) {
         walk.inside_span(&range);
@@ -90,6 +91,8 @@ struct Walk<'a> {
     /// Lines of paragraphs in list items after the item's first line, and
     /// where the item's text starts.
     continuations: Vec<(Range<usize>, usize)>,
+    /// The last line `continuation_line` looked at.
+    scanned: Option<Range<usize>>,
 }
 
 /// A container open in the walk: a quote, or a list item with where its

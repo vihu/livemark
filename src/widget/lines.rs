@@ -17,6 +17,37 @@ use crate::doc::Doc;
 use crate::layout::{Affinity, Line};
 use crate::style::{Mark, MarkKind, Styled};
 
+/// For a line of only spaces or tabs under a list item's lines (as
+/// Shift+Enter leaves one), where the item's text starts, so the caret
+/// there stands where typed text will go.
+fn blank_in_item(source: &Source, index: usize) -> Option<usize> {
+    let text = source.doc.text();
+    let own = &text[source.doc.line_range(index)];
+    if own.is_empty() || !own.trim().is_empty() {
+        return None;
+    }
+    let mut above = index;
+    while above > 0 {
+        above -= 1;
+        let range = source.doc.line_range(above);
+        let line = &text[range.clone()];
+        if let Some(at) = source.styled.continuation_at(range.clone()) {
+            return Some(at);
+        }
+        if !line.trim().is_empty() {
+            // The item's first line: its text, unless it is a quote's.
+            return source
+                .styled
+                .hang_at(range)
+                .filter(|_| !line.trim_start().starts_with('>'));
+        }
+        if line.is_empty() {
+            return None;
+        }
+    }
+    None
+}
+
 /// A source line shaped for drawing.
 pub struct Shaped {
     pub buffer: Arc<cosmic_text::Buffer>,
@@ -130,9 +161,15 @@ impl Lines {
         let lazy = source
             .styled
             .lazy_at(range.clone())
-            .or_else(|| source.styled.continuation_at(range.clone()))
+            .map(|at| (at, false))
+            .or_else(|| {
+                let styled = source.styled;
+                let item = styled.continuation_at(range.clone());
+                item.or_else(|| blank_in_item(source, index))
+                    .map(|at| (at, true))
+            })
             .filter(|_| !self.source);
-        let Some(anchor) = lazy else {
+        let Some((anchor, item)) = lazy else {
             return self.shape_line(source, index, (0.0, 0.0));
         };
         let quoted = self.shaped(source, source.doc.line_at(anchor));
@@ -146,8 +183,15 @@ impl Lines {
             super::marks::start_x(&plain, range.start + indent)
         };
         // Its first row past its own indentation, the rest at the quoted
-        // text.
-        self.shape_line(source, index, ((target - own).max(0.0), target.max(own)))
+        // text; in a list item all its text at the item's, however far it
+        // is indented (a paragraph's lines lose their indentation,
+        // CommonMark 4.8).
+        let shift = if item {
+            (target - own, target)
+        } else {
+            ((target - own).max(0.0), target.max(own))
+        };
+        self.shape_line(source, index, shift)
     }
 
     /// Line `index` shaped with its first row `lead` to the right and,

@@ -169,14 +169,19 @@ impl Walk<'_> {
     /// `hang` (REFERENCE-001 section 7). Lines starting with a quote's `>`
     /// line up by their bars instead.
     pub(super) fn continuation_line(&mut self, at: usize, hang: usize) {
+        // Each line is looked at once: a long line holds many events.
+        if self
+            .scanned
+            .as_ref()
+            .is_some_and(|l| l.start <= at && at <= l.end)
+        {
+            return;
+        }
         let start = self.text[..at].rfind(['\n', '\r']).map_or(0, |i| i + 1);
         let rest = &self.text[start..];
         let end = start + rest.find(['\n', '\r']).unwrap_or(rest.len());
-        let seen = self
-            .continuations
-            .last()
-            .is_some_and(|(l, _)| l.start == start);
-        if !seen && !(start..=end).contains(&hang) && !rest.trim_start().starts_with('>') {
+        self.scanned = Some(start..end);
+        if !(start..=end).contains(&hang) && !rest.trim_start().starts_with('>') {
             self.continuations.push((start..end, hang));
         }
     }

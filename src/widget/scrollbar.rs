@@ -64,6 +64,11 @@ impl Editor {
     pub(super) fn scroll_to(&mut self, t: f32) {
         self.with_lines(|lines, source| {
             let count = source.doc.line_count();
+            // At the bottom, the end exactly: the travel counts lines.
+            if t >= 1.0 {
+                (lines.anchor, lines.offset) = lines.end(source);
+                return;
+            }
             let position = t.clamp(0.0, 1.0) * travel_lines(count, lines.visible);
             lines.anchor = (position.floor() as usize).min(count - 1);
             let height = lines.shaped(source, lines.anchor).height;

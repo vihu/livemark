@@ -80,6 +80,8 @@ fn later_lines_of_a_list_item_line_up_with_its_text() {
         ("para\n\n- [ ] task\n  more\n", "task", "more"),
         ("para\n\n- item\n\n  later paragraph\n", "item", "later"),
         ("para\n\n- item\nlazy\n", "item", "lazy"),
+        ("para\n\n- item\n\tmore\n", "item", "more"),
+        ("para\n\n- item\n      more\n", "item", "more"),
     ] {
         let mut editor = Editor::new(text.into());
         editor.select(0, 0);
@@ -94,4 +96,55 @@ fn later_lines_of_a_list_item_line_up_with_its_text() {
             assert!((later - first).abs() < 0.5, "{text:?}: {later} vs {first}");
         });
     }
+}
+
+#[test]
+fn the_caret_on_a_blank_line_in_an_item_stands_where_text_will_go() {
+    // As Shift+Enter leaves it: typing there must not move the text.
+    for (text, first) in [
+        ("para\n\n- [ ] task\n      ", "task"),
+        ("para\n\n10. item\n    ", "item"),
+        ("para\n\n- a\n  - item\n    ", "item"),
+    ] {
+        let typed = format!("{text}x");
+        let x = |text: &str, at: usize| {
+            let mut editor = Editor::new(text.into());
+            editor.select(0, 0);
+            editor.with_lines(|lines, source| {
+                lines
+                    .caret_in_line(source, at, crate::layout::Affinity::After)
+                    .0
+            })
+        };
+        let item = x(text, text.find(first).unwrap());
+        let blank = x(text, text.len());
+        let after = x(&typed, text.len());
+        assert!((blank - item).abs() < 0.5, "{text:?}: {blank} vs {item}");
+        assert!((after - item).abs() < 0.5, "{text:?}: {after} vs {item}");
+    }
+}
+
+#[test]
+fn the_scroll_bar_at_its_bottom_shows_the_end_of_mixed_lines() {
+    // Short lines, then long paragraphs; the last frame drew the top.
+    let long = "word ".repeat(80);
+    let text = format!(
+        "{}{}",
+        "- item\n".repeat(30),
+        format!("{long}\n").repeat(12)
+    );
+    let mut editor = Editor::new(text);
+    editor.select(0, 0);
+    editor.lines.borrow_mut().visible = 15;
+    let _ = editor.update(Message(Input::ScrollTo(1.0)));
+    editor.with_lines(|lines, source| {
+        let last = source.doc.line_count() - 1;
+        let top = lines.top_of(source, last).expect("on screen");
+        let bottom = top + lines.shaped(source, last).height;
+        assert!(
+            (bottom - lines.height).abs() < 0.5,
+            "{bottom} vs {}",
+            lines.height
+        );
+    });
 }
