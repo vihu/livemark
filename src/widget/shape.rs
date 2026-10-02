@@ -66,7 +66,10 @@ pub fn load_fonts() {
     static LOADED: std::sync::Once = std::sync::Once::new();
     LOADED.call_once(|| {
         let mut system = font_system().write().expect("font system lock");
-        for font in fonts::JETBRAINS_MONO {
+        for font in fonts::JETBRAINS_MONO
+            .into_iter()
+            .chain(fonts::ATKINSON_HYPERLEGIBLE_NEXT)
+        {
             system.load_font(std::borrow::Cow::Borrowed(font));
         }
     });
@@ -184,7 +187,7 @@ fn attrs(style: Style, colors: Colors, mono: bool) -> cosmic_text::Attrs<'static
     let font = if mono || style.code || style.code_block || style.table || style.mono {
         Font::new(fonts::MONO)
     } else {
-        Font::DEFAULT
+        Font::new(fonts::PROSE)
     };
     let mut attrs = to_attributes(font);
     if style.strong || style.heading > 0 {

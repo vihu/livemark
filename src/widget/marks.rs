@@ -141,7 +141,7 @@ fn small(content: &str, size: f32, align_x: text::Alignment, bounds: Size) -> te
         bounds,
         size: Pixels(size),
         line_height: text::LineHeight::Relative(1.0),
-        font: iced::Font::DEFAULT,
+        font: iced::Font::new(crate::fonts::PROSE),
         align_x,
         align_y: iced::alignment::Vertical::Center,
         shaping: text::Shaping::Advanced,
