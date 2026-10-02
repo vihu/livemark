@@ -60,7 +60,7 @@ const NAMED: &[Named] = &[
 ];
 
 /// Letters pressed with Ctrl/Cmd, and with Shift some of the time.
-const LETTERS: &[&str] = &["a", "b", "i", "e", "k", "z", "y", "c", "x"];
+const LETTERS: &[&str] = &["a", "b", "i", "e", "k", "z", "y", "c", "x", "f", "h", "g"];
 
 #[test]
 fn random_widget_sessions_keep_the_text_whole() {
@@ -230,13 +230,14 @@ fn event(rng: &mut Rng) -> Vec<Event> {
             )]
         }
         _ => {
-            // Line commands: Alt+Up/Down (Shift copies), Ctrl/Cmd+Enter.
+            // Line commands: Alt+Up/Down (Shift copies), Ctrl/Cmd+Enter;
+            // Alt+Enter follows a link.
             let on = rng.below(2) == 0;
             let key = *rng.pick(&[Named::ArrowUp, Named::ArrowDown, Named::Enter]);
-            let modifiers = if key == Named::Enter {
-                keyboard::Modifiers::COMMAND
-            } else {
-                keyboard::Modifiers::ALT | shift(on)
+            let modifiers = match key {
+                Named::Enter if on => keyboard::Modifiers::ALT,
+                Named::Enter => keyboard::Modifiers::COMMAND,
+                _ => keyboard::Modifiers::ALT | shift(on),
             };
             vec![press(Key::Named(key), modifiers)]
         }
