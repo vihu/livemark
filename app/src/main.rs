@@ -108,9 +108,13 @@ enum Message {
 
 impl App {
     fn open(path: Option<PathBuf>, theme: Option<Theme>) -> Self {
-        let (text, error) = match path.as_deref().map(file::load) {
-            Some(Ok(text)) => (text, None),
-            Some(Err(error)) => (String::new(), Some(error)),
+        let (text, error) = match path.as_deref() {
+            // A new file: empty, saved there on Ctrl+S.
+            Some(path) if !path.exists() => (String::new(), None),
+            Some(path) => match file::load(path) {
+                Ok(text) => (text, None),
+                Err(error) => (String::new(), Some(error)),
+            },
             None => (String::new(), None),
         };
         let editor = Editor::new(text);
@@ -161,7 +165,9 @@ impl App {
         match file::load(&path) {
             Ok(text) => {
                 let selection = self.editor.selection();
+                let mode = self.editor.mode();
                 self.editor = Editor::new(text);
+                self.editor.set_mode(mode);
                 self.editor.select(selection.anchor, selection.head);
                 self.saved = self.editor.version();
                 self.discarded = None;
@@ -249,7 +255,12 @@ impl App {
             }
             Message::Unsaved(None) => self.pending = None,
             Message::Focused => self.check_disk(),
-            Message::Reload(true) => self.reload(),
+            Message::Reload(true) => {
+                // Nothing is unsaved after it: a close or open waiting on
+                // the unsaved text is asked for again.
+                self.pending = None;
+                self.reload();
+            }
             Message::Reload(false) => {
                 // Keep this text; saving will replace the file's.
                 self.changed = false;
@@ -429,74 +440,4 @@ async fn save_file(path: Option<PathBuf>, text: String) -> Result<Option<PathBuf
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::{Duration, SystemTime};
-
-    use super::{App, Message};
-
-    /// Writes `text` to `path` with a modification time `secs` from now.
-    fn write(path: &std::path::Path, text: &str, secs: u64) {
-        std::fs::write(path, text).unwrap();
-        let file = std::fs::File::options().write(true).open(path).unwrap();
-        file.set_modified(SystemTime::now() + Duration::from_secs(secs))
-            .unwrap();
-    }
-
-    #[test]
-    fn a_file_changed_on_disk_loads_on_focus_or_asks_with_edits() {
-        let dir = std::env::temp_dir().join(format!("livemark-focus-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("note.md");
-        write(&path, "one\n", 0);
-        let mut app = App::open(Some(path.clone()), None);
-        let _ = app.update(Message::Focused);
-        assert_eq!(app.editor.text(), "one\n", "unchanged");
-        write(&path, "two\n", 10);
-        let _ = app.update(Message::Focused);
-        assert_eq!(app.editor.text(), "two\n", "loaded again");
-        assert!(!app.unsaved());
-        // With unsaved changes it asks; keeping them stops the asking.
-        app.saved = u64::MAX;
-        write(&path, "three\n", 20);
-        let _ = app.update(Message::Focused);
-        assert!(app.changed);
-        assert_eq!(app.editor.text(), "two\n");
-        let _ = app.update(Message::Reload(false));
-        let _ = app.update(Message::Focused);
-        assert!(!app.changed, "kept");
-        write(&path, "four\n", 30);
-        let _ = app.update(Message::Focused);
-        let _ = app.update(Message::Reload(true));
-        assert_eq!(app.editor.text(), "four\n", "loaded, edits dropped");
-        // Saving over a change made on disk asks first; keeping mine lets
-        // the next save through.
-        write(&path, "five\n", 40);
-        let _ = app.update(Message::Save { choose: false });
-        assert!(app.changed, "asked, not saved");
-        let _ = app.update(Message::Reload(false));
-        let _ = app.update(Message::Save { choose: false });
-        assert!(!app.changed, "saving");
-        // A file picked while there is unsaved typing waits for an answer;
-        // one picked after discarding loads.
-        let other = dir.join("other.md");
-        write(&other, "other\n", 0);
-        app.saved = u64::MAX;
-        let _ = app.update(Message::Opened(Some(other.clone())));
-        assert!(matches!(app.pending, Some(super::After::Load(_))));
-        assert_ne!(app.editor.text(), "other\n");
-        let _ = app.update(Message::Unsaved(None));
-        app.discarded = Some(app.editor.version());
-        let _ = app.update(Message::Opened(Some(other.clone())));
-        assert_eq!(app.editor.text(), "other\n");
-        std::fs::remove_file(&other).unwrap();
-        app.path = Some(path.clone());
-        // Ctrl+N with unsaved changes asks first; discarding starts afresh.
-        app.saved = u64::MAX;
-        let _ = app.update(Message::New);
-        assert_eq!(app.editor.text(), "other\n", "asked first");
-        let _ = app.update(Message::Unsaved(Some(false)));
-        assert_eq!((app.editor.text(), app.path.is_none()), ("", true));
-        std::fs::remove_file(&path).unwrap();
-        std::fs::remove_dir(&dir).unwrap();
-    }
-}
+mod tests;
