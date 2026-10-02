@@ -14,7 +14,7 @@ use iced::{Element, Event, Length, Pixels, Point, Rectangle, Size, Theme, Vector
 
 use super::find::FindInput;
 use super::shape::TEXT_SIZE;
-use super::{Editor, ID, Input, Key, Message, Vertical};
+use super::{Editor, ID, Input, Key, Message, Vertical, scrollbar};
 use crate::edit::Motion;
 use crate::edit::format::Format;
 
@@ -40,6 +40,8 @@ struct State {
     /// A paste asked the clipboard for its text.
     pasting: bool,
     modifiers: keyboard::Modifiers,
+    /// The scroll bar's thumb is held this far below its top.
+    thumb_grab: Option<f32>,
 }
 
 struct Focus {
@@ -157,6 +159,35 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
             }
             Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
                 state.modifiers = *modifiers;
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+                if self.thumb_at(bounds, cursor).is_some() =>
+            {
+                // The scroll bar: hold the thumb where it was pressed, or
+                // move it under the pointer when the track was pressed.
+                let (track, thumb, y) = self.thumb_at(bounds, cursor).expect("checked");
+                let grab = if y >= thumb.y && y <= thumb.y + thumb.height {
+                    y - thumb.y
+                } else {
+                    thumb.height / 2.0
+                };
+                state.thumb_grab = Some(grab);
+                let t = scrollbar::travel(track, thumb, y - grab);
+                publish(shell, Input::ScrollTo(t));
+                shell.capture_event();
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position }) if state.thumb_grab.is_some() => {
+                let track = scrollbar::track(bounds);
+                if let Some(thumb) = self.editor.thumb(track) {
+                    let grab = state.thumb_grab.unwrap_or(0.0);
+                    let t = scrollbar::travel(track, thumb, position.y - grab);
+                    publish(shell, Input::ScrollTo(t));
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+                if state.thumb_grab.is_some() =>
+            {
+                state.thumb_grab = None;
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(position) = cursor.position_over(bounds) {
@@ -312,7 +343,9 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         _viewport: &Rectangle,
         _renderer: &iced::Renderer,
     ) -> mouse::Interaction {
-        if cursor.is_over(layout.bounds()) {
+        if self.thumb_at(layout.bounds(), cursor).is_some() {
+            mouse::Interaction::default()
+        } else if cursor.is_over(layout.bounds()) {
             mouse::Interaction::Text
         } else {
             mouse::Interaction::default()
@@ -333,10 +366,27 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         let caret = state.focus.as_ref().is_some_and(Focus::caret_on);
         self.editor
             .draw(renderer, theme, layout.bounds().shrink(PADDING), caret);
+        self.editor.draw_scrollbar(renderer, theme, layout.bounds());
     }
 }
 
 impl Surface<'_> {
+    /// The scroll bar's track and thumb when the pointer is over the track
+    /// (a little wider, to be easy to hit), with the pointer's y.
+    fn thumb_at(
+        &self,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<(Rectangle, Rectangle, f32)> {
+        let position = cursor.position_over(bounds)?;
+        let track = scrollbar::track(bounds);
+        let near = position.x >= track.x - 4.0
+            && position.y >= track.y
+            && position.y <= track.y + track.height;
+        let thumb = self.editor.thumb(track).filter(|_| near)?;
+        Some((track, thumb, position.y))
+    }
+
     /// Ctrl/Cmd+F and Ctrl/Cmd+H open the find bar; while it is open, F3
     /// and Ctrl/Cmd+G go to the next match (Shift: the previous one) and
     /// Escape closes it.

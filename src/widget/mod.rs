@@ -6,6 +6,7 @@ mod find;
 mod highlight;
 mod input;
 mod lines;
+mod scrollbar;
 mod shape;
 mod surface;
 
@@ -99,6 +100,9 @@ enum Input {
     Release,
     /// Pixels to scroll, positive further down.
     Scroll(f32),
+    /// The scroll bar's thumb dragged or the track pressed: how far down
+    /// its travel, from 0 to 1.
+    ScrollTo(f32),
     Key(Key),
     /// Text committed by an input method.
     Commit(String),

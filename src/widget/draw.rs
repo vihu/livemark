@@ -169,6 +169,7 @@ impl Editor {
                 index += 1;
                 drawn.push(shaped);
             }
+            lines.visible = drawn.len();
             lines.trim(&drawn);
         });
         if let Some(rect) = caret_rect {

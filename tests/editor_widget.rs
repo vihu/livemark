@@ -391,3 +391,18 @@ fn ctrl_shift_e_shows_the_markdown_as_written() {
     run(&mut editor, |ui| click(ui, first_glyph));
     assert_eq!(editor.selection().head, 0, "the `#` shows in source mode");
 }
+
+#[test]
+fn pressing_the_scroll_bar_track_jumps_there() {
+    let text: String = (0..500).map(|i| format!("line {i}\n")).collect();
+    let mut editor = Editor::new(text);
+    // The track runs down the right edge, inside the padding.
+    run(&mut editor, |ui| {
+        click(ui, Point::new(SIZE.0 - 7.0, SIZE.1 - 6.0))
+    });
+    run(&mut editor, |ui| click(ui, Point::new(100.0, 20.0)));
+    assert!(caret_line(&editor) > 450, "line {}", caret_line(&editor));
+    run(&mut editor, |ui| click(ui, Point::new(SIZE.0 - 7.0, 6.0)));
+    run(&mut editor, |ui| click(ui, Point::new(100.0, 20.0)));
+    assert_eq!(caret_line(&editor), 0);
+}

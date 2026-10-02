@@ -28,6 +28,10 @@ impl Editor {
                 self.with_lines(|lines, source| lines.scroll_by(source, dy));
                 return Task::none();
             }
+            Input::ScrollTo(t) => {
+                self.scroll_to(t);
+                return Task::none();
+            }
             Input::Commit(text) => edit::type_text(&mut self.doc, &text, now),
             Input::Find(input) => task = self.find_input(input, now),
             Input::Paste(text) => {

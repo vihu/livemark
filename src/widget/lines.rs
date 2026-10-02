@@ -72,6 +72,8 @@ pub struct Lines {
     pub colors: Colors,
     /// The theme code is highlighted with; none before the first draw.
     pub theme: Option<Theme>,
+    /// How many lines the last frame drew, for the scroll bar.
+    pub visible: usize,
     /// Source mode: one size, the code font throughout (REFERENCE-001
     /// section 17).
     pub source: bool,
@@ -88,6 +90,7 @@ impl Lines {
             offset: 0.0,
             colors,
             theme: None,
+            visible: 0,
             source: false,
             highlights: Highlights::default(),
             cache: HashMap::new(),
