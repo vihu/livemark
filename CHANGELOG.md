@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-02)
 
 The first release: the library and the `livemark` desktop app.
 
