@@ -58,6 +58,12 @@ pub fn events(text: &str) -> impl Iterator<Item = (Event<'_>, Range<usize>)> {
 /// to a `---` or `...` line, the first of them not blank. The block without its last line ending, and
 /// the lines between the fences.
 fn front_matter(text: &str) -> Option<(Range<usize>, Range<usize>)> {
+    // After a byte order mark too.
+    if let Some(rest) = text.strip_prefix('\u{feff}') {
+        let bom = text.len() - rest.len();
+        return front_matter(rest)
+            .map(|(block, body)| (0..block.end + bom, body.start + bom..body.end + bom));
+    }
     let fence = |line: &str, closing: bool| {
         let line = line.trim_end_matches([' ', '\t']);
         line == "---" || (closing && line == "...")
@@ -349,6 +355,11 @@ mod tests {
         assert_eq!(block("---\ra: 1\r---\rx"), Some(0..12), "lone CR");
         assert_eq!(block("x\n\n---\na: 1\n---\n"), None, "not at the start");
         assert_eq!(block("---\na: 1\n"), None, "never closed");
+        assert_eq!(
+            block("\u{feff}---\na: 1\n---\nx"),
+            Some(0..15),
+            "after a BOM"
+        );
         // After it, the rest parses as if it were not there, offsets kept.
         let text = "---\na: 1\n---\n# Title\n";
         let heading = events(text)

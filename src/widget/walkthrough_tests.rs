@@ -278,16 +278,100 @@ fn an_image_with_its_picture_hides_its_markdown_and_draws_under_its_line() {
 fn a_wide_picture_fits_the_text_and_a_tall_one_is_capped() {
     let (wide, _) = super::picture::stack(
         &[&super::picture::decode(&png(2000, 100)).unwrap()],
-        0.0,
+        iced::Point::ORIGIN,
         500.0,
         480.0,
     );
     assert_eq!((wide[0].width, wide[0].height), (500.0, 25.0));
     let (tall, _) = super::picture::stack(
         &[&super::picture::decode(&png(100, 2000)).unwrap()],
-        0.0,
+        iced::Point::ORIGIN,
         500.0,
         480.0,
     );
     assert_eq!((tall[0].width, tall[0].height), (24.0, 480.0));
+}
+
+#[test]
+fn up_and_down_step_over_pictures() {
+    use super::{Key, Vertical};
+    for text in [
+        "para\n![alt](pic.png)\nafter\n",
+        "para\nsee ![b](pic.png) here\nafter\n",
+    ] {
+        let mut editor = Editor::new(text.into());
+        editor.set_image("pic.png", &png(100, 60));
+        editor.select(0, 0);
+        let line = |editor: &Editor| editor.text()[..editor.selection().head].lines().count();
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            let _ = editor.update(Message(Input::Key(Key::Vertical(Vertical::Down, false))));
+            seen.push(line(&editor));
+        }
+        assert_eq!(
+            seen.last(),
+            Some(&3),
+            "{text:?}: down reached `after`: {seen:?}"
+        );
+        // And back up through the image line to the first.
+        for _ in 0..3 {
+            let _ = editor.update(Message(Input::Key(Key::Vertical(Vertical::Up, false))));
+        }
+        assert_eq!(editor.selection().head, 0, "{text:?}");
+    }
+}
+
+#[test]
+fn a_heading_whose_first_word_wraps_still_hangs_its_run() {
+    let text = "#### Supercalifragilistic word\n\npara\n";
+    let mut editor = Editor::new(text.into());
+    {
+        let mut lines = editor.lines.borrow_mut();
+        lines.width = 150.0;
+        lines.room = 48.0;
+    }
+    editor.select(6, 6);
+    let lead = editor.with_lines(|lines, source| lines.shaped(source, 0).lead);
+    assert!(lead < -1.0, "{lead}");
+}
+
+#[test]
+fn zoom_keeps_the_caret_row_after_the_next_layout() {
+    let text = "A paragraph long enough to wrap a few times at any width there is. ".repeat(3);
+    let mut editor = Editor::new(format!("{text}\n\n").repeat(30));
+    {
+        let mut lines = editor.lines.borrow_mut();
+        lines.outer = iced::Size::new(800.0, 600.0);
+        lines.fit();
+        lines.sized = true;
+    }
+    // Near the end of a wrapped paragraph: its own rows re-wrap too.
+    let end = editor.text()[..editor.text().len() / 3]
+        .rfind("\n\n")
+        .unwrap()
+        - 3;
+    editor.select(end, end);
+    let y = |editor: &Editor| editor.caret().expect("on screen").y;
+    let before = y(&editor);
+    editor.set_zoom(2.0);
+    // The text is already fitted to the zoomed gutter: the next layout
+    // changes nothing, so nothing re-wraps after the caret was put back.
+    let width = editor.lines.borrow().width;
+    editor.lines.borrow_mut().fit();
+    assert_eq!(editor.lines.borrow().width, width);
+    assert!(
+        (y(&editor) - before).abs() < 1.0,
+        "{} vs {before}",
+        y(&editor)
+    );
+}
+
+#[test]
+fn a_picture_starts_under_its_lines_text() {
+    let text = "- item ![s](p.png)\n";
+    let mut editor = Editor::new(text.into());
+    editor.set_image("p.png", &png(40, 20));
+    editor.select(0, 0);
+    let x = editor.with_lines(|lines, source| lines.shaped(source, 0).pictures[0].1.x);
+    assert!(x > 4.0, "{x}");
 }

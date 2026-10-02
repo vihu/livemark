@@ -34,6 +34,9 @@ pub(super) fn walk(text: &str) -> Styled {
         inner_quotes: Vec::new(),
         nest: Vec::new(),
         highlight: None,
+        held: Vec::new(),
+        in_meta: false,
+        item_marker: None,
         images: Vec::new(),
         continuations: Vec::new(),
         task_bullets: Vec::new(),
@@ -91,8 +94,15 @@ struct Walk<'a> {
     inner_quotes: Vec<usize>,
     /// The quotes and items open around the current event, innermost last.
     nest: Vec<Open>,
-    /// An `==` waiting for its closing `==` in the same block.
-    highlight: Option<usize>,
+    /// An `==` waiting for its closing `==` in the same block, and how
+    /// many constructs there were then.
+    highlight: Option<(usize, usize)>,
+    /// Waiting `==`s set aside while the inline spans around are open.
+    held: Vec<Option<(usize, usize)>>,
+    /// Inside YAML front matter.
+    in_meta: bool,
+    /// The marker of the item last opened, and whether it is a bullet.
+    item_marker: Option<(Range<usize>, bool)>,
     /// Images, in order, and where each points.
     images: Vec<(Range<usize>, String)>,
     /// Lines of paragraphs in list items after the item's first line, and
@@ -126,11 +136,19 @@ impl Walk<'_> {
                     | Tag::Image { .. }
             )
         };
+        // Nor an inline span's edge: an `==` waiting outside a span is set
+        // aside while it is open, and one opened inside it lapses at its end
+        // (as delimiters pair).
         match &event {
-            Event::Start(tag) if !inline(tag) => self.highlight = None,
+            Event::Start(tag) if inline(tag) => self.held.push(self.highlight.take()),
             Event::End(TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough)
-            | Event::End(TagEnd::Link | TagEnd::Image) => {}
-            Event::End(_) | Event::Rule | Event::Html(_) => self.highlight = None,
+            | Event::End(TagEnd::Link | TagEnd::Image) => {
+                self.highlight = self.held.pop().flatten();
+            }
+            Event::Start(_) | Event::End(_) | Event::Rule | Event::Html(_) => {
+                self.highlight = None;
+                self.held.clear();
+            }
             _ => {}
         }
         match event {
@@ -173,7 +191,10 @@ impl Walk<'_> {
                 ..
             }) => {
                 self.content(&range);
-                self.images.push((range.clone(), dest_url.into_string()));
+                // A table's cells draw from source: no picture there.
+                if self.cells.is_none() {
+                    self.images.push((range.clone(), dest_url.into_string()));
+                }
                 self.span_start(range, link_type, true);
             }
             Event::End(TagEnd::Link | TagEnd::Image) => self.span_end(),
@@ -191,7 +212,11 @@ impl Walk<'_> {
                     Some((_, texts)) => texts.push(range),
                     None => {
                         self.content(&range);
-                        self.highlights(&range);
+                        // Not in front matter, nor in an autolink's URL.
+                        let url = self.spans.last().is_some_and(|s| s.bare || s.angle);
+                        if !self.in_meta && !url {
+                            self.highlights(&range);
+                        }
                     }
                 }
             }
@@ -201,7 +226,11 @@ impl Walk<'_> {
             Event::Start(Tag::CodeBlock(kind)) => self.code_start(kind, range),
             // YAML front matter (Obsidian's properties): dimmed, in the code
             // font, fences and all (REFERENCE-001 section 11).
-            Event::Start(Tag::MetadataBlock(_)) => self.toggles.push((range, Flag::Meta)),
+            Event::Start(Tag::MetadataBlock(_)) => {
+                self.in_meta = true;
+                self.toggles.push((range, Flag::Meta));
+            }
+            Event::End(TagEnd::MetadataBlock(_)) => self.in_meta = false,
             Event::End(TagEnd::CodeBlock) => self.code_end(),
             Event::Start(Tag::Table(align)) => {
                 // The code font goes on each row, not on the table's range,
@@ -280,9 +309,11 @@ impl Walk<'_> {
                 let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
                 let width = if digits > 0 { digits + 1 } else { 1 };
                 let marker = start..(start + width).min(range.end);
-                if digits == 0 && rest.starts_with(['-', '+', '*']) {
+                let bullet = digits == 0 && rest.starts_with(['-', '+', '*']);
+                if bullet {
                     self.mark(marker.clone(), MarkKind::Bullet);
                 }
+                self.item_marker = Some((marker.clone(), bullet));
                 self.toggles.push((marker, Flag::Marker));
                 self.item = Some(start);
                 self.nest.push(Open::Item(None));

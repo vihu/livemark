@@ -27,7 +27,20 @@ const PADDING: f32 = 16.0;
 const GUTTER: f32 = 2.25 * TEXT_SIZE;
 
 /// What a hanging `#` run keeps clear of the widget's left edge.
-const EDGE: f32 = 4.0;
+pub(super) const EDGE: f32 = 4.0;
+
+/// Where the text goes in a widget's `bounds` at `zoom`: inside the
+/// padding, right of the gutter (which grows with the zoom).
+pub(super) fn text_area(bounds: Rectangle, zoom: f32) -> Rectangle {
+    let gutter = GUTTER * zoom;
+    Rectangle::new(
+        Point::new(bounds.x + PADDING + gutter, bounds.y + PADDING),
+        Size::new(
+            (bounds.width - 2.0 * PADDING - gutter).max(1.0),
+            (bounds.height - 2.0 * PADDING).max(1.0),
+        ),
+    )
+}
 
 /// How long the caret stays on, then off.
 const BLINK_MILLIS: u128 = 500;
@@ -103,12 +116,10 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 
     fn layout(&mut self, tree: &mut Tree, _renderer: &iced::Renderer, limits: &layout::Limits) {
         let size = limits.resolve(Length::Fill, Length::Fill, Size::ZERO);
-        let area = self.text_area(Rectangle::new(Point::ORIGIN, size));
         let pending = {
             let mut lines = self.editor.lines.borrow_mut();
-            lines.width = area.width;
-            lines.height = area.height;
-            lines.room = area.x - EDGE;
+            lines.outer = size;
+            lines.fit();
             lines.sized = true;
             lines.pending_reveal.take()
         };
@@ -442,17 +453,9 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 }
 
 impl Surface<'_> {
-    /// Where the text goes in the widget's `bounds`: inside the padding,
-    /// right of the gutter (which grows with the zoom).
+    /// Where the text goes in the widget's `bounds`.
     fn text_area(&self, bounds: Rectangle) -> Rectangle {
-        let gutter = GUTTER * self.editor.zoom();
-        Rectangle::new(
-            Point::new(bounds.x + PADDING + gutter, bounds.y + PADDING),
-            Size::new(
-                (bounds.width - 2.0 * PADDING - gutter).max(1.0),
-                (bounds.height - 2.0 * PADDING).max(1.0),
-            ),
-        )
+        text_area(bounds, self.editor.zoom())
     }
 
     /// The scroll bar's track and thumb when the pointer is over the track

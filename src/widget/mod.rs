@@ -351,7 +351,16 @@ impl Editor {
             let (index, row) = caret(lines, source);
             lines.top_of(source, index).map(|top| top + row)
         });
-        change(&mut self.lines.borrow_mut());
+        {
+            // The gutter grows with the zoom: the text's width follows now,
+            // not at the next layout, or lines above the caret re-wrap
+            // after it was put back.
+            let mut lines = self.lines.borrow_mut();
+            change(&mut lines);
+            if lines.sized {
+                lines.fit();
+            }
+        }
         if let Some(y) = before {
             self.with_lines(|lines, source| {
                 let (index, row) = caret(lines, source);

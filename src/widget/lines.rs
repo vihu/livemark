@@ -108,6 +108,14 @@ pub struct Shaped {
 }
 
 impl Shaped {
+    /// Where the line's text rows end, its pictures below.
+    pub fn text_bottom(&self) -> f32 {
+        self.buffer
+            .layout_runs()
+            .last()
+            .map_or(self.height, |run| run.line_top + run.line_height)
+    }
+
     /// How far the row starting `line_top` down is drawn to the right.
     pub fn shift(&self, line_top: f32) -> f32 {
         if line_top > 0.0 && self.hanging {
@@ -171,6 +179,9 @@ pub struct Lines {
     /// How far left of the text a revealed heading's `#` run may hang:
     /// the gutter and the padding.
     pub room: f32,
+    /// The whole widget's size, the text's width and room following from
+    /// it and the zoom (`fit`).
+    pub outer: iced::Size,
     highlights: Highlights,
     cache: HashMap<u64, Cached>,
     /// Tables as grids, by table text and styling, width and colors, and
@@ -194,6 +205,7 @@ impl Lines {
             source: false,
             zoom: 1.0,
             room: 0.0,
+            outer: iced::Size::ZERO,
             highlights: Highlights::default(),
             grids: HashMap::new(),
             grids_used: Vec::new(),
@@ -209,6 +221,16 @@ impl Lines {
             self.place_pictures(source, index, &mut shaped);
         }
         shaped
+    }
+
+    /// The text's width, height and gutter room for the widget's size at
+    /// the zoom.
+    pub fn fit(&mut self) {
+        let bounds = Rectangle::new(iced::Point::ORIGIN, self.outer);
+        let area = super::surface::text_area(bounds, self.zoom);
+        self.width = area.width;
+        self.height = area.height;
+        self.room = area.x - super::surface::EDGE;
     }
 
     /// The pictures of the images on line `index` under its text, the
@@ -233,8 +255,19 @@ impl Lines {
         } else {
             shaped.height
         };
-        let (rects, bottom) =
-            picture::stack(&shown, top, self.width, picture::MAX_HEIGHT * self.zoom);
+        // Under the line's text: after a list marker or quote prefix.
+        let left = source
+            .styled
+            .hang_at(range.clone())
+            .map(|at| super::marks::start_x(shaped, at))
+            .unwrap_or(shaped.lead)
+            .clamp(0.0, self.width / 2.0);
+        let (rects, bottom) = picture::stack(
+            &shown,
+            iced::Point::new(left, top),
+            self.width - left,
+            picture::MAX_HEIGHT * self.zoom,
+        );
         shaped.height = bottom;
         shaped.pictures = shown
             .iter()
@@ -265,7 +298,13 @@ impl Lines {
         // run hidden (REFERENCE-001 section 3), as far as the room allows.
         if let Some(text_at) = revealed_heading(source, range.clone()).filter(|_| !self.source) {
             let plain = self.shape_line(source, index, (0.0, None));
-            let run = super::marks::start_x(&plain, text_at);
+            // From the run's own glyphs: when the first word does not fit
+            // after it, the text starts on the next row.
+            let end = plain.line.to_display(text_at);
+            let run = plain.buffer.layout_runs().next().map_or(0.0, |row| {
+                let glyphs = row.glyphs.iter().filter(|g| g.start < end);
+                glyphs.map(|g| g.x + g.w).fold(0.0, f32::max)
+            });
             let hang = run.min(self.room);
             return self.shape_line(source, index, (-hang, Some(run - hang)));
         }

@@ -370,8 +370,22 @@ impl Editor {
             let (x, row_top, row_height) = lines.caret_in_line(source, selection.head, side);
             let x = goal.unwrap_or(x);
             let row = top + row_top;
+            // Past a line's pictures, to text rows: down from its last row
+            // to the next line, up from a line to the one above's last row.
+            let shaped = lines.shaped(source, index);
+            let last_row = row_top + row_height >= shaped.text_bottom() - 0.5;
+            let above = index.checked_sub(1).map(|i| {
+                (
+                    top - lines.shaped(source, i).height,
+                    lines.shaped(source, i),
+                )
+            });
             let y = match direction {
+                Vertical::Up if row_top < 0.5 => above.map_or(row - 1.0, |(above_top, shaped)| {
+                    above_top + shaped.text_bottom() - 1.0
+                }),
                 Vertical::Up => row - 1.0,
+                Vertical::Down if last_row => top + shaped.height + 1.0,
                 Vertical::Down => row + row_height + 1.0,
                 Vertical::PageUp => row - lines.height,
                 Vertical::PageDown => row + lines.height,

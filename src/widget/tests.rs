@@ -33,7 +33,13 @@ fn switching_modes_keeps_the_caret_row_where_it_was() {
     use super::Mode;
     let text = "# A heading\n\nSome **bold** text in a paragraph.\n\n".repeat(60);
     let mut editor = Editor::new(text);
-    editor.lines.borrow_mut().sized = true;
+    {
+        // As a layout leaves it.
+        let mut lines = editor.lines.borrow_mut();
+        lines.outer = iced::Size::new(800.0, 600.0);
+        lines.fit();
+        lines.sized = true;
+    }
     let middle = editor.text().len() / 2;
     editor.select(middle, middle);
     let y = |editor: &Editor| editor.caret().expect("on screen").y;

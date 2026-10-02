@@ -648,3 +648,60 @@ fn highlights_pair_in_a_block_and_hide_like_strong() {
     let inside = Styled::new("*a ==b== c* d\n");
     assert!(inside.hidden(1..1).is_empty(), "touching the emphasis");
 }
+
+#[test]
+fn images_in_tables_get_no_picture() {
+    let text = "![a](x.png)\n\n| ![b](y.png) | c |\n| - | - |\n";
+    let styled = Styled::new(text);
+    let urls: Vec<&str> = styled.images().iter().map(|(_, u)| u.as_str()).collect();
+    assert_eq!(urls, ["x.png"]);
+}
+
+#[test]
+fn highlights_reveal_what_is_inside_and_skip_urls_and_front_matter() {
+    // Touching a highlight shows the markers of the spans inside it.
+    let text = "==**Important:** read this==\n";
+    let styled = Styled::new(text);
+    let read = text.find("read").unwrap();
+    assert!(
+        styled.hidden(read..read).is_empty(),
+        "{:?}",
+        styled.hidden(read..read)
+    );
+    // Not across a span's edge, not in a URL, not in front matter.
+    for text in [
+        "**==a**==\n",
+        "[==a](u) b==\n",
+        "see https://a.com/?x==1&y==2 ok\n",
+        "<https://a.com/?x==1&y==2>\n",
+        "---\na: x==1\nb: y==2\n---\n",
+    ] {
+        let styled = Styled::new(text);
+        assert!(
+            styled
+                .constructs()
+                .iter()
+                .all(|c| c.syntax != Syntax::Highlight),
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn a_task_box_hides_only_its_own_items_bullet() {
+    let text = "- 1. [ ] task\n* 2. [ ] a\n  3. [ ] b\n";
+    let styled = Styled::new(text);
+    let hidden: Vec<&str> = styled
+        .hidden(text.len()..text.len())
+        .iter()
+        .map(|r| &text[r.clone()])
+        .collect();
+    // Ordered tasks keep their numbers and the outer bullets: only `[`.
+    assert_eq!(hidden, ["[", "[", "["]);
+    let bullets = styled
+        .concealed(text.len()..text.len())
+        .iter()
+        .filter(|m| m.kind == MarkKind::Bullet)
+        .count();
+    assert_eq!(bullets, 2, "the outer bullets' dots stay");
+}

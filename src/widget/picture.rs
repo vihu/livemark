@@ -28,16 +28,16 @@ pub fn decode(bytes: &[u8]) -> Option<Picture> {
     })
 }
 
-/// Where `pictures` go one under another from `top`: each at most `width`
+/// Where `pictures` go one under another from `at`: each at most `width`
 /// wide and `max_height` tall, scaled down only, keeping its shape. The
 /// rectangles and where the last one ends.
 pub fn stack(
     pictures: &[&Picture],
-    top: f32,
+    at: Point,
     width: f32,
     max_height: f32,
 ) -> (Vec<Rectangle>, f32) {
-    let mut y = top;
+    let mut y = at.y;
     let placed = pictures
         .iter()
         .map(|picture| {
@@ -47,7 +47,7 @@ pub fn stack(
             } = picture.size;
             let scale = (width / w).min(max_height / h).min(1.0);
             y += GAP;
-            let rect = Rectangle::new(Point::new(0.0, y), Size::new(w * scale, h * scale));
+            let rect = Rectangle::new(Point::new(at.x, y), Size::new(w * scale, h * scale));
             y += rect.height;
             rect
         })

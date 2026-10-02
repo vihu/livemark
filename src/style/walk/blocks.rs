@@ -171,18 +171,18 @@ impl Walk<'_> {
     /// the bullet's place.
     /// Touching any of `- [ ]` shows it all.
     pub(super) fn task_box(&mut self, task: &Range<usize>) {
-        let line = self.text[..task.start]
-            .rfind(['\n', '\r'])
-            .map_or(0, |i| i + 1);
+        // Its own item's marker, the last opened: not another list's on
+        // the same line (`- 1. [ ] x` keeps both).
         let bullet = self
-            .marks
-            .iter()
-            .rposition(|m| {
-                matches!(m.kind, MarkKind::Bullet)
-                    && line <= m.range.start
-                    && m.range.end <= task.start
-            })
-            .map(|i| self.marks.remove(i).range);
+            .item_marker
+            .clone()
+            .filter(|(marker, bullet)| *bullet && marker.end <= task.start)
+            .map(|(marker, _)| marker);
+        if let Some(bullet) = &bullet
+            && let Some(i) = self.marks.iter().rposition(|m| m.range == *bullet)
+        {
+            self.marks.remove(i);
+        }
         let touch = bullet.as_ref().map_or(task.clone(), |b| b.start..task.end);
         if let Some(mark) = self.marks.last_mut().filter(|m| m.range == *task) {
             mark.touch = touch.clone();
@@ -218,18 +218,26 @@ impl Walk<'_> {
             let closes = before.is_some_and(|c| !c.is_whitespace());
             let opens = after.is_some_and(|c| !c.is_whitespace());
             match self.highlight {
-                Some(open) if closes => {
+                Some((open, from)) if closes => {
                     self.highlight = None;
                     self.toggles.push((open + 2..start, Flag::Highlight));
                     // It reveals with the outermost span open at its close
-                    // when that holds its opening `==` too, else alone.
+                    // when that holds its opening `==` too, else alone; the
+                    // spans inside it reveal with it.
                     let index = self.inline(Syntax::Highlight, open..start + 2, 2);
-                    let group = self.constructs[index].group;
+                    let mut group = self.constructs[index].group;
                     if self.constructs[group].range.start > open {
-                        self.constructs[index].group = index;
+                        group = index;
+                    }
+                    self.constructs[index].group = group;
+                    for inner in from..index {
+                        let range = &self.constructs[inner].range;
+                        if open <= range.start && range.end <= start + 2 {
+                            self.constructs[inner].group = group;
+                        }
                     }
                 }
-                _ if opens => self.highlight = Some(start),
+                _ if opens => self.highlight = Some((start, self.constructs.len())),
                 _ => {}
             }
         }
