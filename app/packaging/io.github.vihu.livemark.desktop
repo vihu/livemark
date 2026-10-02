@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=livemark
+GenericName=Markdown Editor
+Comment=Write markdown with a live preview
+Exec=livemark %f
+Icon=io.github.vihu.livemark
+Terminal=false
+Categories=Utility;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;notes;writing;editor;preview;
+StartupWMClass=io.github.vihu.livemark

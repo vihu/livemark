@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.vihu.livemark</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>livemark</name>
+  <summary>Write markdown with a live preview</summary>
+  <developer id="io.github.vihu">
+    <name>vihu</name>
+  </developer>
+  <description>
+    <p>
+      livemark is a desktop editor for markdown notes. You type markdown and
+      it renders in place: headings sized, emphasis styled, and the markers
+      hidden until the caret reaches them. The file stays plain markdown, so
+      git and other editors work on the same text.
+    </p>
+    <ul>
+      <li>Live preview of headings, emphasis, links, lists, task lists, quotes, tables, code and images</li>
+      <li>List-aware editing, formatting keys, find and replace</li>
+      <li>A toolbar, a source mode and a split view beside the rendered note</li>
+      <li>Pasted pictures are saved next to the note</li>
+      <li>Light and dark mode, zoom, recent notes</li>
+    </ul>
+    <p>
+      It works offline: your notes stay as plain files on your computer.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.vihu.livemark.desktop</launchable>
+  <url type="homepage">https://github.com/vihu/livemark</url>
+  <url type="bugtracker">https://github.com/vihu/livemark/issues</url>
+  <url type="vcs-browser">https://github.com/vihu/livemark</url>
+  <provides>
+    <mediatype>text/markdown</mediatype>
+  </provides>
+  <branding>
+    <color type="primary" scheme_preference="light">#a5b4fc</color>
+    <color type="primary" scheme_preference="dark">#3730a3</color>
+  </branding>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-02"/>
+  </releases>
+</component>

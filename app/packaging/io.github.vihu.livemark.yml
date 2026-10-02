@@ -1,0 +1,44 @@
+# Flatpak manifest for the release bundles, built from this checkout.
+#
+# Cargo fetches the dependencies during the build (--share=network). That
+# is fine for a bundle but not on Flathub, whose builds are offline: a
+# Flathub manifest pins a release tag and vendors the crates instead.
+app-id: io.github.vihu.livemark
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: livemark
+finish-args:
+  # A note's pictures are files next to it, and pasted ones are written
+  # there (`assets/`); the recent notes reopen by path. The file chooser
+  # portal grants the picked file alone, so the home folder is shared.
+  - --filesystem=home
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+modules:
+  - name: livemark
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/livemark/cargo
+    build-commands:
+      - cargo build --release --locked -p livemark-app
+      - install -Dm755 target/release/livemark -t /app/bin
+      - install -Dm644 app/packaging/io.github.vihu.livemark.desktop -t /app/share/applications
+      - install -Dm644 app/packaging/io.github.vihu.livemark.svg -t /app/share/icons/hicolor/scalable/apps
+      - install -Dm644 app/packaging/io.github.vihu.livemark.metainfo.xml -t /app/share/metainfo
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .ai-docs
+          - .git
+          - repo
+          - target

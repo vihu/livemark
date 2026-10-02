@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<!-- A placeholder until the app's icon is designed (PLAN-002 answer 5). -->
+<rect x="100" y="100" width="824" height="824" rx="185" fill="#4f46e5"/>
+<g fill="none" stroke="#fff" stroke-linecap="round" stroke-width="44">
+<path d="M262 300V470M332 300V470M222 350H372M222 420H372"/>
+<path d="M452 385H802"/>
+<path d="M222 560H802M222 660H802M222 760H612" stroke-opacity="0.75"/>
+</g>
+</svg>
