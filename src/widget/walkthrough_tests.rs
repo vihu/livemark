@@ -70,3 +70,28 @@ fn scrolling_to_the_end_stops_with_the_last_line_at_the_bottom() {
     let _ = editor.update(Message(Input::Scroll(500.0)));
     assert_eq!(editor.lines.borrow().offset, 0.0);
 }
+
+#[test]
+fn later_lines_of_a_list_item_line_up_with_its_text() {
+    for (text, first, later) in [
+        ("para\n\n- item\n  more\n", "item", "more"),
+        ("para\n\n1. item\n   more\n", "item", "more"),
+        ("para\n\n10. item\n    more\n", "item", "more"),
+        ("para\n\n- [ ] task\n  more\n", "task", "more"),
+        ("para\n\n- item\n\n  later paragraph\n", "item", "later"),
+        ("para\n\n- item\nlazy\n", "item", "lazy"),
+    ] {
+        let mut editor = Editor::new(text.into());
+        editor.select(0, 0);
+        let (first, later) = (text.find(first).unwrap(), text.find(later).unwrap());
+        editor.with_lines(|lines, source| {
+            let x = |lines: &mut super::lines::Lines, at| {
+                lines
+                    .caret_in_line(source, at, crate::layout::Affinity::After)
+                    .0
+            };
+            let (first, later) = (x(lines, first), x(lines, later));
+            assert!((later - first).abs() < 0.5, "{text:?}: {later} vs {first}");
+        });
+    }
+}

@@ -123,12 +123,14 @@ impl Lines {
     /// and colors are unchanged.
     pub fn shaped(&mut self, source: &Source, index: usize) -> Shaped {
         let range = source.doc.line_range(index);
-        // A lazy line in a quote lines up with the quoted line's text (not
-        // in source mode, which shows the markdown as written), its own
-        // indentation taken off.
+        // A lazy line in a quote lines up with the quoted line's text, and
+        // a later line of a list item with the item's text (not in source
+        // mode, which shows the markdown as written), its own indentation
+        // taken off.
         let lazy = source
             .styled
             .lazy_at(range.clone())
+            .or_else(|| source.styled.continuation_at(range.clone()))
             .filter(|_| !self.source);
         let Some(anchor) = lazy else {
             return self.shape_line(source, index, (0.0, 0.0));
@@ -145,7 +147,7 @@ impl Lines {
         };
         // Its first row past its own indentation, the rest at the quoted
         // text.
-        self.shape_line(source, index, ((target - own).max(0.0), target))
+        self.shape_line(source, index, ((target - own).max(0.0), target.max(own)))
     }
 
     /// Line `index` shaped with its first row `lead` to the right and,

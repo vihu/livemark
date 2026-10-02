@@ -175,6 +175,7 @@ pub struct Styled {
     /// Lazy continuation lines in quotes (no `>` written) and the quoted
     /// line each continues, sorted.
     lazies: Vec<(Range<usize>, Range<usize>)>,
+    continuations: Vec<(Range<usize>, usize)>,
 }
 
 impl Styled {
@@ -257,6 +258,19 @@ impl Styled {
         let i = self.lazies.partition_point(|(l, _)| l.start < line.start);
         let (_, quoted) = self.lazies.get(i).filter(|(l, _)| l.start == line.start)?;
         self.hang_at(quoted.clone())
+    }
+
+    /// For a line of a paragraph in a list item after the item's first
+    /// line, the source offset in that first line where the item's text
+    /// starts, which its text lines up with (REFERENCE-001 section 7).
+    pub fn continuation_at(&self, line: Range<usize>) -> Option<usize> {
+        let i = self
+            .continuations
+            .partition_point(|(l, _)| l.start < line.start);
+        self.continuations
+            .get(i)
+            .filter(|(l, _)| l.start == line.start)
+            .map(|&(_, at)| at)
     }
 
     /// Where the outermost quote holding the line at `line` starts: its

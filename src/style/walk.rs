@@ -32,6 +32,8 @@ pub(super) fn walk(text: &str) -> Styled {
         links: Vec::new(),
         lazies: Vec::new(),
         inner_quotes: Vec::new(),
+        nest: Vec::new(),
+        continuations: Vec::new(),
     };
     for (event, range) in parse::events(text) {
         walk.inside_span(&range);
@@ -83,6 +85,18 @@ struct Walk<'a> {
     lazies: Vec<(Range<usize>, Range<usize>)>,
     /// Where quotes inside other quotes start.
     inner_quotes: Vec<usize>,
+    /// The quotes and items open around the current event, innermost last.
+    nest: Vec<Open>,
+    /// Lines of paragraphs in list items after the item's first line, and
+    /// where the item's text starts.
+    continuations: Vec<(Range<usize>, usize)>,
+}
+
+/// A container open in the walk: a quote, or a list item with where its
+/// text starts once known.
+enum Open {
+    Quote,
+    Item(Option<usize>),
 }
 
 impl Walk<'_> {
@@ -207,8 +221,12 @@ impl Walk<'_> {
                     self.inner_quotes.push(range.start);
                 }
                 self.quote_depth += 1;
+                self.nest.push(Open::Quote);
             }
-            Event::End(TagEnd::BlockQuote(_)) => self.quote_depth -= 1,
+            Event::End(TagEnd::BlockQuote(_)) => {
+                self.quote_depth -= 1;
+                self.nest.pop();
+            }
             Event::Start(Tag::Item) => {
                 // The bullet, or the number and its `.` or `)`. After a
                 // lone `\r` pulldown-cmark starts the range at that line
@@ -224,8 +242,12 @@ impl Walk<'_> {
                 }
                 self.toggles.push((marker, Flag::Marker));
                 self.item = Some(start);
+                self.nest.push(Open::Item(None));
             }
-            Event::End(TagEnd::Item) => self.item = None,
+            Event::End(TagEnd::Item) => {
+                self.item = None;
+                self.nest.pop();
+            }
             Event::TaskListMarker(checked) => {
                 self.mark(range.clone(), MarkKind::Task(checked));
                 self.toggles.push((range.clone(), Flag::Marker));
@@ -262,6 +284,16 @@ impl Walk<'_> {
             && !self.text[item..range.start].contains(['\n', '\r'])
         {
             self.hangs.push(range.start);
+            if let Some(Open::Item(hang)) = self.nest.last_mut() {
+                *hang = Some(range.start);
+            }
+        }
+        // Text on a later line of the item, not in its code or tables.
+        if let Some(&Open::Item(Some(hang))) = self.nest.last()
+            && self.code.is_none()
+            && self.cells.is_none()
+        {
+            self.continuation_line(range.start, hang);
         }
     }
 
@@ -487,6 +519,7 @@ impl Walk<'_> {
             tables: self.tables,
             links: self.links,
             lazies: self.lazies,
+            continuations: self.continuations,
         }
     }
 }
