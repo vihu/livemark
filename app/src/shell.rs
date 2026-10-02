@@ -12,7 +12,6 @@ use iced::widget::{
 };
 use iced::{Element, Length, Theme, mouse};
 
-use super::appearance::AppearanceMessage;
 use super::icons::{Icon, Tone, icon};
 use super::settings::{SIDEBAR_WIDTH, SIDEBAR_WIDTHS};
 use super::sidebar::{VaultMessage, choice};
@@ -43,9 +42,6 @@ pub(crate) enum SaveState {
 
 /// The bars' height, the sidebar's head and the note's.
 pub(crate) const BAR: f32 = 48.0;
-
-/// Width of the open vault menu.
-const MENU_WIDTH: f32 = 300.0;
 
 /// What the bar's sides hold: the editor's tools; the sidebar's buttons
 /// while it is hidden; the save state and the mode.
@@ -365,118 +361,6 @@ impl App {
         let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         !path.starts_with(&vault.root)
     }
-
-    /// The vault menu: new, open, open vault, the recent files, save, save
-    /// as, Appearance, the interface's zoom, quit.
-    pub(crate) fn vault_menu(&self) -> Element<'_, Message> {
-        let item = |glyph: Icon, label: &'static str, key: &str, message: Message| {
-            button(
-                row![
-                    icon(glyph, 16.0, Tone::Quiet),
-                    text(label).size(14).width(Length::Fill),
-                    text(if key.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{COMMAND}+{key}")
-                    })
-                    .size(12)
-                    .style(text::secondary),
-                ]
-                .spacing(10)
-                .align_y(iced::Center),
-            )
-            .width(Length::Fill)
-            .padding([7, 10])
-            .style(|theme: &Theme, status| ghost(theme, status, false))
-            .on_press(message)
-        };
-        let mut items = column![
-            item(Icon::Plus, "New note", "N", Message::New),
-            item(Icon::Folder, "Open file...", "O", Message::Open),
-            item(
-                Icon::Vault,
-                "Open vault...",
-                "",
-                Message::Vault(VaultMessage::Open)
-            ),
-        ];
-        if !self.settings.recent.is_empty() {
-            items = items.push(rule::horizontal(1));
-            items = items.push(
-                container(text("Recent files").size(12).style(text::secondary)).padding([4, 10]),
-            );
-            for path in self.settings.recent.iter().take(6) {
-                let note = column![
-                    text(file_name(path))
-                        .size(14)
-                        .wrapping(Wrapping::None)
-                        .ellipsis(Ellipsis::End),
-                    text(folder(path))
-                        .size(11)
-                        .style(text::secondary)
-                        .wrapping(Wrapping::None)
-                        .ellipsis(Ellipsis::Start),
-                ];
-                items = items.push(
-                    button(row![icon(Icon::Clock, 16.0, Tone::Quiet), note].spacing(10))
-                        .width(Length::Fill)
-                        .padding([5, 10])
-                        .style(|theme: &Theme, status| ghost(theme, status, false))
-                        .on_press(Message::Recent(path.clone())),
-                );
-            }
-        }
-        items = items
-            .push(rule::horizontal(1))
-            .push(item(
-                Icon::Save,
-                "Save",
-                "S",
-                Message::Save { choose: false },
-            ))
-            .push(item(
-                Icon::Save,
-                "Save as...",
-                "Shift+S",
-                Message::Save { choose: true },
-            ))
-            .push(rule::horizontal(1));
-        let step = |glyph: Icon, message: Message| {
-            button(icon(glyph, 12.0, Tone::Quiet))
-                .padding([5, 7])
-                .style(button::secondary)
-                .on_press(message)
-        };
-        let scale = |step| Message::Appearance(AppearanceMessage::Scale(step));
-        items = items
-            .push(item(
-                Icon::Palette,
-                "Appearance...",
-                "",
-                Message::Appearance(AppearanceMessage::Open),
-            ))
-            .push(
-                row![
-                    text("Zoom").size(14).width(Length::Fill),
-                    step(Icon::Minus, scale(-1)),
-                    text(format!("{:.0}%", self.settings.scale * 100.0))
-                        .size(13)
-                        .width(48)
-                        .center(),
-                    step(Icon::Plus, scale(1)),
-                ]
-                .spacing(6)
-                .padding([4, 10])
-                .align_y(iced::Center),
-            )
-            .push(rule::horizontal(1))
-            .push(item(Icon::Quit, "Quit", "Q", Message::CloseRequested));
-        container(items.spacing(2))
-            .width(MENU_WIDTH)
-            .padding(4)
-            .style(container::bordered_box)
-            .into()
-    }
 }
 
 /// An icon button with no box, shaded under the pointer, its hint under
@@ -512,7 +396,7 @@ pub(crate) fn ghost(theme: &Theme, status: button::Status, open: bool) -> button
     }
 }
 
-fn file_name(path: &Path) -> String {
+pub(crate) fn file_name(path: &Path) -> String {
     path.file_name().map_or_else(
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
@@ -520,7 +404,7 @@ fn file_name(path: &Path) -> String {
 }
 
 /// The folder a file is in, the home folder as `~`.
-fn folder(path: &Path) -> String {
+pub(crate) fn folder(path: &Path) -> String {
     let folder = path.parent().unwrap_or(path);
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     match home

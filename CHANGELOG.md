@@ -6,6 +6,10 @@
   File's place; the note's bar has the formatting buttons without boxes,
   the search, whether the note is saved, and the mode as three icons.
   Ctrl+\ hides the sidebar, its edge drags to resize it; Ctrl+Q quits.
+- Notes from the sidebar: a right press opens a note's menu: rename (F2
+  for the open note; the file is renamed with the title and the links to
+  it follow), duplicate, copy a link, show it in its folder, delete. Each
+  can be undone.
 - Appearance: Kanagawa Wave and Lotus, Solarized, Gruvbox and Catppuccin
   Mocha and Frappe themes besides Light and Dark, System following the
   system between a light and a dark pick; Ctrl+= and Ctrl+- scale the

@@ -179,24 +179,28 @@ impl App {
                 _ => None,
             })
         });
-        // F2 renames the tag the notes are filtered by; Escape takes back
-        // a question open under a tag.
+        // F2 renames the open note (PLAN-006); Escape takes back a menu or
+        // question open under a tag or a note.
         let rename = keyboard::listen().filter_map(|event| match event {
             keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(keyboard::key::Named::F2),
                 modifiers,
                 ..
-            } if modifiers.is_empty() => {
-                Some(Message::Tag(super::tag_actions::TagMessage::RenameShown))
-            }
+            } if modifiers.is_empty() => Some(Message::Note(
+                super::note_actions::NoteMessage::StartRename(None),
+            )),
             _ => None,
         });
-        let asking = (self.tag_action.is_some() || self.tag_menu.is_some()).then(|| {
+        let asking = (self.tag_action.is_some()
+            || self.tag_menu.is_some()
+            || self.note_action.is_some()
+            || self.note_menu.is_some())
+        .then(|| {
             keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
                     key: keyboard::Key::Named(keyboard::key::Named::Escape),
                     ..
-                } => Some(Message::Tag(super::tag_actions::TagMessage::Cancel)),
+                } => Some(Message::Escape),
                 _ => None,
             })
         });

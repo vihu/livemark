@@ -3,7 +3,7 @@
 //! (`[a, b]`, `a, b` or `- a` lines) and in inline `#tags`. Only the tag's
 //! own bytes change, so a note stays as it was written otherwise (line
 //! endings, quoting, other keys). Every change can be undone while the
-//! files are as it left them.
+//! files are as it left them (`undo.rs`).
 use std::ops::Range;
 use std::path::PathBuf;
 
@@ -23,45 +23,6 @@ impl Edit {
             Edit::Rename { from, .. } | Edit::Delete(from) => from,
         }
     }
-}
-
-/// The files an edit changed, as they were and as it left them.
-#[derive(Debug, Clone)]
-pub struct Undo {
-    files: Vec<(PathBuf, String, String)>,
-}
-
-impl Undo {
-    /// How many notes the edit changed.
-    pub fn count(&self) -> usize {
-        self.files.len()
-    }
-
-    /// Writes the files back as they were, each only while it is as the
-    /// edit left it; returns how many were changed since and kept.
-    pub fn restore(&self) -> Result<usize, String> {
-        let mut kept = 0;
-        for (path, before, after) in &self.files {
-            match std::fs::read_to_string(path) {
-                Ok(now) if now == *after => super::file::save(path, before)
-                    .map_err(|e| format!("{}: {e}", path.display()))?,
-                _ => kept += 1,
-            }
-        }
-        Ok(kept)
-    }
-}
-
-/// Writes the notes' new texts, keeping what each file held for Undo.
-pub fn write(changes: Vec<(PathBuf, String)>) -> Result<Undo, String> {
-    let mut files = Vec::new();
-    for (path, after) in changes {
-        let before =
-            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        super::file::save(&path, &after).map_err(|e| format!("{}: {e}", path.display()))?;
-        files.push((path, before, after));
-    }
-    Ok(Undo { files })
 }
 
 /// `text` with `edit` applied, or `None` when nothing in it changes.
@@ -262,7 +223,7 @@ impl super::App {
                 tags.join(" or ")
             ));
         }
-        let undo = write(changes)?;
+        let undo = super::undo::write(changes)?;
         let count = undo.count();
         use super::sidebar::Shown;
         for edit in &edits {
@@ -279,28 +240,6 @@ impl super::App {
         }
         self.undo = Some(undo);
         Ok(count)
-    }
-
-    /// Takes the last tag edit back; says how many notes were changed
-    /// since and kept as they are.
-    pub(crate) fn undo_tags(&mut self) -> Result<usize, String> {
-        let Some(undo) = self.undo.take() else {
-            return Ok(0);
-        };
-        let open = self.path.clone();
-        let touched_open = open
-            .as_ref()
-            .is_some_and(|open| undo.files.iter().any(|(p, ..)| p == open));
-        if touched_open && self.unsaved() {
-            self.undo = Some(undo);
-            return Err("Save the open note first, then undo".into());
-        }
-        let kept = undo.restore()?;
-        self.refresh_vault();
-        if touched_open {
-            self.reload();
-        }
-        Ok(kept)
     }
 }
 

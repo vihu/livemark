@@ -21,6 +21,11 @@ pub enum Icon {
     Clock,
     Save,
     Quit,
+    Bin,
+    Link,
+    Copy,
+    Pen,
+    Doc,
     Palette,
 }
 
@@ -29,6 +34,7 @@ pub enum Icon {
 pub enum Tone {
     /// The text's color, quieter: most icons.
     Quiet,
+    Danger,
 }
 
 /// `kind` drawn `size` pixels square in `tone`.
@@ -58,6 +64,7 @@ impl<M> canvas::Program<M> for Glyph {
         let palette = theme.palette();
         let color = match self.tone {
             Tone::Quiet => palette.background.base.text.scale_alpha(0.62),
+            Tone::Danger => palette.danger.base.color,
         };
         let mut frame = Frame::new(renderer, bounds.size());
         frame.scale(bounds.width / 20.0);
@@ -146,6 +153,38 @@ impl<M> canvas::Program<M> for Glyph {
                 for (x, y) in [(6.5, 9.0), (9.0, 6.0), (13.0, 6.5)] {
                     frame.fill(&circle(x, y, 1.0), color);
                 }
+            }
+            Icon::Doc => {
+                s(rounded(4.0, 2.5, 12.0, 15.0, 2.0));
+                s(line(&[(7.0, 6.5), (13.0, 6.5)]));
+                s(line(&[(7.0, 10.0), (13.0, 10.0)]));
+                s(line(&[(7.0, 13.5), (10.0, 13.5)]));
+            }
+            Icon::Pen => s(line(&[
+                (13.5, 3.5),
+                (16.5, 6.5),
+                (7.5, 15.5),
+                (4.5, 15.5),
+                (4.5, 12.5),
+                (13.5, 3.5),
+            ])),
+            Icon::Copy => {
+                s(rounded(6.5, 6.5, 10.0, 11.0, 2.0));
+                s(line(&[(3.5, 13.5), (3.5, 3.5), (12.5, 3.5)]));
+            }
+            Icon::Link => {
+                s(arc(6.5, 10.0, 4.0, FRAC_PI_2, 3.0 * FRAC_PI_2));
+                s(arc(13.5, 10.0, 4.0, -FRAC_PI_2, FRAC_PI_2));
+                s(line(&[(6.5, 6.0), (8.0, 6.0)]));
+                s(line(&[(6.5, 14.0), (8.0, 14.0)]));
+                s(line(&[(13.5, 6.0), (12.0, 6.0)]));
+                s(line(&[(13.5, 14.0), (12.0, 14.0)]));
+                s(line(&[(7.0, 10.0), (13.0, 10.0)]));
+            }
+            Icon::Bin => {
+                s(line(&[(4.0, 6.0), (16.0, 6.0)]));
+                s(line(&[(8.0, 6.0), (8.0, 4.0), (12.0, 4.0), (12.0, 6.0)]));
+                s(line(&[(6.0, 6.0), (7.0, 16.0), (13.0, 16.0), (14.0, 6.0)]));
             }
             Icon::Quit => {
                 s(line(&[(10.0, 3.0), (10.0, 9.0)]));

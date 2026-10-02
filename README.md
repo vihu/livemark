@@ -75,8 +75,12 @@ normal markdown link to the one chosen (`[Lisbon hotels](2026-10-02-lisbon-hotel
 so links work in the git web UI too); typing `#` and a letter lists the
 vault's tags. Ctrl+click on a link to a note opens it here, and "Linked
 from" at the end of the note lists the notes linking to it, each with the
-line its link sits in, a click opening it. Each tag in the sidebar has a
-menu: Rename or merge (F2; typing a tag that exists merges the two, and
+line its link sits in, a click opening it. A right press on a note in the sidebar opens its menu: Open, Rename (F2 for
+the open note: the title and the file's name change together, its date
+kept, and the links in other notes follow), Duplicate, Copy link (a
+markdown link to paste into another note), Show in folder, and Delete
+(which says first how many notes link to it); each ends with Undo. Each tag in the sidebar has a
+menu: Rename or merge (typing a tag that exists merges the two, and
 says so first) and Delete from every note (an inline `#tag` keeps its
 word), and Open in the tag manager. Manage tags, under the list, shows
 every tag in place of the note: how many notes have it and when the newest
@@ -129,7 +133,7 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | Ctrl+click on a link, Alt+Enter in one | Opens it (web and mail links) |
 | Ctrl+click on a `#tag`, Alt+Enter in one | Shows the vault's notes with that tag |
 | Ctrl+P (or Ctrl+Shift+F) | The app's search field: notes, lines and tags; Ctrl+Enter there lists every match in the sidebar |
-| F2 | In the app, renames the tag the sidebar shows |
+| F2 | In the app, renames the open note |
 | Click on a checkbox | Checks or clears the task |
 
 Markers (`**`, `#`, `[`, `](url)`) stay hidden until the caret touches

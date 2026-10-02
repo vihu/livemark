@@ -103,21 +103,20 @@ fn fold(c: char) -> &'static str {
     }
 }
 
+/// A title as a YAML value: quoted when YAML would read it otherwise.
+pub fn yaml_title(title: &str) -> String {
+    if title.contains([':', '#', '"', '\''])
+        || title.starts_with(['-', '[', '{', '!', '&', '*', '>', '|', '%', '@', '`'])
+    {
+        format!("\"{}\"", title.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        title.to_owned()
+    }
+}
+
 /// The note's front matter, ending with its closing fence's line break.
 pub fn front_matter(header: &Header) -> String {
-    // Quoted when YAML would read it otherwise.
-    let title = if header.title.contains([':', '#', '"', '\''])
-        || header
-            .title
-            .starts_with(['-', '[', '{', '!', '&', '*', '>', '|', '%', '@', '`'])
-    {
-        format!(
-            "\"{}\"",
-            header.title.replace('\\', "\\\\").replace('"', "\\\"")
-        )
-    } else {
-        header.title.to_owned()
-    };
+    let title = yaml_title(header.title);
     let mut text = format!(
         "---\ntitle: {title}\ntags: [{}]\ncreated: {}\n",
         header.tags.join(", "),

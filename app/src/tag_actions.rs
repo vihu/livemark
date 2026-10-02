@@ -24,13 +24,8 @@ pub enum TagMessage {
     /// Rename (or merge), or delete, as the open question says.
     Confirm,
     Cancel,
-    /// F2: rename the tag the notes are filtered by.
-    RenameShown,
     /// The tag manager, with this tag selected.
     Manage(String),
-    Undo,
-    /// The Undo note closed.
-    Dismiss,
 }
 
 /// The question open under a tag.
@@ -83,11 +78,6 @@ impl App {
                 });
                 return iced::widget::operation::focus(RENAME);
             }
-            TagMessage::RenameShown => {
-                if let Shown::Tag(tag) = self.shown.clone() {
-                    return self.tag_update(TagMessage::StartRename(tag));
-                }
-            }
             TagMessage::RenameText(value) => {
                 if let Some(TagAction::Rename { value: v, .. }) = &mut self.tag_action {
                     *v = value;
@@ -125,20 +115,6 @@ impl App {
                 };
                 self.run_edits(vec![edit], said);
             }
-            TagMessage::Undo => {
-                self.toast = None;
-                match self.undo_tags() {
-                    Ok(0) => {}
-                    Ok(kept) => {
-                        self.error = Some(format!(
-                            "{} changed since were kept as they are",
-                            notes(kept)
-                        ))
-                    }
-                    Err(error) => self.error = Some(error),
-                }
-            }
-            TagMessage::Dismiss => self.toast = None,
             TagMessage::Manage(tag) => {
                 return self.manager_update(super::manager::ManagerMessage::Open(Some(tag)));
             }
@@ -152,6 +128,7 @@ impl App {
         match self.edit_tags(edits) {
             Ok(n) => {
                 self.toast = Some(format!("{said}: {} changed", notes(n)));
+                self.toast_undo = true;
                 self.error = None;
                 true
             }
@@ -288,7 +265,7 @@ impl App {
             column![
                 item(
                     "Rename or merge",
-                    "F2",
+                    "",
                     false,
                     TagMessage::StartRename(tag.to_owned())
                 ),
@@ -351,45 +328,27 @@ impl App {
         .spacing(4)
         .into()
     }
-
-    /// The note an edit across the vault leaves, with its Undo.
-    pub(crate) fn undo_toast(&self) -> Option<Element<'_, Message>> {
-        let said = self.toast.as_ref().filter(|_| self.undo.is_some())?;
-        Some(
-            container(
-                row![
-                    text(said.as_str()).size(13),
-                    button(text("Undo").size(13))
-                        .padding([4, 10])
-                        .on_press(Message::Tag(TagMessage::Undo)),
-                    button(text("×").size(14))
-                        .padding([2, 8])
-                        .style(|theme: &Theme, _| button::Style {
-                            text_color: theme.palette().background.base.color,
-                            ..button::Style::default()
-                        })
-                        .on_press(Message::Tag(TagMessage::Dismiss)),
-                ]
-                .spacing(12)
-                .align_y(iced::Center),
-            )
-            .padding([8, 10])
-            .style(|theme: &Theme| {
-                let palette = theme.palette();
-                container::Style {
-                    background: Some(palette.background.base.text.into()),
-                    text_color: Some(palette.background.base.color),
-                    border: iced::Border::default().rounded(10),
-                    ..container::Style::default()
-                }
-            })
-            .into(),
-        )
-    }
 }
 
 /// A question under a tag: what will happen, and the buttons.
 pub(crate) fn card<'a>(said: String, action: &str, danger: bool) -> Element<'a, Message> {
+    question(
+        said,
+        action,
+        danger,
+        Message::Tag(TagMessage::Confirm),
+        Message::Tag(TagMessage::Cancel),
+    )
+}
+
+/// A question: what will happen, the button that does it and Cancel.
+pub(crate) fn question<'a>(
+    said: String,
+    action: &str,
+    danger: bool,
+    confirm: Message,
+    cancel: Message,
+) -> Element<'a, Message> {
     container(
         column![
             text(said).size(13),
@@ -401,11 +360,11 @@ pub(crate) fn card<'a>(said: String, action: &str, danger: bool) -> Element<'a, 
                     } else {
                         button::primary
                     })
-                    .on_press(Message::Tag(TagMessage::Confirm)),
+                    .on_press(confirm),
                 button(text("Cancel").size(13))
                     .padding([5, 12])
                     .style(button::secondary)
-                    .on_press(Message::Tag(TagMessage::Cancel)),
+                    .on_press(cancel),
             ]
             .spacing(6),
         ]

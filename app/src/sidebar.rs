@@ -5,9 +5,12 @@
 use std::path::PathBuf;
 
 use iced::widget::text::{Ellipsis, Wrapping};
-use iced::widget::{Space, button, column, container, lazy, row, rule, scrollable, text};
+use iced::widget::{
+    Space, button, column, container, lazy, mouse_area, row, rule, scrollable, text,
+};
 use iced::{Element, Length, Task, Theme};
 
+use super::note_actions::{self, NoteAction, NoteMessage};
 use super::vault::Vault;
 use super::{App, Message, file};
 
@@ -16,6 +19,12 @@ const SHOWN: usize = 500;
 
 /// The tags listed before "All N tags".
 const TOP: usize = 8;
+
+/// The note list, scrolled to a note whose menu or question opens.
+pub(crate) const NOTES: iced::widget::Id = iced::widget::Id::new("livemark-notes");
+
+/// A note row's height, about (its title and its date line).
+pub(crate) const NOTE_ROW: f32 = 45.0;
 
 /// A tag row's height, for the list's scrolling height.
 const ROW: f32 = 30.0;
@@ -32,7 +41,7 @@ pub enum Shown {
 }
 
 impl Shown {
-    fn keeps(&self, note: &super::vault::Note) -> bool {
+    pub(crate) fn keeps(&self, note: &super::vault::Note) -> bool {
         match self {
             Shown::All => true,
             Shown::Tag(tag) => note.tags.iter().any(|t| t == tag),
@@ -258,8 +267,16 @@ impl App {
                         (self.shown != Shown::All)
                             .then_some(Message::Vault(VaultMessage::Show(Shown::All))),
                         lazy(
-                            (vault.generation, self.shown.clone(), current),
-                            |(_, shown, current)| notes(vault, shown, current.as_deref()),
+                            (
+                                vault.generation,
+                                self.shown.clone(),
+                                current,
+                                self.note_menu.clone(),
+                                self.note_action.clone(),
+                            ),
+                            |(_, shown, current, menu, action)| {
+                                notes(vault, shown, current.as_deref(), (menu, action))
+                            },
                         )
                         .into(),
                     )
@@ -285,7 +302,7 @@ impl App {
             tags,
             rule::horizontal(1),
             heading,
-            scrollable(notes).height(Length::Fill)
+            scrollable(notes).id(NOTES).height(Length::Fill)
         ]
         .spacing(8);
         // How much is not committed yet: the user's git keeps the vault.
@@ -301,11 +318,13 @@ impl App {
     }
 }
 
-/// The note list: titles and dates, the open note marked.
+/// The note list: titles and dates, the open note marked; a right press
+/// on one opens its menu under it, and a rename or delete asks there.
 fn notes(
     vault: &Vault,
     shown: &Shown,
     current: Option<&std::path::Path>,
+    (menu, action): (&Option<PathBuf>, &Option<NoteAction>),
 ) -> Element<'static, Message> {
     let shown = vault.notes.iter().filter(|note| shown.keeps(note));
     let mut list = column![].spacing(1);
@@ -316,6 +335,12 @@ fn notes(
             continue;
         }
         let on = current == Some(note.path.as_path());
+        if let Some(NoteAction::Rename { path, value }) = action
+            && *path == note.path
+        {
+            list = list.push(note_actions::rename_view(vault, path, value));
+            continue;
+        }
         let meta = match (&note.created, note.tags.is_empty()) {
             (Some(date), _) => format!("{date}  {}", tags_line(&note.tags)),
             (None, false) => tags_line(&note.tags),
@@ -344,13 +369,29 @@ fn notes(
                 .wrapping(Wrapping::None)
                 .ellipsis(Ellipsis::End)
         }));
+        let open_menu = menu.as_deref() == Some(note.path.as_path());
         list = list.push(
-            button(row)
-                .width(Length::Fill)
-                .padding([5, 8])
-                .style(move |theme: &Theme, status| choice(theme, status, on))
-                .on_press(Message::Opened(Some(note.path.clone()))),
+            mouse_area(
+                button(row)
+                    .width(Length::Fill)
+                    .padding([5, 8])
+                    .style(move |theme: &Theme, status| {
+                        let mut style = choice(theme, status, on);
+                        if open_menu && !on {
+                            style.background = Some(theme.palette().background.weak.color.into());
+                        }
+                        style
+                    })
+                    .on_press(Message::Opened(Some(note.path.clone()))),
+            )
+            .on_right_press(Message::Note(NoteMessage::Menu(note.path.clone()))),
         );
+        if open_menu {
+            list = list.push(note_actions::menu_view(&note.path, on));
+        }
+        if action.as_ref() == Some(&NoteAction::Delete(note.path.clone())) {
+            list = list.push(note_actions::delete_view(vault, &note.path, &note.title));
+        }
     }
     if count > SHOWN {
         list = list.push(

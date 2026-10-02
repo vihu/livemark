@@ -306,7 +306,7 @@ fn a_tag_edit_rewrites_the_vault_reloads_the_note_and_undoes() {
             .all(|(t, _)| t != "trips")
     );
     // Undo writes both back.
-    assert_eq!(app.undo_tags(), Ok(0));
+    assert_eq!(app.undo_last(), Ok(0));
     assert_eq!(
         std::fs::read_to_string(&a).unwrap(),
         "---\ntags: [trips, work]\n---\nPack for #trips.\n"
@@ -331,7 +331,7 @@ fn a_tag_edit_rewrites_the_vault_reloads_the_note_and_undoes() {
 
 #[test]
 fn the_tag_menu_renames_merges_deletes_and_undoes() {
-    use crate::sidebar::{Shown, VaultMessage};
+    use crate::sidebar::VaultMessage;
     use crate::tag_actions::{TagAction, TagMessage};
     let dir = std::env::temp_dir().join(format!("livemark-tag-menu-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -359,7 +359,7 @@ fn the_tag_menu_renames_merges_deletes_and_undoes() {
         Some("Merged #trips into #travel: 1 note changed")
     );
     assert!(app.undo_toast().is_some());
-    tag(&mut app, TagMessage::Undo);
+    let _ = app.update(Message::Undo);
     assert_eq!(
         std::fs::read_to_string(&a).unwrap(),
         "---\ntags: [trips]\n---\nGo. #old\n"
@@ -374,13 +374,10 @@ fn the_tag_menu_renames_merges_deletes_and_undoes() {
         std::fs::read_to_string(&a).unwrap(),
         "---\ntags: [trips]\n---\nGo. old\n"
     );
-    // F2 on the filtered tag, then Escape.
-    let _ = app.update(Message::Vault(VaultMessage::Show(Shown::Tag(
-        "travel".into(),
-    ))));
-    tag(&mut app, TagMessage::RenameShown);
+    // A rename asked, then Escape.
+    tag(&mut app, TagMessage::StartRename("travel".into()));
     assert!(matches!(app.tag_action, Some(TagAction::Rename { ref tag, .. }) if tag == "travel"));
-    tag(&mut app, TagMessage::Cancel);
+    let _ = app.update(Message::Escape);
     assert_eq!(app.tag_action, None);
     std::fs::remove_dir_all(&dir).unwrap();
 }

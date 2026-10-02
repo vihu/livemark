@@ -74,7 +74,7 @@ fn the_manager_sorts_suggests_and_merges_or_deletes_several_with_one_undo() {
         Some("Merged #internal, #ops and #work into #duty: 2 notes changed")
     );
     assert!(app.manager.as_ref().unwrap().selected.is_empty());
-    let _ = app.update(Message::Tag(crate::tag_actions::TagMessage::Undo));
+    let _ = app.update(Message::Undo);
     assert_eq!(std::fs::read_to_string(&a).unwrap(), a_text);
     assert_eq!(std::fs::read_to_string(&b).unwrap(), b_text);
     // Deleting the selected, after the question.

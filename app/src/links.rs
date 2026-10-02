@@ -95,7 +95,7 @@ pub(crate) fn link_choices(vault: &Vault, from: &Path, query: &str) -> Vec<Choic
 
 /// The path to `to` from the folder of the note at `from`, `../` where
 /// needed, spaces as `%20`: a link that still works in the git web UI.
-fn relative(from: &Path, to: &Path) -> String {
+pub(crate) fn relative(from: &Path, to: &Path) -> String {
     let base: Vec<_> = from
         .parent()
         .unwrap_or(Path::new(""))
