@@ -108,7 +108,27 @@ fn an_escaped_delimiter_inside_emphasis_is_text() {
         .iter()
         .map(|c| c.markers.clone())
         .collect();
-    assert_eq!(markers, [[0..1, 5..6], [7..9, 10..12]]);
+    assert_eq!(
+        markers,
+        [[0..1, 5..6], [2..3, 4..4], [7..9, 10..12]],
+        "the escape's backslash is a marker of its own"
+    );
+}
+
+#[test]
+fn an_escape_hides_its_backslash_until_touched() {
+    let text = "a \\* b `\\*` \\q c\\\\";
+    let styled = Styled::new(text);
+    let hidden = |at: usize| -> Vec<&str> {
+        styled
+            .hidden(at..at)
+            .iter()
+            .map(|r| &text[r.clone()])
+            .collect()
+    };
+    // Not in code, not before a letter, not an escaped backslash's second.
+    assert_eq!(hidden(0), ["\\", "`", "`", "\\"], "away from it");
+    assert_eq!(hidden(2), ["`", "`", "\\"], "touching the escape");
 }
 
 #[derive(Deserialize)]
@@ -156,6 +176,7 @@ fn markers_are_syntax_the_parser_never_calls_text() {
                 Syntax::Strikethrough => Some(b"~"),
                 Syntax::Code => Some(b"`"),
                 Syntax::Link => None,
+                Syntax::Escape => Some(b"\\"),
             };
             for m in c.markers.iter().filter(|m| !m.is_empty()) {
                 assert!(

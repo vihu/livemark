@@ -128,6 +128,7 @@ impl Walk<'_> {
                 self.inline(Syntax::Code, range, width);
             }
             Event::Text(_) => {
+                self.escape(&range);
                 self.texts.push(range.clone());
                 match &mut self.code {
                     Some((_, texts)) => texts.push(range),
@@ -397,6 +398,38 @@ impl Walk<'_> {
                 .markers
                 .extend(markers.into_iter().filter(|m| !m.is_empty()));
         }
+    }
+
+    /// A backslash escape before the text at `range`: the parser leaves the
+    /// `\` out of every text event. Its backslash hides unless the escape
+    /// itself is touched (REFERENCE-001 section 11).
+    fn escape(&mut self, range: &Range<usize>) {
+        let at = range.start.wrapping_sub(1);
+        let escape = self.code.is_none()
+            && range.start > 0
+            && self.text.as_bytes()[at] == b'\\'
+            && !self.in_text(at);
+        if !escape {
+            return;
+        }
+        let end = range.start
+            + self.text[range.start..]
+                .chars()
+                .next()
+                .map_or(0, char::len_utf8);
+        let marker = at..range.start;
+        self.toggles.push((marker.clone(), Flag::Marker));
+        let hides = self.cells.is_none();
+        if !hides {
+            self.cell_markers([marker.clone(), range.start..range.start]);
+        }
+        self.constructs.push(Construct {
+            syntax: Syntax::Escape,
+            range: at..end,
+            markers: [marker, end..end],
+            group: self.constructs.len(),
+            hides,
+        });
     }
 
     /// A mark that shows when it is touched itself.

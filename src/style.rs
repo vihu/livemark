@@ -53,6 +53,8 @@ pub enum Syntax {
     Code,
     /// `[text](url)`, `[text][label]`, `[label]`, or `<url>`.
     Link,
+    /// A backslash escape (`\*`): the backslash hides.
+    Escape,
 }
 
 /// A parse node whose markers live preview can hide.
