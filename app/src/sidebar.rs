@@ -144,24 +144,27 @@ impl App {
             |(_, filter, current)| notes(vault, filter.as_deref(), current.as_deref()),
         );
         let header = text(vault.name()).size(13).style(text::secondary);
-        Some(
-            container(
-                column![
-                    header,
-                    tags,
-                    rule::horizontal(1),
-                    scrollable(notes).height(Length::Fill),
-                ]
-                .spacing(8),
-            )
-            .width(WIDTH)
-            .height(Length::Fill)
-            .padding([8, 8])
-            .style(|theme: &Theme| container::Style {
-                background: Some(theme.palette().background.weakest.color.into()),
-                ..container::Style::default()
-            })
+        // While searching, the search in place of the tags and notes.
+        let body: Element<'_, Message> = match &self.search {
+            Some(search) => self.search_view(search),
+            None => column![
+                tags,
+                rule::horizontal(1),
+                scrollable(notes).height(Length::Fill)
+            ]
+            .spacing(8)
             .into(),
+        };
+        Some(
+            container(column![header, body].spacing(8))
+                .width(WIDTH)
+                .height(Length::Fill)
+                .padding([8, 8])
+                .style(|theme: &Theme| container::Style {
+                    background: Some(theme.palette().background.weakest.color.into()),
+                    ..container::Style::default()
+                })
+                .into(),
         )
     }
 }
@@ -247,7 +250,7 @@ fn tags_line(tags: &[String]) -> String {
 }
 
 /// A sidebar button: plain, shaded under the pointer, filled when chosen.
-fn choice(theme: &Theme, status: button::Status, on: bool) -> button::Style {
+pub(crate) fn choice(theme: &Theme, status: button::Status, on: bool) -> button::Style {
     let palette = theme.palette();
     let background = match status {
         _ if on => Some(palette.primary.weak.color),

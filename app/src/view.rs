@@ -271,6 +271,9 @@ impl App {
                 'n' => Some(Message::New),
                 'o' => Some(Message::Open),
                 'p' => Some(Message::Quick(super::quick::QuickMessage::Open)),
+                'f' if modifiers.shift() => {
+                    Some(Message::Search(super::search::SearchMessage::Open))
+                }
                 's' => Some(Message::Save {
                     choose: modifiers.shift(),
                 }),
@@ -306,7 +309,17 @@ impl App {
                 }
             })
         });
-        Subscription::batch([keys, close, focus].into_iter().chain(quick))
+        // Escape in the search field (it leaves Escape alone) closes it.
+        let search = (self.search.is_some() && self.quick.is_none()).then(|| {
+            keyboard::listen().filter_map(|event| match event {
+                keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                    ..
+                } => Some(Message::Search(super::search::SearchMessage::Close)),
+                _ => None,
+            })
+        });
+        Subscription::batch([keys, close, focus].into_iter().chain(quick).chain(search))
     }
 }
 

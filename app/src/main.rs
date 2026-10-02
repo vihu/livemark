@@ -21,6 +21,7 @@ mod file;
 mod note;
 mod pictures;
 mod quick;
+mod search;
 mod settings;
 mod sidebar;
 mod vault;
@@ -126,6 +127,8 @@ struct App {
     naming: Option<String>,
     /// Quick open (Ctrl+P), while it is open.
     quick: Option<quick::Quick>,
+    /// Search across the vault (Ctrl+Shift+F), while it is open.
+    search: Option<search::Search>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -175,6 +178,8 @@ enum Message {
     Vault(sidebar::VaultMessage),
     /// Quick open.
     Quick(quick::QuickMessage),
+    /// Search across the vault.
+    Search(search::SearchMessage),
 }
 
 impl App {
@@ -209,6 +214,7 @@ impl App {
             tag: None,
             naming: None,
             quick: None,
+            search: None,
         }
         .with_images()
     }
@@ -343,6 +349,7 @@ impl App {
             Message::Dropped(file) => return self.dropped(file),
             Message::Vault(message) => return self.vault_update(message),
             Message::Quick(message) => return self.quick_update(message),
+            Message::Search(message) => return self.search_update(message),
             Message::Editor(message) => {
                 // Only a failure is reported; an open or save error stays.
                 if let Some(Err(error)) = message.link().map(open_link) {

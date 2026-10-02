@@ -20,6 +20,9 @@ pub struct Note {
     pub modified: SystemTime,
     /// The file's size: with the time, what tells a changed file.
     pub size: u64,
+    /// The whole text, and in lowercase, for search.
+    pub text: String,
+    pub lower: String,
 }
 
 #[derive(Debug)]
@@ -163,6 +166,8 @@ pub fn read(path: PathBuf, modified: SystemTime, text: String) -> Note {
         created,
         modified,
         size: text.len() as u64,
+        lower: text.to_lowercase(),
+        text,
     }
 }
 

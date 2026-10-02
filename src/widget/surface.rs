@@ -528,7 +528,8 @@ impl Surface<'_> {
         Some((track, thumb, position.y))
     }
 
-    /// Ctrl/Cmd+F and Ctrl/Cmd+H open the find bar; while it is open, F3
+    /// Ctrl/Cmd+F and Ctrl/Cmd+H open the find bar (with Shift they are
+    /// left to the host); while it is open, F3
     /// and Ctrl/Cmd+G go to the next match (Shift: the previous one) and
     /// Escape closes it.
     fn find_key(
@@ -541,7 +542,12 @@ impl Surface<'_> {
         let open = self.editor.find.is_some();
         let forward = !modifiers.shift();
         match key.as_ref() {
-            _ if modifiers.command() && !modifiers.alt() && matches!(letter, Some('f' | 'h')) => {
+            // With Shift they are the host's (the app's search of every note).
+            _ if modifiers.command()
+                && !modifiers.alt()
+                && !modifiers.shift()
+                && matches!(letter, Some('f' | 'h')) =>
+            {
                 Some(FindInput::Open {
                     replace: letter == Some('h'),
                 })

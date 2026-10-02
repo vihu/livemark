@@ -355,7 +355,18 @@ fn five_thousand_notes_are_read_quickly() {
     let start = std::time::Instant::now();
     vault.refresh();
     let refreshed = start.elapsed();
-    println!("5,000 notes: open {opened:?}, refresh with no change {refreshed:?}");
+    let start = std::time::Instant::now();
+    let (hits, count) = crate::search::search(&vault, "words more");
+    let everywhere = start.elapsed();
+    assert_eq!((hits.len(), count), (200, 5000));
+    let start = std::time::Instant::now();
+    let (hits, _) = crate::search::search(&vault, "nowhere");
+    let nowhere = start.elapsed();
+    assert!(hits.is_empty());
+    println!(
+        "5,000 notes: open {opened:?}, refresh with no change {refreshed:?}, \
+         search matching all {everywhere:?}, matching none {nowhere:?}"
+    );
     assert_eq!(vault.notes.len(), 5000);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -452,5 +463,66 @@ fn quick_open_finds_notes_by_title_and_tag_and_opens_one() {
     quick(&mut app, QuickMessage::Open);
     quick(&mut app, QuickMessage::Close);
     assert!(app.quick.is_none());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn search_finds_notes_by_their_words_and_opens_at_the_match() {
+    use crate::search::SearchMessage;
+    use crate::sidebar::VaultMessage;
+    let dir = std::env::temp_dir().join(format!("livemark-search-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    write(
+        &dir.join("a.md"),
+        "---\ntitle: Lisbon hotels\ntags: [travel]\n---\nThe hotel near Alfama.\nBook the HOTEL by Friday.\n",
+        0,
+    );
+    write(
+        &dir.join("b.md"),
+        "# Conference\nThe hotel is paid by work. #work\n",
+        10,
+    );
+    write(&dir.join("c.md"), "# Standup\nnothing here\n", 20);
+    let mut app = App::open(None, None);
+    let search = |app: &mut App, message| {
+        let _ = app.update(Message::Search(message));
+    };
+    // Outside a vault there is nothing to search.
+    search(&mut app, SearchMessage::Open);
+    assert!(app.search.is_none());
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    search(&mut app, SearchMessage::Open);
+    search(&mut app, SearchMessage::Query("hotel".into()));
+    let found = |app: &App| -> Vec<(String, usize)> {
+        let search = app.search.as_ref().unwrap();
+        search
+            .hits
+            .iter()
+            .map(|h| (h.title.clone(), h.lines.len()))
+            .collect()
+    };
+    // The title in its front matter is a line too.
+    assert_eq!(
+        found(&app),
+        [
+            ("Conference".to_owned(), 1),
+            ("Lisbon hotels".to_owned(), 3)
+        ]
+    );
+    let _ = app.view();
+    // Every word, and a tag.
+    search(&mut app, SearchMessage::Query("hotel friday".into()));
+    assert_eq!(found(&app), [("Lisbon hotels".to_owned(), 3)]);
+    search(&mut app, SearchMessage::Query("hotel #wo".into()));
+    assert_eq!(found(&app), [("Conference".to_owned(), 1)]);
+    // Enter: the first match, selected.
+    search(&mut app, SearchMessage::Query("friday".into()));
+    search(&mut app, SearchMessage::First);
+    assert_eq!(
+        app.editor.text()[app.editor.selection().range()].to_owned(),
+        "Friday"
+    );
+    search(&mut app, SearchMessage::Close);
+    assert!(app.search.is_none());
     std::fs::remove_dir_all(&dir).unwrap();
 }

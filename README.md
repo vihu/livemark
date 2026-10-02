@@ -64,7 +64,10 @@ vault Ctrl+N asks for a title and makes `2026-10-02-lisbon-hotels.md`
 front matter for its title, tags and date; the file keeps its name when
 the title changes. Ctrl+P opens a note by typing part of its title (most
 recent first; `#travel` narrows to a tag; Up, Down, Enter, Escape);
-outside a vault it lists the recent files.
+outside a vault it lists the recent files. Ctrl+Shift+F searches every
+note in the sidebar: all the words, in any case, `#tag` to narrow; each
+note with its matching lines, a click opening it with the match selected
+(Enter: the first one).
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
 the theme (System, Light, Dark). The zoom, the window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click

@@ -170,13 +170,18 @@ fn ctrl_with_a_letter_is_left_to_the_host() {
         if let Event::Keyboard(keyboard::Event::KeyPressed { text, .. }) = &mut save {
             *text = Some("s".into());
         }
-        statuses = ui.simulate([save]);
+        // Ctrl+Shift+F is the host's too (the app searches every note).
+        let search = press(
+            Key::Character("f".into()),
+            keyboard::Modifiers::COMMAND | keyboard::Modifiers::SHIFT,
+        );
+        statuses = ui.simulate([save, search]);
     });
     assert_eq!(editor.text(), "note");
     assert_eq!(
         statuses,
-        [iced::event::Status::Ignored],
-        "the app sees Ctrl+S"
+        [iced::event::Status::Ignored, iced::event::Status::Ignored],
+        "the app sees Ctrl+S and Ctrl+Shift+F"
     );
 }
 
