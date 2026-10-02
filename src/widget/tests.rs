@@ -457,3 +457,136 @@ fn an_indented_lazy_line_lines_up_too() {
         assert!((lazy - quoted).abs() < 0.5, "{lazy} vs {quoted}");
     });
 }
+
+/// A press and release at `at` with `clicks`, no modifier.
+fn click_at(editor: &mut Editor, at: iced::Point, clicks: u8) {
+    use super::{Input, Message};
+    let press = Input::Press {
+        at,
+        shift: false,
+        clicks,
+        command: false,
+        other: false,
+    };
+    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(Input::Release));
+}
+
+#[test]
+fn a_double_click_selects_the_word_the_first_click_saw() {
+    let text = "plain **bold** end\nother line\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    // On "b" of the bold word, its `**` hidden.
+    let at = editor.with_lines(|lines, source| {
+        let (x, _, _) = lines.caret_in_line(source, 8, Affinity::After);
+        iced::Point::new(x + 2.0, 10.0)
+    });
+    click_at(&mut editor, at, 1);
+    click_at(&mut editor, at, 2);
+    let range = editor.selection().range();
+    assert_eq!(&text[range], "bold");
+}
+
+#[test]
+fn a_last_line_taller_than_the_view_scrolls_to_its_caret() {
+    use super::{Input, Key, Message};
+    let text = format!("short\n{}", "word ".repeat(600));
+    let mut editor = Editor::new(text.clone());
+    editor.select(text.len(), text.len());
+    let _ = editor.update(Message(Input::Key(Key::Insert('x'))));
+    let height = editor.lines.borrow().height;
+    let caret = editor.caret().expect("on screen");
+    assert!(
+        caret.y + caret.height <= height + 0.5,
+        "{caret:?} in {height}"
+    );
+}
+
+#[test]
+fn up_and_down_start_from_the_caret_even_far_out_of_view() {
+    use super::{Input, Key, Message, Vertical};
+    let text = "line\n".repeat(300);
+    let mut editor = Editor::new(text);
+    editor.select(0, 0);
+    let _ = editor.update(Message(Input::Scroll(5000.0)));
+    let _ = editor.update(Message(Input::Key(Key::Vertical(Vertical::Down, true))));
+    assert_eq!(editor.selection().range(), 0..5, "line 1, not the view");
+}
+
+#[test]
+fn releasing_after_scrolling_away_keeps_the_view() {
+    use super::{Input, Message};
+    let text = "line\n".repeat(300);
+    let mut editor = Editor::new(text);
+    let press = Input::Press {
+        at: iced::Point::new(10.0, 10.0),
+        shift: false,
+        clicks: 1,
+        command: false,
+        other: false,
+    };
+    let _ = editor.update(Message(press));
+    let _ = editor.update(Message(Input::Scroll(2000.0)));
+    let anchor = editor.lines.borrow().anchor;
+    let _ = editor.update(Message(Input::Release));
+    assert_eq!(editor.lines.borrow().anchor, anchor);
+}
+
+#[test]
+fn find_bar_inputs_that_move_nothing_keep_the_view() {
+    use super::find::FindInput;
+    use super::{Input, Message};
+    let text = "a needle\n".to_owned() + &"line\n".repeat(300);
+    let mut editor = Editor::new(text);
+    editor.select(0, 0);
+    let send = |editor: &mut Editor, input| {
+        let _ = editor.update(Message(input));
+    };
+    send(&mut editor, Input::Find(FindInput::Open { replace: true }));
+    send(&mut editor, Input::Find(FindInput::Query("needle".into())));
+    send(&mut editor, Input::Scroll(3000.0));
+    let anchor = editor.lines.borrow().anchor;
+    send(
+        &mut editor,
+        Input::Find(FindInput::Replacement("pin".into())),
+    );
+    send(&mut editor, Input::Find(FindInput::Query("needlex".into())));
+    send(&mut editor, Input::Find(FindInput::Close));
+    assert_eq!(editor.lines.borrow().anchor, anchor);
+}
+
+#[test]
+fn each_quick_click_on_a_checkbox_ticks_it() {
+    let mut editor = Editor::new("- [ ] task\nnext".into());
+    let end = editor.text().len();
+    editor.select(end, end);
+    let at = (0..120)
+        .map(|x| iced::Point::new(x as f32, 12.0))
+        .find(|p| editor.with_lines(|lines, source| lines.task_at(source, p.x, p.y).is_some()))
+        .expect("a checkbox");
+    click_at(&mut editor, at, 1);
+    assert_eq!(editor.text(), "- [x] task\nnext");
+    click_at(&mut editor, at, 2);
+    assert_eq!(
+        editor.text(),
+        "- [ ] task\nnext",
+        "the second click unticks"
+    );
+    assert_eq!(editor.selection().head, end);
+}
+
+#[test]
+fn wrapped_rows_of_an_indented_lazy_line_line_up_too() {
+    let text = format!("- > quoted\n  lazy {}\n", "word ".repeat(60));
+    let mut editor = Editor::new(text.clone());
+    editor.select(text.len(), text.len());
+    editor.with_lines(|lines, source| {
+        let (quoted, _, _) = lines.caret_in_line(source, 4, Affinity::After);
+        let lazy = source.doc.line_range(1);
+        let row = lines.row_bounds(source, lazy.end, Affinity::Before);
+        assert!(row.start > lazy.start + 2, "a wrapped row");
+        let (x, _, _) = lines.caret_in_line(source, row.start, Affinity::After);
+        assert!((x - quoted).abs() < 0.5, "{x} vs {quoted}");
+    });
+}

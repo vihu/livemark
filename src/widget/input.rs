@@ -36,13 +36,16 @@ impl Editor {
             Input::Press {
                 at,
                 command: true,
-                clicks: 1,
+                clicks,
                 ..
             } if self.link_under(at).is_some() => {
                 // Ctrl/Cmd+click on a link follows it and moves nothing
-                // (REFERENCE-001 section 5).
-                let dest = self.link_under(at).unwrap_or_default();
-                task = Task::done(Message(Input::Follow(dest)));
+                // (REFERENCE-001 section 5); a quick second one does
+                // nothing more.
+                if clicks == 1 {
+                    let dest = self.link_under(at).unwrap_or_default();
+                    task = Task::done(Message(Input::Follow(dest)));
+                }
                 side = self.side;
                 keep_view = true;
             }
@@ -71,9 +74,13 @@ impl Editor {
             }
             Input::Drag(at) => side = self.drag(at),
             // The end of a press shows the markers it froze, which can move
-            // the caret: it is brought into view. Otherwise nothing moved.
+            // the caret out of view: it is brought back, unless it was out
+            // of view already (scrolled away while the button was held).
             Input::Release => {
-                keep_view = self.press.take().is_none();
+                let shown = self.caret().is_some();
+                let press = self.press.take();
+                keep_view = press.is_none() || !shown;
+                self.last_press = press.map(|press| (press, self.doc.version()));
                 side = self.side;
             }
             Input::Scroll(dy) => {
@@ -89,7 +96,13 @@ impl Editor {
                 return Task::none();
             }
             Input::Commit(text) => edit::type_text(&mut self.doc, &text, now),
-            Input::Find(input) => task = self.find_input(input, now),
+            Input::Find(input) => {
+                // Typing a replacement, closing the bar or a query with no
+                // match moves nothing: the view stays.
+                let before = (self.doc.selection(), self.doc.version());
+                task = self.find_input(input, now);
+                keep_view = before == (self.doc.selection(), self.doc.version());
+            }
             Input::Paste(text) => {
                 let line = self.doc.selection().range().is_empty()
                     && self.linewise.as_deref() == Some(text.as_str());
@@ -206,17 +219,33 @@ impl Editor {
     /// was ticked and the caret stayed.
     fn press(&mut self, at: Point, shift: bool, clicks: u8, plain: bool) -> Option<Affinity> {
         // A checkbox toggles its task and leaves the caret where it is
-        // (REFERENCE-001 section 8); with a modifier it is an ordinary
-        // click.
-        if clicks == 1 && plain {
+        // (REFERENCE-001 section 8), each click of a quick pair too; with a
+        // modifier it is an ordinary click.
+        if plain {
             let task = self.with_lines(|lines, source| lines.task_at(source, at.x, at.y));
             if let Some(task) = task {
                 edit::format::toggle_task(&mut self.doc, task, self.started.elapsed());
                 return None;
             }
         }
+        // A second or third click hits the text as the first one saw it:
+        // its release revealed markers, and may have scrolled to keep the
+        // caret in view (REFERENCE-001 section 2).
+        let view = self.with_lines(|lines, _| (lines.anchor, lines.offset));
+        let (frozen, view) = match self.last_press.take() {
+            Some((last, version)) if clicks >= 2 && version == self.doc.version() => {
+                self.with_lines(|lines, _| (lines.anchor, lines.offset) = last.view);
+                (last.frozen, last.view)
+            }
+            _ => (self.doc.selection(), view),
+        };
+        self.press = Some(Press {
+            frozen,
+            unit: Unit::Char,
+            first: 0..0,
+            view,
+        });
         let (offset, side) = self.hit(at);
-        let frozen = self.doc.selection();
         let (unit, first) = match clicks {
             1 => (Unit::Char, offset..offset),
             2 => (
@@ -241,6 +270,7 @@ impl Editor {
             frozen,
             unit,
             first,
+            view,
         });
         Some(side)
     }
@@ -308,6 +338,10 @@ impl Editor {
         let (goal, side) = (self.goal_x, self.side);
         let (x, (head, side)) = self.with_lines(|lines, source| {
             let index = source.doc.line_at(selection.head);
+            // From the caret, so first to it when it is far out of view.
+            if lines.top_of(source, index).is_none() {
+                lines.reveal(source, selection.head, side);
+            }
             let top = lines.top_of(source, index).unwrap_or(0.0);
             let (x, row_top, row_height) = lines.caret_in_line(source, selection.head, side);
             let x = goal.unwrap_or(x);

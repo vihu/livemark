@@ -278,7 +278,7 @@ fn draw_text(
         ),
     );
     for (position, clip) in [
-        (origin, first),
+        (origin + Vector::new(shaped.lead, 0.0), first),
         (origin + Vector::new(shaped.hang, 0.0), rest),
     ] {
         renderer.fill_raw(Raw {

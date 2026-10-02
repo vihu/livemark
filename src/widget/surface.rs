@@ -258,6 +258,11 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 shell.request_redraw();
                 shell.capture_event();
             }
+            // Nothing to paste (an image, an empty clipboard): the read is
+            // over, so a later one (another widget's) is not taken.
+            Event::Clipboard(clipboard::Event::Read(Err(_))) if state.pasting => {
+                state.pasting = false;
+            }
             Event::Clipboard(clipboard::Event::Read(Ok(content))) if state.pasting => {
                 state.pasting = false;
                 if let clipboard::Content::Text(text) = content.as_ref() {

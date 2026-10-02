@@ -54,6 +54,9 @@ pub struct Editor {
     side: Affinity,
     /// The mouse press being held.
     press: Option<Press>,
+    /// The last press that ended, with the document version it was in: a
+    /// second or third click hits the text as the first one saw it.
+    last_press: Option<(Press, u64)>,
     /// The x the caret aims for moving up and down (REFERENCE-001
     /// section 13).
     goal_x: Option<f32>,
@@ -91,6 +94,8 @@ struct Press {
     unit: Unit,
     /// The word or line the press selected first.
     first: Range<usize>,
+    /// The first line drawn and its offset when the press began.
+    view: (usize, f32),
 }
 
 /// What a drag extends by: characters after a single click, words after a
@@ -207,6 +212,7 @@ impl Editor {
             started: Instant::now(),
             side: Affinity::After,
             press: None,
+            last_press: None,
             goal_x: None,
             linewise: None,
             find: None,

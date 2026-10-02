@@ -438,3 +438,27 @@ fn alt_arrows_move_and_copy_lines_and_ctrl_shift_k_deletes_them() {
     // blank line under it.
     assert_eq!(editor.text(), "two\none\nnew\nthree");
 }
+
+#[test]
+fn a_failed_paste_does_not_take_a_later_read_meant_for_another_widget() {
+    use iced::advanced::clipboard;
+    let mut editor = Editor::new("one\ntwo\n".into());
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        // Ctrl+V with an image, or nothing, on the clipboard: the read fails.
+        ui.simulate([press(
+            Key::Character("v".into()),
+            keyboard::Modifiers::COMMAND,
+        )]);
+        ui.simulate([Event::Clipboard(clipboard::Event::Read(Err(
+            clipboard::Error::ContentNotAvailable,
+        )))]);
+        // Later another widget reads the clipboard.
+        click(ui, Point::new(700.0, 590.0));
+        let text = clipboard::Content::Text("PASTED".into());
+        ui.simulate([Event::Clipboard(clipboard::Event::Read(Ok(
+            std::sync::Arc::new(text),
+        )))]);
+    });
+    assert_eq!(editor.text(), "one\ntwo\n");
+}

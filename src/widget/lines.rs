@@ -125,7 +125,7 @@ impl Lines {
             .lazy_at(range.clone())
             .filter(|_| !self.source);
         let Some(anchor) = lazy else {
-            return self.shape_line(source, index, 0.0);
+            return self.shape_line(source, index, (0.0, 0.0));
         };
         let quoted = self.shaped(source, source.doc.line_at(anchor));
         let target = super::marks::start_x(&quoted, anchor);
@@ -134,14 +134,17 @@ impl Lines {
         let own = if indent == 0 {
             0.0
         } else {
-            let plain = self.shape_line(source, index, 0.0);
+            let plain = self.shape_line(source, index, (0.0, 0.0));
             super::marks::start_x(&plain, range.start + indent)
         };
-        self.shape_line(source, index, (target - own).max(0.0))
+        // Its first row past its own indentation, the rest at the quoted
+        // text.
+        self.shape_line(source, index, ((target - own).max(0.0), target))
     }
 
-    /// Line `index` shaped with all its rows `lead` to the right.
-    fn shape_line(&mut self, source: &Source, index: usize, lead: f32) -> Shaped {
+    /// Line `index` shaped with its first row `lead` to the right and,
+    /// when `rest` is not 0, its other rows `rest` to the right.
+    fn shape_line(&mut self, source: &Source, index: usize, (lead, rest): (f32, f32)) -> Shaped {
         let range = source.doc.line_range(index);
         let line = Line::new(
             source.doc.text(),
@@ -187,6 +190,7 @@ impl Lines {
             mono,
             self.width.to_bits(),
             lead.to_bits(),
+            rest.to_bits(),
         )
             .hash(&mut hasher);
         for color in [
@@ -205,7 +209,7 @@ impl Lines {
             Some(cached) => cached.clone(),
             None => {
                 let looks = (level, mono, self.colors, compact);
-                let cached = shape(&line, looks, hang, self.width - lead, &tokens);
+                let cached = shape(&line, looks, hang, self.width - lead.max(rest), &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
             }
@@ -214,7 +218,7 @@ impl Lines {
             buffer: cached.buffer,
             line,
             height: cached.height,
-            hang: cached.hang,
+            hang: if rest > 0.0 { rest } else { cached.hang },
             lead,
             first_row: cached.first_row,
         }
@@ -258,8 +262,11 @@ impl Lines {
             self.anchor += 1;
         }
         if self.anchor >= last {
+            // The last line stops at the top, or with its bottom at the
+            // bottom when it is taller than the view.
             self.anchor = last;
-            self.offset = 0.0;
+            let height = self.shaped(source, last).height;
+            self.offset = self.offset.clamp(0.0, (height - self.height).max(0.0));
         }
     }
 
