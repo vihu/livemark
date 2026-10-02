@@ -164,6 +164,7 @@ impl App {
                 self.editor = Editor::new(text);
                 self.editor.select(selection.anchor, selection.head);
                 self.saved = self.editor.version();
+                self.discarded = None;
                 self.stamp = file::modified(&path);
                 self.error = None;
             }
@@ -273,6 +274,8 @@ impl App {
             Ok(text) => {
                 self.editor = Editor::new(text);
                 self.saved = self.editor.version();
+                // Versions start again with a new editor.
+                self.discarded = None;
                 self.stamp = file::modified(&path);
                 self.changed = false;
                 self.path = Some(path);
@@ -291,6 +294,7 @@ impl App {
         self.path = None;
         self.editor = Editor::new(String::new());
         self.saved = self.editor.version();
+        self.discarded = None;
         self.stamp = None;
         self.changed = false;
         self.error = None;

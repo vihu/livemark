@@ -81,11 +81,6 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         .take_while(|&(_, &i)| blocks.containers[i].range.start < reach.end)
         .last()
         .map_or(position, |(j, _)| j);
-    // Columns are measured at markers: an item's range can start at its
-    // parent's text, before its own indentation.
-    let marker = |start: usize| {
-        start + text[start..].len() - text[start..].trim_start_matches([' ', '\t']).len()
-    };
     // The parent item: the innermost other item around this one.
     let parent = blocks
         .containers
@@ -99,67 +94,105 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         })
         .map(|(i, _)| i)
         .next_back();
-    // Lists indented with tabs get tabs (REFERENCE-001 section 7).
-    let tabs = blocks
-        .containers
-        .iter()
-        .filter(|c| c.list.is_some())
-        .any(|c| {
-            let at = marker(c.range.start);
-            text[at - column(at)..at].contains('\t')
-        });
-    let shift: i64 = if outdent {
-        // Out to the parent item's marker, or the line start.
-        let parent = parent.map_or(0, |p| column(marker(blocks.containers[p].range.start)));
-        -((column(marker(item_start)) - parent) as i64)
-    } else {
-        // Under the previous item's text.
-        let Some(&previous) = position.checked_sub(1).and_then(|p| items.get(p)) else {
-            return;
-        };
-        let prev_start = blocks.containers[previous].range.start;
-        let Some(prev) = contexts(text, &blocks, prev_start).pop() else {
-            return;
-        };
-        prev.to as i64 - column(marker(item_start)) as i64
-    };
-    if shift == 0 {
-        return;
-    }
-    // Every line of the items and their children moves, after the `>` of
-    // the quotes the list is in.
+    // Lines move by their indentation, after the `>` of the quotes the list
+    // is in: the item's own indentation is replaced by where it goes, as
+    // text, so tabs and spaces both work and nothing is measured in columns.
     let quotes = blocks
         .containers
         .iter()
         .filter(|c| c.list.is_none() && c.range.start < item_start && item_start <= c.range.end)
         .count();
-    let end = blocks.containers[items[last]].range.end;
-    let first_line = item_start - column(item_start);
-    let mut changes = Vec::new();
-    let mut line = first_line;
-    loop {
-        let rest = &text[line..end];
+    let indent = |start: usize| -> (usize, &str) {
+        let line = start - column(start);
+        let rest = &text[line..];
         let len = rest.find(['\n', '\r']).unwrap_or(rest.len());
         let at = line + quote_prefix(&rest[..len], quotes);
-        if shift > 0 && at < line + len {
-            let indent = if tabs {
-                "\t".to_owned()
-            } else {
-                " ".repeat(shift as usize)
-            };
-            changes.push(Change::insert(at, indent));
-        } else if shift < 0 {
-            let blank = text[at..end]
-                .bytes()
-                .take(-shift as usize)
-                .take_while(|&b| b == b' ' || b == b'\t')
-                .count();
-            changes.push(Change::delete(at..at + blank));
+        let blank =
+            text[at..line + len].len() - text[at..line + len].trim_start_matches([' ', '\t']).len();
+        (at, &text[at..at + blank])
+    };
+    let own = indent(item_start).1;
+    // Lists indented with tabs get tabs (REFERENCE-001 section 7).
+    let tabs = own.contains('\t')
+        || blocks
+            .containers
+            .iter()
+            .filter(|c| c.list.is_some())
+            .any(|c| indent(c.range.start).1.contains('\t'));
+    let target = if outdent {
+        // Out to the parent item's indentation, or none.
+        parent.map_or(String::new(), |p| {
+            indent(blocks.containers[p].range.start).1.to_owned()
+        })
+    } else {
+        // Under the previous item's text: as its children are indented, or
+        // by its marker's width (the task box is text, CommonMark 5.3).
+        let Some(&previous) = position.checked_sub(1).and_then(|p| items.get(p)) else {
+            return;
+        };
+        let prev = &blocks.containers[previous];
+        let child = blocks.containers.iter().find(|c| {
+            c.list.is_some() && c.range.start > prev.range.start && c.range.start <= prev.range.end
+        });
+        match child {
+            Some(child) => indent(child.range.start).1.to_owned(),
+            None => {
+                let (at, blank) = indent(prev.range.start);
+                let unit = if tabs {
+                    "\t".to_owned()
+                } else {
+                    " ".repeat(marker_width(&text[at + blank.len()..]))
+                };
+                format!("{blank}{unit}")
+            }
         }
-        match rest.find('\n') {
-            Some(i) if line + i < end => line += i + 1,
-            _ => break,
+    };
+    if target == own {
+        return;
+    }
+    let mut changes = Vec::new();
+    let retarget = |from: usize, end: usize, to: &str, changes: &mut Vec<Change>| {
+        let mut line = from - column(from);
+        loop {
+            let (at, blank) = indent(line);
+            let rest = &text[at..end.max(at)];
+            let blank_line = rest
+                .trim_start_matches([' ', '\t'])
+                .starts_with(['\n', '\r'])
+                || at + blank.len() >= end;
+            if !blank_line && blank.starts_with(own) {
+                changes.push(Change {
+                    range: at..at + own.len(),
+                    text: to.to_owned(),
+                });
+            }
+            match next_line(text, line) {
+                Some(next) if next < end => line = next,
+                _ => break,
+            }
         }
+    };
+    let end = blocks.containers[items[last]].range.end;
+    retarget(item_start, end, &target, &mut changes);
+    // Out: the items after them in their old list stay under the last one
+    // lifted (MarkText's `tabCtrl.js:133-174`), indented to its text.
+    if outdent && last + 1 < items.len() {
+        let lifted = &text[indent(blocks.containers[items[last]].range.start).0..];
+        let lifted = lifted.trim_start_matches([' ', '\t']);
+        let mut width = marker_width(lifted);
+        if blocks.lists[list].ordered {
+            // Its number can gain a digit when it joins the outer list.
+            width += lifted_digits(text, &blocks, parent, position, last)
+                .saturating_sub(lifted.bytes().take_while(u8::is_ascii_digit).count());
+        }
+        let under = if tabs {
+            format!("{target}\t")
+        } else {
+            format!("{target}{}", " ".repeat(width))
+        };
+        let from = blocks.containers[items[last + 1]].range.start;
+        let end = blocks.containers[*items.last().unwrap_or(&item)].range.end;
+        retarget(from, end, &under, &mut changes);
     }
     if blocks.lists[list].ordered {
         let number = |item: usize, n: u64, changes: &mut Vec<Change>| {
@@ -269,5 +302,49 @@ fn renumber_after(
         });
         previous = number;
         next += 1;
+    }
+}
+
+/// Where the line after the one at `line` starts, after any line ending.
+fn next_line(text: &str, line: usize) -> Option<usize> {
+    let i = line + text[line..].find(['\n', '\r'])?;
+    Some(if text[i..].starts_with("\r\n") {
+        i + 2
+    } else {
+        i + 1
+    })
+}
+
+/// How wide an item's marker is with the space after it (`- `, `10. `):
+/// where its text starts, at least one space, at most four (more is code).
+fn marker_width(item: &str) -> usize {
+    let digits = item.bytes().take_while(u8::is_ascii_digit).count();
+    let marker = if digits > 0 { digits + 1 } else { 1 };
+    let spaces = item[marker.min(item.len())..]
+        .bytes()
+        .take_while(|&b| b == b' ')
+        .count();
+    marker + if (1..=4).contains(&spaces) { spaces } else { 1 }
+}
+
+/// How many digits the last lifted item's number has once it joins its
+/// parent's list, when that list is ordered.
+fn lifted_digits(
+    text: &str,
+    blocks: &Blocks,
+    parent: Option<usize>,
+    position: usize,
+    last: usize,
+) -> usize {
+    let start = parent
+        .filter(|&p| {
+            blocks.containers[p]
+                .list
+                .is_some_and(|l| blocks.lists[l].ordered)
+        })
+        .and_then(|p| item_number(text, blocks.containers[p].range.start));
+    match start {
+        Some((_, n)) => (n + 1 + (last - position) as u64).to_string().len(),
+        None => 0,
     }
 }

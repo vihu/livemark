@@ -84,6 +84,10 @@ pub struct Lines {
     pub theme: Option<Theme>,
     /// How many lines the last frame drew, for the scroll bar.
     pub visible: usize,
+    /// Whether a layout has given the real size (until then 600 by 400).
+    pub sized: bool,
+    /// A caret to bring into view once sized.
+    pub pending_reveal: Option<(usize, Affinity)>,
     /// Source mode: one size, the code font throughout (REFERENCE-001
     /// section 17).
     pub source: bool,
@@ -105,6 +109,8 @@ impl Lines {
             colors,
             theme: None,
             visible: 0,
+            sized: false,
+            pending_reveal: None,
             source: false,
             highlights: Highlights::default(),
             grids: HashMap::new(),
@@ -348,14 +354,12 @@ impl Lines {
         let shaped = self.shaped(source, source.doc.line_at(offset));
         let cursor = side_cursor(shaped.line.to_display(offset), side);
         let runs: Vec<_> = shaped.buffer.layout_runs().collect();
-        for run in &runs {
-            if let Some(x) = run.cursor_position(&cursor) {
-                return (
-                    x + shaped.shift(run.line_top),
-                    run.line_top,
-                    run.line_height,
-                );
-            }
+        if let Some((run, x)) = row_of(&runs, &cursor, side) {
+            return (
+                x + shaped.shift(run.line_top),
+                run.line_top,
+                run.line_height,
+            );
         }
         runs.last().map_or((0.0, 0.0, shaped.height), |run| {
             let x = run.line_w + shaped.shift(run.line_top);
@@ -369,11 +373,9 @@ impl Lines {
     pub fn row_bounds(&mut self, source: &Source, offset: usize, side: Affinity) -> Range<usize> {
         let shaped = self.shaped(source, source.doc.line_at(offset));
         let cursor = side_cursor(shaped.line.to_display(offset), side);
-        let row = shaped
-            .buffer
-            .layout_runs()
-            .find(|run| run.cursor_position(&cursor).is_some())
-            .map(|run| {
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        let row = row_of(&runs, &cursor, side)
+            .map(|(run, _)| {
                 let start = run.glyphs.iter().map(|g| g.start).min().unwrap_or(0);
                 let end = run.glyphs.iter().map(|g| g.end).max().unwrap_or(0);
                 start..end
@@ -413,6 +415,23 @@ impl Lines {
 
 /// A cosmic-text cursor at display offset `display`, on the given side of a
 /// soft wrap.
+/// The row a cursor is drawn on, and its x there. Where a row breaks with
+/// no space (after a hyphen, in a URL, in CJK text) the offset ends one row
+/// and starts the next: `After` takes the later.
+fn row_of<'a, 'b>(
+    runs: &'a [cosmic_text::LayoutRun<'b>],
+    cursor: &cosmic_text::Cursor,
+    side: Affinity,
+) -> Option<(&'a cosmic_text::LayoutRun<'b>, f32)> {
+    let mut rows = runs
+        .iter()
+        .filter_map(|run| run.cursor_position(cursor).map(|x| (run, x)));
+    match side {
+        Affinity::Before => rows.next(),
+        Affinity::After => rows.next_back(),
+    }
+}
+
 fn side_cursor(display: usize, side: Affinity) -> cosmic_text::Cursor {
     let affinity = match side {
         Affinity::Before => cosmic_text::Affinity::Before,
@@ -450,7 +469,10 @@ impl Lines {
         for m in &table.markers {
             (m.start - start, m.end - start).hash(&mut hasher);
         }
-        self.width.to_bits().hash(&mut hasher);
+        // The room right of where it starts (a list item's or quote's
+        // indent), not the whole width.
+        let width = (self.width - self.grid_x(source, index)).max(0.0);
+        width.to_bits().hash(&mut hasher);
         for color in [
             self.colors.text,
             self.colors.marker,
@@ -469,7 +491,7 @@ impl Lines {
             source.styled,
             table,
             self.colors,
-            self.width,
+            width,
         ));
         self.grids.insert(key, grid.clone());
         grid

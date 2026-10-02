@@ -264,7 +264,14 @@ impl Editor {
         self.placed = true;
         self.goal_x = None;
         self.side = Affinity::After;
-        self.with_lines(|lines, source| lines.reveal(source, selection.head, Affinity::After));
+        self.with_lines(|lines, source| {
+            // Before the first layout the view's size is not known yet.
+            if lines.sized {
+                lines.reveal(source, selection.head, Affinity::After);
+            } else {
+                lines.pending_reveal = Some((selection.head, Affinity::After));
+            }
+        });
     }
 
     /// How the markdown is drawn.

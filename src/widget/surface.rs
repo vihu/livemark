@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::operation::Focusable;
 use iced::advanced::widget::{self, Operation, Tree};
-use iced::advanced::{Shell, Widget, clipboard, input_method, mouse};
+use iced::advanced::{Renderer as _, Shell, Widget, clipboard, input_method, mouse};
 use iced::keyboard;
 use iced::widget::text_editor::{Binding, KeyPress, Motion as IcedMotion};
 use iced::{Element, Event, Length, Pixels, Point, Rectangle, Size, Theme, Vector, window};
@@ -94,9 +94,20 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 
     fn layout(&mut self, tree: &mut Tree, _renderer: &iced::Renderer, limits: &layout::Limits) {
         let size = limits.resolve(Length::Fill, Length::Fill, Size::ZERO);
-        let mut lines = self.editor.lines.borrow_mut();
-        lines.width = (size.width - 2.0 * PADDING).max(1.0);
-        lines.height = (size.height - 2.0 * PADDING).max(1.0);
+        let pending = {
+            let mut lines = self.editor.lines.borrow_mut();
+            lines.width = (size.width - 2.0 * PADDING).max(1.0);
+            lines.height = (size.height - 2.0 * PADDING).max(1.0);
+            lines.sized = true;
+            lines.pending_reveal.take()
+        };
+        // A caret selected before the first layout, now that the size is
+        // known.
+        if let Some((offset, side)) = pending {
+            let len = self.editor.text().len();
+            self.editor
+                .with_lines(|lines, source| lines.reveal(source, offset.min(len), side));
+        }
         tree.size = size;
     }
 
@@ -371,8 +382,17 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
     ) {
         let state = tree.state.downcast_ref::<State>();
         let caret = state.focus.as_ref().is_some_and(Focus::caret_on);
-        self.editor
-            .draw(renderer, theme, layout.bounds().shrink(PADDING), caret);
+        // Everything clipped to the text's rows; the side padding stays
+        // open for code bands and the quote bar.
+        let bounds = layout.bounds();
+        let area = bounds.shrink(PADDING);
+        let rows = Rectangle::new(
+            Point::new(bounds.x, area.y),
+            Size::new(bounds.width, area.height),
+        );
+        renderer.with_layer(rows, |renderer| {
+            self.editor.draw(renderer, theme, area, caret);
+        });
         self.editor.draw_scrollbar(renderer, theme, layout.bounds());
     }
 }

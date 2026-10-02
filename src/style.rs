@@ -259,6 +259,16 @@ impl Styled {
         self.hang_at(quoted.clone())
     }
 
+    /// Where the first quote `>` on the line at `line` is, shown or not.
+    pub fn quote_mark_in(&self, line: Range<usize>) -> Option<usize> {
+        let i = self.marks.partition_point(|m| m.range.start < line.start);
+        self.marks[i..]
+            .iter()
+            .take_while(|m| m.range.start <= line.end)
+            .find(|m| m.kind == MarkKind::Quote)
+            .map(|m| m.range.start)
+    }
+
     /// The marks drawn as something else with `selection` in place: those
     /// it does not touch.
     pub fn concealed(&self, selection: Range<usize>) -> Vec<Mark> {

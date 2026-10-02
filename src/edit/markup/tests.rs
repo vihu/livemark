@@ -192,7 +192,7 @@ fn a_selection_from_a_lines_start_moves_the_item_on_that_line() {
     );
     assert_eq!(
         tab_over("- z\n- a\n  - y\n[  - b\n  - c\n]", false),
-        "- z\n- a\n  - y\n  [  - b\n    - c\n]"
+        "- z\n- a\n  - y\n[    - b\n    - c\n]"
     );
     assert_eq!(tab_over("- a\n[  - b\n  - c\n]", true), "- a\n[- b\n- c\n]");
 }
@@ -272,4 +272,61 @@ fn shift_enter_in_fenced_code_in_a_list_item_keeps_the_indentation() {
     let mut doc = doc("- ```\n  code|\n  ```\n");
     soft_break(&mut doc, Duration::ZERO);
     assert_eq!(shown(&doc), "- ```\n  code\n  |\n  ```\n");
+}
+
+#[test]
+fn tab_and_shift_tab_on_mixed_task_and_lone_cr_lists() {
+    // Tab on a task item nests it by the marker, not the box.
+    assert_eq!(tab("- [ ] a\n- [ ] b|", false), "- [ ] a\n  - [ ] b|");
+    // A space-indented list in a document that also has a tab-indented one
+    // goes under its sibling's children as they are indented.
+    assert_eq!(
+        tab("- x\n\t- y\n\n- a\n  - b\n- c|", false),
+        "- x\n\t- y\n\n- a\n  - b\n  - c|"
+    );
+    assert_eq!(
+        tab("- x\n\t- y\n\n- a\n  - b\n  - c|", true),
+        "- x\n\t- y\n\n- a\n  - b\n- c|",
+        "and back out, without underflow"
+    );
+    // Lone `\r` endings move every line of the item.
+    assert_eq!(
+        tab("- a\r\t- b|\r\t\t- c\r- d", true),
+        "- a\r- b|\r\t- c\r- d"
+    );
+    // Following siblings stay under a lifted ordered item whose marker
+    // grows (a bullet parent, then a number gaining a digit).
+    assert_eq!(
+        tab("- a\n  1. x|\n  2. y\n- b", true),
+        "- a\n1. x|\n   1. y\n- b"
+    );
+    assert_eq!(
+        tab("9. a\n   1. x|\n   2. y\n10. b", true),
+        "9. a\n10. x|\n    1. y\n11. b"
+    );
+}
+
+#[test]
+fn three_levels_of_tabs_continue_as_siblings() {
+    assert_eq!(
+        enter("- a\n\t- b\n\t\t- c|").as_deref(),
+        Some("- a\n\t- b\n\t\t- c\n\t\t- |")
+    );
+    assert_eq!(
+        enter("> - a\n> \t- b\n> \t\t- c|").as_deref(),
+        Some("> - a\n> \t- b\n> \t\t- c\n> \t\t- |")
+    );
+    let mut doc = doc("- a\n\t- b\n\t\t- c\n\t\t- |");
+    soft_break(&mut doc, Duration::ZERO);
+    assert_eq!(shown(&doc), "- a\n\t- b\n\t\t- c\n\t\t- \n\t\t  |");
+    // Backspace after the first nested item's marker takes the markup.
+    assert_eq!(backspace("- a\n\n\t- |b").as_deref(), Some("- a\n\n\t|b"));
+}
+
+#[test]
+fn shift_enter_over_a_selection_in_fenced_code_breaks_the_line() {
+    let mut doc = Doc::new("```\nabcdef\n```\n".into());
+    doc.set_selection(Selection { anchor: 6, head: 8 });
+    soft_break(&mut doc, Duration::ZERO);
+    assert_eq!(shown(&doc), "```\nab\n|ef\n```\n");
 }

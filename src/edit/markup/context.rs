@@ -50,7 +50,7 @@ impl Blocks {
                 Event::Start(Tag::List(first)) => {
                     open_lists.push(blocks.lists.len());
                     blocks.lists.push(List {
-                        start: range.start,
+                        start: trim(range.clone()).start,
                         ordered: first.is_some(),
                         items: Vec::new(),
                     });

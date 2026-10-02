@@ -33,6 +33,7 @@ fn switching_modes_keeps_the_caret_row_where_it_was() {
     use super::Mode;
     let text = "# A heading\n\nSome **bold** text in a paragraph.\n\n".repeat(60);
     let mut editor = Editor::new(text);
+    editor.lines.borrow_mut().sized = true;
     let middle = editor.text().len() / 2;
     editor.select(middle, middle);
     let y = |editor: &Editor| editor.caret().expect("on screen").y;
@@ -308,6 +309,8 @@ fn a_press_keeps_markers_as_drawn_until_the_release() {
 fn a_far_jump_brings_the_caret_in_at_the_nearest_edge() {
     let text = "a line\n".repeat(300);
     let mut editor = Editor::new(text.clone());
+    // As after a layout at the default size.
+    editor.lines.borrow_mut().sized = true;
     let height = editor.lines.borrow().height;
     editor.select(text.len(), text.len());
     let y = editor.caret().expect("on screen").y;
@@ -595,4 +598,59 @@ fn wrapped_rows_of_an_indented_lazy_line_line_up_too() {
         let (x, _, _) = lines.caret_in_line(source, row.start, Affinity::After);
         assert!((x - quoted).abs() < 0.5, "{x} vs {quoted}");
     });
+}
+
+#[test]
+fn at_a_break_without_a_space_the_caret_goes_by_its_side() {
+    let text =
+        "a well-known state-of-the-art long-standing up-to-date self-contained hand-written\n";
+    let editor = Editor::new(text.into());
+    editor.lines.borrow_mut().width = 200.0;
+    editor.with_lines(|lines, source| {
+        // The start of the second row, which follows a hyphen.
+        let row = lines.row_bounds(source, 0, Affinity::After);
+        let next = row.end;
+        assert!(
+            text[..next].ends_with('-'),
+            "a break after a hyphen at {next}"
+        );
+        let (x, top, _) = lines.caret_in_line(source, next, Affinity::After);
+        assert!(x < 1.0 && top > 0.0, "the next row's start: {x}, {top}");
+        let (_, top, _) = lines.caret_in_line(source, next, Affinity::Before);
+        assert_eq!(top, 0.0, "Before: the first row's end");
+        let row = lines.row_bounds(source, next, Affinity::After);
+        assert_eq!(row.start, next, "End from there stays on that row");
+    });
+}
+
+#[test]
+fn a_click_on_a_bullet_dot_or_quote_bar_lands_at_the_text() {
+    for (text, start) in [
+        ("para\n- item text\n", 7),
+        ("para\n> > quoted\n", 9),
+        ("para\n\n-\n", 7),
+    ] {
+        let mut editor = Editor::new(text.into());
+        editor.select(0, 0);
+        let line = text
+            .lines()
+            .position(|l| l.starts_with(['-', '>']))
+            .unwrap();
+        let top = editor.with_lines(|lines, source| lines.top_of(source, line).unwrap());
+        click_at(&mut editor, iced::Point::new(2.0, top + 10.0), 1);
+        assert_eq!(editor.selection().head, start, "{text:?}");
+    }
+}
+
+#[test]
+fn a_selection_made_before_the_first_layout_is_revealed_by_it() {
+    let text = "line\n".repeat(300);
+    let mut editor = Editor::new(text.clone());
+    editor.select(text.len(), text.len());
+    assert_eq!(
+        editor.lines.borrow().anchor,
+        0,
+        "not yet: the size is unknown"
+    );
+    assert!(editor.lines.borrow().pending_reveal.is_some());
 }

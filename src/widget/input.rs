@@ -6,6 +6,7 @@ use super::{Editor, Input, Key, Message, Mode, Press, Unit, Vertical};
 use crate::doc::Selection;
 use crate::edit::{self, Motion};
 use crate::layout::Affinity;
+use crate::style::MarkKind;
 use crate::style::Styled;
 
 impl Editor {
@@ -212,7 +213,27 @@ impl Editor {
     fn hit(&self, at: Point) -> (usize, Affinity) {
         self.with_lines(|lines, source| match lines.table_hit(source, at.x, at.y) {
             Some(offset) => (offset, Affinity::After),
-            None => lines.hit(source, at.x, at.y),
+            None => {
+                let (mut offset, side) = lines.hit(source, at.x, at.y);
+                // On a bullet's dot or a quote's bar: the text after it, so
+                // the dot stays (REFERENCE-001 sections 6, 7, 14).
+                let text = source.doc.text();
+                // Past each such mark (`> > `), never back to where it was:
+                // an empty item's dash has nothing after it.
+                while let Some(mark) = source.concealed.iter().find(|m| {
+                    matches!(m.kind, MarkKind::Bullet | MarkKind::Quote)
+                        && m.range.start <= offset
+                        && offset <= m.range.end
+                }) {
+                    let after =
+                        mark.range.end + usize::from(text[mark.range.end..].starts_with(' '));
+                    if after <= offset {
+                        break;
+                    }
+                    offset = after;
+                }
+                (offset, side)
+            }
         })
     }
 

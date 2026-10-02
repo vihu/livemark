@@ -140,7 +140,12 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
         .bytes()
         .take_while(|b| b" \t0123456789.)-+*>".contains(b))
         .count();
-    if !continued || markup >= inner.to {
+    if !continued {
+        // The item starts on this line: its new sibling repeats the line
+        // up to it (quote markers, tabs and all), then a fresh marker.
+        insert += &line[..offset(0, line, inner.from)];
+        insert += &inner.marker(text, &blocks, 1);
+    } else if markup >= inner.to {
         let last = contexts.len() - 1;
         for (i, context) in contexts.iter().enumerate() {
             if i == last && !continued {
@@ -173,6 +178,15 @@ pub fn continue_markup(doc: &mut Doc, now: Duration) -> bool {
     true
 }
 
+/// Whether `context`'s container starts on the line at `line_start`.
+fn inner_starts_here(blocks: &Blocks, context: &context::Context, line_start: usize) -> bool {
+    match context.item {
+        Some((item, _)) => blocks.containers[item].range.start >= line_start,
+        // A quote's marker is on every line it covers.
+        None => true,
+    }
+}
+
 /// Shift+Enter: a new line indented to the item's or quote's content,
 /// without a new marker (REFERENCE-001 section 7).
 pub fn soft_break(doc: &mut Doc, now: Duration) {
@@ -180,9 +194,22 @@ pub fn soft_break(doc: &mut Doc, now: Duration) {
     let pos = doc.selection().range().start;
     let blocks = Blocks::new(text);
     // In fenced code, as Enter: the line's indentation (its list item's
-    // too) kept.
+    // too) kept; over a selection, a plain line ending.
     if blocks.fenced.iter().any(|f| f.start < pos && pos < f.end) {
-        continue_markup(doc, now);
+        if !continue_markup(doc, now) {
+            let range = doc.selection().range();
+            let ending = line_ending(doc.text()).to_owned();
+            let caret = range.start + ending.len();
+            doc.apply(
+                vec![Change {
+                    range,
+                    text: ending,
+                }],
+                Selection::caret(caret),
+                Kind::Other,
+                now,
+            );
+        }
         return;
     }
     let line_start = line_at(doc, pos).0;
@@ -191,8 +218,21 @@ pub fn soft_break(doc: &mut Doc, now: Duration) {
         contexts.pop();
     }
     let mut insert = line_ending(text).to_owned();
-    for context in &contexts {
-        insert += &context.blank(None, true);
+    match contexts.last() {
+        // On the item's or quote's own line: the line up to it, then blank
+        // as wide as its markup.
+        Some(inner) if inner_starts_here(&blocks, inner, line_start) => {
+            let line = line_at(doc, pos).1;
+            insert += &line[..offset(0, line, inner.from)];
+            insert += &inner.blank(None, true);
+        }
+        // On a continuation line, already indented: as it is.
+        Some(_) => {
+            let line = line_at(doc, pos).1;
+            let lead = line.len() - line.trim_start_matches([' ', '\t', '>']).len();
+            insert += &line[..lead];
+        }
+        None => {}
     }
     let range = doc.selection().range();
     let caret = range.start + insert.len();
@@ -269,6 +309,9 @@ pub fn delete_markup(doc: &mut Doc, now: Duration) -> bool {
         );
         return true;
     }
+    // One level of markup: the marker, its indentation staying (so a tab
+    // keeps the text in its parent item).
+    let start = offset(line_start, line, inner.from + inner.space_before.len());
     if start < pos {
         doc.apply(
             vec![Change::delete(start..pos)],

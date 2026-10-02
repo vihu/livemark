@@ -101,8 +101,30 @@ impl Editor {
                     }
                 }
                 if source.styled.in_quote(range.clone()) {
+                    // In the gutter, or just left of the quote's first `>`
+                    // when the quote is indented (in a list item); a lazy
+                    // line takes its quoted line's.
+                    let lazy = source
+                        .styled
+                        .lazy_at(range.clone())
+                        .filter(|_| !lines.source);
+                    let marker = match lazy {
+                        Some(anchor) => {
+                            let line = source.doc.line_at(anchor);
+                            let quoted = source.doc.line_range(line);
+                            source.styled.quote_mark_in(quoted).map(|at| (line, at))
+                        }
+                        None => source
+                            .styled
+                            .quote_mark_in(range.clone())
+                            .map(|at| (index, at)),
+                    };
+                    let x = marker
+                        .map(|(line, at)| marks::start_x(&lines.shaped(source, line), at))
+                        .filter(|&x| x > 1.0)
+                        .map_or(-QUOTE_BAR.0, |x| x - QUOTE_BAR.1 - 1.0);
                     let bar = Rectangle::new(
-                        origin - Vector::new(QUOTE_BAR.0, 0.0),
+                        origin + Vector::new(x, 0.0),
                         Size::new(QUOTE_BAR.1, shaped.height),
                     );
                     quad(renderer, bar, quote_bar);
@@ -129,10 +151,11 @@ impl Editor {
                 // (REFERENCE-001 section 16).
                 let first = matches.partition_point(|m| m.end < range.start);
                 for found in matches[first..].iter().take_while(|m| m.start <= range.end) {
-                    let hidden = source
-                        .hidden
-                        .iter()
-                        .any(|h| h.start < found.end && found.start < h.end);
+                    let overlaps = |r: &Range<usize>| r.start < found.end && found.start < r.end;
+                    // Hidden text and concealed marks are not where they
+                    // seem: no box over them.
+                    let hidden = source.hidden.iter().any(overlaps)
+                        || marks_in(source.concealed, range.clone()).any(|m| overlaps(&m.range));
                     if hidden || found.end > range.end || in_grid {
                         continue;
                     }
