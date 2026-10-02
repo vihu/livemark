@@ -202,3 +202,18 @@ pub(super) fn start_x(shaped: &Shaped, at: usize) -> f32 {
         .find_map(|run| run.cursor_position(&at))
         .unwrap_or(0.0)
 }
+
+/// Where the bars of the nested quote levels of the quoted line `shaped`
+/// stand (its concealed `>` after the first), from the line's left edge: a
+/// lazy line after it draws them too (REFERENCE-001 section 6).
+pub(super) fn nested_bars<'a>(
+    shaped: &Shaped,
+    marks: impl Iterator<Item = &'a Mark>,
+    (line, start): (&str, usize),
+) -> Vec<f32> {
+    marks
+        .filter(|m| m.kind == MarkKind::Quote && line[..m.range.start - start].contains('>'))
+        .filter_map(|m| box_of(shaped, m.range.clone()))
+        .map(|(rect, _)| rect.center_x() - 1.5)
+        .collect()
+}

@@ -27,6 +27,9 @@ pub struct Shaped {
     /// How far rows after the first are drawn right of it: the width of a
     /// list marker or quote prefix (REFERENCE-001 sections 6, 7).
     pub hang: f32,
+    /// How far all its rows are drawn right: a lazy line in a quote lines
+    /// up with the quoted text before it (section 6).
+    pub lead: f32,
     /// Where the first row ends.
     pub first_row: f32,
 }
@@ -34,7 +37,11 @@ pub struct Shaped {
 impl Shaped {
     /// How far the row starting `line_top` down is drawn to the right.
     pub fn shift(&self, line_top: f32) -> f32 {
-        if line_top > 0.0 { self.hang } else { 0.0 }
+        if line_top > 0.0 && self.hang > 0.0 {
+            self.hang
+        } else {
+            self.lead
+        }
     }
 
     /// The rectangles display `range` covers, row by row, in the line's
@@ -110,6 +117,16 @@ impl Lines {
     /// and colors are unchanged.
     pub fn shaped(&mut self, source: &Source, index: usize) -> Shaped {
         let range = source.doc.line_range(index);
+        // A lazy line in a quote lines up with the quoted line's text (not
+        // in source mode, which shows the markdown as written).
+        let lazy = source
+            .styled
+            .lazy_at(range.clone())
+            .filter(|_| !self.source);
+        let lead = lazy.map_or(0.0, |anchor| {
+            let quoted = self.shaped(source, source.doc.line_at(anchor));
+            super::marks::start_x(&quoted, anchor)
+        });
         let line = Line::new(
             source.doc.text(),
             range.clone(),
@@ -153,6 +170,7 @@ impl Lines {
             hang,
             mono,
             self.width.to_bits(),
+            lead.to_bits(),
         )
             .hash(&mut hasher);
         for color in [
@@ -171,7 +189,7 @@ impl Lines {
             Some(cached) => cached.clone(),
             None => {
                 let looks = (level, mono, self.colors, compact);
-                let cached = shape(&line, looks, hang, self.width, &tokens);
+                let cached = shape(&line, looks, hang, self.width - lead, &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
             }
@@ -181,6 +199,7 @@ impl Lines {
             line,
             height: cached.height,
             hang: cached.hang,
+            lead,
             first_row: cached.first_row,
         }
     }
@@ -255,11 +274,12 @@ impl Lines {
         let (index, top) = self.line_at_y(source, y);
         let shaped = self.shaped(source, index);
         let y = y - top;
-        let x = if y >= shaped.first_row {
-            x - shaped.hang
+        let row_top = if y >= shaped.first_row {
+            shaped.first_row
         } else {
-            x
+            0.0
         };
+        let x = x - shaped.shift(row_top);
         match shaped.buffer.hit(x, y) {
             Some(cursor) => {
                 let affinity = match cursor.affinity {

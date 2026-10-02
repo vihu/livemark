@@ -82,6 +82,24 @@ impl Editor {
                     );
                     quad(renderer, band, code_background);
                 }
+                // A lazy line takes the nested bars of the quoted line it
+                // continues.
+                if let Some(anchor) = source
+                    .styled
+                    .lazy_at(range.clone())
+                    .filter(|_| !lines.source)
+                {
+                    let index = source.doc.line_at(anchor);
+                    let quoted = source.doc.line_range(index);
+                    let anchor_shaped = lines.shaped(source, index);
+                    let text = (&source.doc.text()[quoted.clone()], quoted.start);
+                    for x in
+                        marks::nested_bars(&anchor_shaped, marks_in(source.concealed, quoted), text)
+                    {
+                        let bar = Rectangle::new(Point::new(x, 0.0), Size::new(3.0, shaped.height));
+                        quad(renderer, at(bar), quote_bar);
+                    }
+                }
                 if source.styled.in_quote(range.clone()) {
                     let bar = Rectangle::new(
                         origin - Vector::new(QUOTE_BAR.0, 0.0),
@@ -250,7 +268,7 @@ fn draw_text(
     if shaped.hang == 0.0 {
         renderer.fill_raw(Raw {
             buffer,
-            position: origin,
+            position: origin + Vector::new(shaped.lead, 0.0),
             color,
             clip_bounds: area,
         });

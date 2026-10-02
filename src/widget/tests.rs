@@ -316,3 +316,19 @@ fn a_far_jump_brings_the_caret_in_at_the_nearest_edge() {
     let y = editor.caret().expect("on screen").y;
     assert!(y < height * 0.2, "the start at the top: {y}");
 }
+
+#[test]
+fn a_lazy_quote_line_draws_under_the_quoted_text() {
+    let text = "> quoted text\nlazy line\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    editor.with_lines(|lines, source| {
+        let (quoted, _, _) = lines.caret_in_line(source, 2, Affinity::After);
+        let (lazy, top, _) = lines.caret_in_line(source, 14, Affinity::After);
+        assert!(quoted > 4.0, "after the hidden `> `");
+        assert!((lazy - quoted).abs() < 0.5, "{lazy} vs {quoted}");
+        let line_top = lines.top_of(source, 1).expect("on screen");
+        let (offset, _) = lines.hit(source, quoted + 1.0, line_top + top + 5.0);
+        assert_eq!(offset, 14, "the lazy line's first character");
+    });
+}

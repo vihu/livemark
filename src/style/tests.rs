@@ -512,3 +512,14 @@ fn a_table_records_its_rows_cells_and_alignment_for_the_grid() {
         "the header"
     );
 }
+
+#[test]
+fn a_lazy_quote_line_lines_up_with_the_quoted_text_before_it() {
+    let text = "> quoted text\nlazy line\n\nafter\n";
+    let styled = Styled::new(text);
+    assert_eq!(styled.lazy_at(14..23), Some(2), "after `> `");
+    assert_eq!(styled.lazy_at(0..13), None, "the quoted line itself");
+    assert_eq!(styled.lazy_at(25..30), None, "after the quote");
+    let text = "> - item\nlazy\n";
+    assert_eq!(Styled::new(text).lazy_at(9..13), Some(4), "after `> - `");
+}

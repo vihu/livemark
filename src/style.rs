@@ -172,6 +172,9 @@ pub struct Styled {
     tables: Vec<Table>,
     /// Links and where they go, sorted.
     links: Vec<(Range<usize>, String)>,
+    /// Lazy continuation lines in quotes (no `>` written) and the quoted
+    /// line each continues, sorted.
+    lazies: Vec<(Range<usize>, Range<usize>)>,
 }
 
 impl Styled {
@@ -245,6 +248,15 @@ impl Styled {
     /// The tables, in order; [`MarkKind::TableRow`] indexes them.
     pub fn tables(&self) -> &[Table] {
         &self.tables
+    }
+
+    /// For a lazy continuation line in a quote (one without `>`), the
+    /// source offset in the quoted line before it that its text lines up
+    /// with (REFERENCE-001 section 6).
+    pub fn lazy_at(&self, line: Range<usize>) -> Option<usize> {
+        let i = self.lazies.partition_point(|(l, _)| l.start < line.start);
+        let (_, quoted) = self.lazies.get(i).filter(|(l, _)| l.start == line.start)?;
+        self.hang_at(quoted.clone())
     }
 
     /// The marks drawn as something else with `selection` in place: those

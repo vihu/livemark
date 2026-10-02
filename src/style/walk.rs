@@ -30,6 +30,7 @@ pub(super) fn walk(text: &str) -> Styled {
         marks: Vec::new(),
         tables: Vec::new(),
         links: Vec::new(),
+        lazies: Vec::new(),
     };
     for (event, range) in parse::events(text) {
         walk.inside_span(&range);
@@ -77,6 +78,8 @@ struct Walk<'a> {
     /// set.
     tables: Vec<Table>,
     links: Vec<(Range<usize>, String)>,
+    /// Lazy continuation lines in quotes and the quoted line before each.
+    lazies: Vec<(Range<usize>, Range<usize>)>,
 }
 
 impl Walk<'_> {
@@ -465,6 +468,7 @@ impl Walk<'_> {
             marks: self.marks,
             tables: self.tables,
             links: self.links,
+            lazies: self.lazies,
         }
     }
 }

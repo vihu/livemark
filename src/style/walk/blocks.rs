@@ -86,6 +86,8 @@ impl Walk<'_> {
     pub(super) fn quote_markers(&mut self, quote: Range<usize>) {
         let bytes = self.text.as_bytes();
         let mut line = quote.start;
+        // The last line with a `>`, which a lazy line after it continues.
+        let mut quoted: Option<Range<usize>> = None;
         loop {
             let mut at = line;
             let mut hang = None;
@@ -105,6 +107,15 @@ impl Walk<'_> {
                 hang = Some(at);
             }
             self.hangs.extend(hang);
+            let rest = &self.text[line..quote.end];
+            let end = line + rest.find(['\n', '\r']).unwrap_or(rest.len());
+            if hang.is_some() {
+                quoted = Some(line..end);
+            } else if let Some(quoted) = &quoted
+                && !self.text[line..end].trim().is_empty()
+            {
+                self.lazies.push((line..end, quoted.clone()));
+            }
             match self.text[line..quote.end].find('\n') {
                 Some(i) => line += i + 1,
                 None => break,
