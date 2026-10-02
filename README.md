@@ -32,6 +32,9 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | Shift+Enter | A new line indented to the item's text, without a marker |
 | Tab, Shift+Tab | Nests a list item (with its children) under the one before, or moves it back out |
 | Backspace | After a list marker or `>`, removes that markup first |
+| Alt+Up, Alt+Down | Moves the selected lines up or down; with Shift, copies them |
+| Ctrl+Shift+K | Deletes the selected lines |
+| Ctrl+Enter | A blank line below, indented like this one |
 | Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z | Undo, redo (typing undoes in bursts) |
 | Ctrl+C, Ctrl+X | With nothing selected, copy or cut the whole line (pasted back as a line) |
 | Home, End | The start or end of the row, then of the line; Home skips list and quote markup |

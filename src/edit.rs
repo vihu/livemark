@@ -4,6 +4,7 @@
 //! the widget's.
 pub mod find;
 pub mod format;
+pub mod lines;
 pub mod markup;
 
 use std::ops::Range;

@@ -1,0 +1,249 @@
+//! Random sessions through the widget in iced's headless simulator: clicks
+//! (one to three), drags, the wheel and the scroll bar, typing, and the
+//! editing, motion, formatting, line and mode keys the surface handles.
+//! Never a panic, the selection always on character boundaries, and
+//! undoing everything gives back the text the session started with.
+//! Seeded, like `doc_fuzz.rs`; fewer seeds by default, since every round
+//! builds an interface.
+use common::Rng;
+use iced::keyboard::{self, Key, key::Named};
+use iced::{Event, Point, mouse};
+use livemark::widget::{Editor, Message};
+
+mod common;
+
+const SEEDS: u64 = 3;
+const ROUNDS: u64 = 16;
+const SIZE: (f32, f32) = (500.0, 300.0);
+
+/// Markdown in pieces, long enough to wrap and to scroll.
+const PIECES: &[&str] = &[
+    "# ",
+    "## ",
+    "- ",
+    "1. ",
+    "> ",
+    "- [ ] ",
+    "**",
+    "*",
+    "`",
+    "~~",
+    "[a](b)",
+    "www.x.y ",
+    "word ",
+    "a longer stretch of words that wraps at the width ",
+    "é",
+    "😀",
+    "\t",
+    "\n",
+    "\r\n",
+    "\n\n",
+    "```rust\nfn f() {}\n```\n",
+    "| a | b |\n| - | - |\n| c | d |\n",
+];
+
+const NAMED: &[Named] = &[
+    Named::ArrowLeft,
+    Named::ArrowRight,
+    Named::ArrowUp,
+    Named::ArrowDown,
+    Named::Home,
+    Named::End,
+    Named::PageUp,
+    Named::PageDown,
+    Named::Enter,
+    Named::Backspace,
+    Named::Delete,
+    Named::Tab,
+    Named::Escape,
+];
+
+/// Letters pressed with Ctrl/Cmd, and with Shift some of the time.
+const LETTERS: &[&str] = &["a", "b", "i", "e", "k", "z", "y", "c", "x"];
+
+#[test]
+fn random_widget_sessions_keep_the_text_whole() {
+    for seed in common::seeds(SEEDS) {
+        let mut rng = Rng(seed);
+        let text: String = (0..20 + rng.below(60)).map(|_| *rng.pick(PIECES)).collect();
+        let mut editor = Editor::new(text.clone());
+        let mut edited = false;
+        for round in 0..ROUNDS {
+            let events: Vec<Vec<Event>> = (0..1 + rng.below(4)).map(|_| event(&mut rng)).collect();
+            let at = format!("seed {seed} round {round}");
+            // Now and then the host selects, as `Editor::select` lets it.
+            if rng.below(5) == 0 {
+                let (anchor, head) = (rng.boundary(editor.text()), rng.boundary(editor.text()));
+                editor.select(anchor, head);
+            }
+            run(&mut editor, rng.below(4) != 0, |ui| {
+                for event in events {
+                    for e in event {
+                        if let Event::Mouse(mouse::Event::CursorMoved { position }) = e {
+                            ui.point_at(position);
+                        }
+                        ui.simulate([e]);
+                    }
+                }
+            });
+            edited |= editor.text() != text;
+            let selection = editor.selection();
+            let text = editor.text();
+            assert!(
+                text.is_char_boundary(selection.anchor) && text.is_char_boundary(selection.head),
+                "{at}: selection {selection:?}"
+            );
+        }
+        assert!(edited, "seed {seed}: the events reached the editor");
+        // Escape leaves the find bar or a selection, then undo all the way.
+        run(&mut editor, true, |ui| {
+            ui.simulate([press(
+                Key::Named(Named::Escape),
+                keyboard::Modifiers::empty(),
+            )]);
+            let undo = press(Key::Character("z".into()), keyboard::Modifiers::COMMAND);
+            ui.simulate(std::iter::repeat_n(undo, 400));
+        });
+        assert_eq!(editor.text(), text, "seed {seed}: undone back to the start");
+    }
+}
+
+/// Feeds a round of events to a fresh interface (focused first with a
+/// click on the text when `focus`) and applies the messages.
+fn run(
+    editor: &mut Editor,
+    focus: bool,
+    events: impl FnOnce(&mut iced_test::Simulator<'_, Message>),
+) {
+    let messages: Vec<_> = {
+        let mut ui =
+            iced_test::Simulator::with_size(iced::Settings::default(), SIZE, editor.view());
+        if focus {
+            ui.point_at(Point::new(40.0, 30.0));
+            ui.simulate(click());
+        }
+        events(&mut ui);
+        ui.into_messages().collect()
+    };
+    for message in messages {
+        let _ = editor.update(message);
+    }
+}
+
+fn click() -> [Event; 2] {
+    [
+        Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+        Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+    ]
+}
+
+fn moved(at: Point) -> Event {
+    Event::Mouse(mouse::Event::CursorMoved { position: at })
+}
+
+fn press(key: Key, modifiers: keyboard::Modifiers) -> Event {
+    Event::Keyboard(keyboard::Event::KeyPressed {
+        key: key.clone(),
+        modified_key: key,
+        physical_key: keyboard::key::Physical::Unidentified(
+            keyboard::key::NativeCode::Unidentified,
+        ),
+        location: keyboard::Location::Standard,
+        modifiers,
+        text: None,
+        repeat: false,
+    })
+}
+
+/// One random user action, as the events it is made of.
+fn event(rng: &mut Rng) -> Vec<Event> {
+    let shift = |on: bool| {
+        if on {
+            keyboard::Modifiers::SHIFT
+        } else {
+            keyboard::Modifiers::empty()
+        }
+    };
+    match rng.below(9) {
+        0 => {
+            let at = point(rng);
+            let clicks = 1 + rng.below(3) as usize;
+            let mut events = vec![moved(at)];
+            events.extend(std::iter::repeat_n(click(), clicks).flatten());
+            events
+        }
+        1 => {
+            let (from, to) = (point(rng), point(rng));
+            vec![
+                moved(from),
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+                moved(to),
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+            ]
+        }
+        2 => {
+            let y = rng.below(200) as f32 - 100.0;
+            vec![Event::Mouse(mouse::Event::WheelScrolled {
+                delta: mouse::ScrollDelta::Pixels { x: 0.0, y },
+            })]
+        }
+        3 => {
+            // The scroll bar's track, down the right edge.
+            let at = Point::new(SIZE.0 - 7.0, rng.below(SIZE.1 as u64) as f32);
+            let mut events = vec![moved(at)];
+            events.extend(click());
+            events
+        }
+        4 | 5 => {
+            let piece = *rng.pick::<&str>(PIECES);
+            piece
+                .chars()
+                .map(|c| {
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: Key::Character(c.to_string().into()),
+                        modified_key: Key::Character(c.to_string().into()),
+                        physical_key: keyboard::key::Physical::Unidentified(
+                            keyboard::key::NativeCode::Unidentified,
+                        ),
+                        location: keyboard::Location::Standard,
+                        modifiers: keyboard::Modifiers::empty(),
+                        text: Some(c.to_string().into()),
+                        repeat: false,
+                    })
+                })
+                .collect()
+        }
+        6 => {
+            let named = *rng.pick(NAMED);
+            let on = rng.below(3) == 0;
+            vec![press(Key::Named(named), shift(on))]
+        }
+        7 => {
+            let letter = *rng.pick::<&str>(LETTERS);
+            let on = rng.below(4) == 0;
+            vec![press(
+                Key::Character(letter.into()),
+                keyboard::Modifiers::COMMAND | shift(on),
+            )]
+        }
+        _ => {
+            // Line commands: Alt+Up/Down (Shift copies), Ctrl/Cmd+Enter.
+            let on = rng.below(2) == 0;
+            let key = *rng.pick(&[Named::ArrowUp, Named::ArrowDown, Named::Enter]);
+            let modifiers = if key == Named::Enter {
+                keyboard::Modifiers::COMMAND
+            } else {
+                keyboard::Modifiers::ALT | shift(on)
+            };
+            vec![press(Key::Named(key), modifiers)]
+        }
+    }
+}
+
+/// A random point in the editor.
+fn point(rng: &mut Rng) -> Point {
+    Point::new(
+        rng.below(SIZE.0 as u64) as f32,
+        rng.below(SIZE.1 as u64) as f32,
+    )
+}

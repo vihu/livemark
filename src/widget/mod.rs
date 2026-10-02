@@ -5,6 +5,7 @@ mod draw;
 mod find;
 mod highlight;
 mod input;
+mod keys;
 mod lines;
 mod scrollbar;
 mod shape;
@@ -131,6 +132,14 @@ enum Key {
     Link,
     /// Ctrl/Cmd+Shift+E: live preview or source mode (the user's pick).
     ToggleMode,
+    /// Alt+Up, or Alt+Down with `true`: move the selected lines.
+    MoveLines(bool),
+    /// Shift+Alt+Up, or Shift+Alt+Down with `true`: copy them.
+    CopyLines(bool),
+    /// Ctrl/Cmd+Shift+K.
+    DeleteLines,
+    /// Ctrl/Cmd+Enter: a blank line below.
+    BlankLine,
     Delete(Motion),
     Move(Motion, bool),
     Vertical(Vertical, bool),

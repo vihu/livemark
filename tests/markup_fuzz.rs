@@ -1,5 +1,6 @@
 //! Enter, Shift+Enter, Backspace, Tab and Shift+Tab around list and quote
-//! markup, and the formatting keys, at random carets and selections in
+//! markup, the formatting keys and the line commands, at random carets and
+//! selections in
 //! random markdown: never a panic, and every edit is one `Doc` accepts
 //! (sorted, on character boundaries), so the source stays valid UTF-8
 //! text. Seeded, like `doc_fuzz.rs`.
@@ -8,7 +9,7 @@ use std::time::Duration;
 use common::Rng;
 use livemark::doc::{Doc, Selection};
 use livemark::edit::format::{self, Format};
-use livemark::edit::{self, markup};
+use livemark::edit::{self, lines, markup};
 use livemark::style::Styled;
 
 mod common;
@@ -41,7 +42,7 @@ fn markup_commands_never_break_the_text() {
             });
             let before = doc.text().to_owned();
             let now = Duration::from_secs(step);
-            match rng.below(10) {
+            match rng.below(13) {
                 6 => {
                     let styled = Styled::new(doc.text());
                     let format = *rng.pick(&[Format::Bold, Format::Italic, Format::Code]);
@@ -53,6 +54,10 @@ fn markup_commands_never_break_the_text() {
                 2 => edit::backspace(&mut doc, now),
                 3 => markup::indent(&mut doc, false, now),
                 4 => markup::indent(&mut doc, true, now),
+                10 => lines::move_lines(&mut doc, rng.below(2) == 0, now),
+                11 => lines::copy_lines(&mut doc, rng.below(2) == 0, now),
+                12 if rng.below(2) == 0 => lines::delete_lines(&mut doc, now),
+                12 => lines::blank_line(&mut doc, now),
                 _ => {
                     // Named, so the oldest supported Rust and clippy agree.
                     let piece = *rng.pick::<&str>(PIECES);

@@ -406,3 +406,35 @@ fn pressing_the_scroll_bar_track_jumps_there() {
     run(&mut editor, |ui| click(ui, Point::new(100.0, 20.0)));
     assert_eq!(caret_line(&editor), 0);
 }
+
+#[test]
+fn alt_arrows_move_and_copy_lines_and_ctrl_shift_k_deletes_them() {
+    let mut editor = Editor::new("one\ntwo\nthree".into());
+    let alt = keyboard::Modifiers::ALT;
+    // A click on the first line, right of its text.
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        ui.simulate([press(Key::Named(Named::ArrowDown), alt)]);
+    });
+    assert_eq!(editor.text(), "two\none\nthree");
+    assert_eq!(caret_line(&editor), 1, "the caret goes with its line");
+    run(&mut editor, |ui| {
+        click(ui, Point::new(700.0, 20.0));
+        ui.simulate([press(
+            Key::Named(Named::ArrowDown),
+            alt | keyboard::Modifiers::SHIFT,
+        )]);
+        ui.simulate([press(
+            Key::Character("k".into()),
+            keyboard::Modifiers::COMMAND | keyboard::Modifiers::SHIFT,
+        )]);
+        ui.simulate([press(
+            Key::Named(Named::Enter),
+            keyboard::Modifiers::COMMAND,
+        )]);
+        ui.typewrite("new");
+    });
+    // Copied down, the lower copy deleted (the caret drops to `one`), a
+    // blank line under it.
+    assert_eq!(editor.text(), "two\none\nnew\nthree");
+}

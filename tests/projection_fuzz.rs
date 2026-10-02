@@ -52,6 +52,56 @@ fn the_coverage_document_projects_and_maps_back() {
     }
 }
 
+/// The user's own notes, exported into a directory named by
+/// `LIVEMARK_EXTRA_FIXTURES` (never committed; skipped when unset): each
+/// `.md` file under it loads byte for byte, styles, and projects and maps
+/// back at random carets and selections.
+#[test]
+fn extra_fixtures_project_and_map_back() {
+    let Ok(dir) = std::env::var("LIVEMARK_EXTRA_FIXTURES") else {
+        return;
+    };
+    let mut files = Vec::new();
+    markdown_files(std::path::Path::new(&dir), &mut files);
+    assert!(!files.is_empty(), "no .md files under {dir}");
+    for path in &files {
+        let bytes = std::fs::read(path).unwrap();
+        let Ok(text) = String::from_utf8(bytes.clone()) else {
+            eprintln!(
+                "not UTF-8, skipped (the app refuses it too): {}",
+                path.display()
+            );
+            continue;
+        };
+        let doc = Doc::new(text);
+        assert_eq!(doc.text().as_bytes(), bytes, "{}", path.display());
+        let styled = Styled::new(doc.text());
+        let mut rng = Rng(bytes.len() as u64);
+        for round in 0..20 {
+            let (a, b) = (rng.boundary(doc.text()), rng.boundary(doc.text()));
+            let selection = if round % 2 == 0 {
+                a..a
+            } else {
+                a.min(b)..a.max(b)
+            };
+            let at = format!("{} round {round} selection {selection:?}", path.display());
+            check(&doc, &styled, selection, &at);
+        }
+    }
+    eprintln!("{} files checked", files.len());
+}
+
+fn markdown_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            markdown_files(&path, files);
+        } else if path.extension().is_some_and(|e| e == "md") {
+            files.push(path);
+        }
+    }
+}
+
 fn check(doc: &Doc, styled: &Styled, selection: std::ops::Range<usize>, at: &str) {
     let text = doc.text();
     let hidden = styled.hidden(selection.clone());

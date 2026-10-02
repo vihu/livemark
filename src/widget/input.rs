@@ -52,6 +52,10 @@ impl Editor {
                     edit::format::toggle(&mut self.doc, &self.styled, format, now);
                 }
                 Key::Link => edit::format::link(&mut self.doc, now),
+                Key::MoveLines(down) => edit::lines::move_lines(&mut self.doc, down, now),
+                Key::CopyLines(down) => edit::lines::copy_lines(&mut self.doc, down, now),
+                Key::DeleteLines => edit::lines::delete_lines(&mut self.doc, now),
+                Key::BlankLine => edit::lines::blank_line(&mut self.doc, now),
                 Key::ToggleMode => self.set_mode(match self.mode {
                     Mode::Live => Mode::Source,
                     Mode::Source => Mode::Live,

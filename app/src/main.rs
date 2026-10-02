@@ -40,7 +40,7 @@ pub fn main() -> iced::Result {
     .window(window::Settings {
         #[cfg(target_os = "linux")]
         platform_specific: window::settings::PlatformSpecific {
-            application_id: "livemark".into(),
+            application_id: "io.github.vihu.livemark".into(),
             ..Default::default()
         },
         ..Default::default()
