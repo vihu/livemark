@@ -395,3 +395,62 @@ fn ctrl_n_in_a_vault_names_a_note_and_opens_it_ready_to_type() {
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn quick_open_finds_notes_by_title_and_tag_and_opens_one() {
+    use crate::quick::QuickMessage;
+    use crate::sidebar::VaultMessage;
+    let dir = std::env::temp_dir().join(format!("livemark-quick-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    write(
+        &dir.join("a.md"),
+        "---\ntitle: Lisbon hotels\ntags: [travel]\n---\n",
+        0,
+    );
+    write(
+        &dir.join("b.md"),
+        "---\ntitle: Lisbon conference\ntags: [work]\n---\n",
+        10,
+    );
+    write(&dir.join("c.md"), "# Standup\n", 20);
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let quick = |app: &mut App, message| {
+        let _ = app.update(Message::Quick(message));
+    };
+    let titles = |app: &App| -> Vec<String> {
+        app.quick
+            .as_ref()
+            .unwrap()
+            .results
+            .iter()
+            .map(|r| r.0.clone())
+            .collect()
+    };
+    quick(&mut app, QuickMessage::Open);
+    assert_eq!(
+        titles(&app),
+        ["Standup", "Lisbon conference", "Lisbon hotels"],
+        "recent first"
+    );
+    let _ = app.view();
+    quick(&mut app, QuickMessage::Query("lis".into()));
+    assert_eq!(titles(&app), ["Lisbon conference", "Lisbon hotels"]);
+    quick(&mut app, QuickMessage::Query("lis #trav".into()));
+    assert_eq!(titles(&app), ["Lisbon hotels"]);
+    quick(&mut app, QuickMessage::Query("lis".into()));
+    quick(&mut app, QuickMessage::Move(1));
+    quick(&mut app, QuickMessage::Move(5));
+    assert_eq!(app.quick.as_ref().unwrap().selected, 1, "stays on the last");
+    quick(&mut app, QuickMessage::Choose(None));
+    assert!(app.quick.is_none());
+    assert_eq!(
+        app.editor.text(),
+        "---\ntitle: Lisbon hotels\ntags: [travel]\n---\n"
+    );
+    // Escape closes without opening anything.
+    quick(&mut app, QuickMessage::Open);
+    quick(&mut app, QuickMessage::Close);
+    assert!(app.quick.is_none());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

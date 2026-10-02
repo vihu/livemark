@@ -145,9 +145,13 @@ impl App {
         let sidebar = self
             .sidebar()
             .unwrap_or_else(|| Space::new().width(0).into());
-        column![toolbar, stack![row![sidebar, editor]].push(menu)]
-            .push(bar.map(|bar| container(bar).padding(12)))
-            .into()
+        let quick = self.quick_view();
+        column![
+            toolbar,
+            stack![row![sidebar, editor]].push(menu).push(quick)
+        ]
+        .push(bar.map(|bar| container(bar).padding(12)))
+        .into()
     }
 
     /// The File menu: new, open and save; the recent notes; the theme.
@@ -266,6 +270,7 @@ impl App {
             match key.to_latin(physical_key)? {
                 'n' => Some(Message::New),
                 'o' => Some(Message::Open),
+                'p' => Some(Message::Quick(super::quick::QuickMessage::Open)),
                 's' => Some(Message::Save {
                     choose: modifiers.shift(),
                 }),
@@ -282,7 +287,26 @@ impl App {
             window::Event::FileDropped(file) => Some(Message::Dropped(file)),
             _ => None,
         });
-        Subscription::batch([keys, close, focus])
+        // Quick open's keys: its field leaves Up, Down and Escape alone.
+        let quick = self.quick.is_some().then(|| {
+            use super::quick::QuickMessage;
+            keyboard::listen().filter_map(|event| {
+                let keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(named),
+                    ..
+                } = event
+                else {
+                    return None;
+                };
+                match named {
+                    keyboard::key::Named::ArrowUp => Some(Message::Quick(QuickMessage::Move(-1))),
+                    keyboard::key::Named::ArrowDown => Some(Message::Quick(QuickMessage::Move(1))),
+                    keyboard::key::Named::Escape => Some(Message::Quick(QuickMessage::Close)),
+                    _ => None,
+                }
+            })
+        });
+        Subscription::batch([keys, close, focus].into_iter().chain(quick))
     }
 }
 

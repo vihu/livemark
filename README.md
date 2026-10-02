@@ -62,7 +62,9 @@ notes in about 0.1 s) and read again when the window comes back. In a
 vault Ctrl+N asks for a title and makes `2026-10-02-lisbon-hotels.md`
 (the date, then the title in lowercase with hyphens; `-2` when taken) with
 front matter for its title, tags and date; the file keeps its name when
-the title changes.
+the title changes. Ctrl+P opens a note by typing part of its title (most
+recent first; `#travel` narrows to a tag; Up, Down, Enter, Escape);
+outside a vault it lists the recent files.
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
 the theme (System, Light, Dark). The zoom, the window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click

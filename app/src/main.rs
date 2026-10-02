@@ -20,6 +20,7 @@
 mod file;
 mod note;
 mod pictures;
+mod quick;
 mod settings;
 mod sidebar;
 mod vault;
@@ -123,6 +124,8 @@ struct App {
     tag: Option<String>,
     /// The title being typed for a new note in the vault.
     naming: Option<String>,
+    /// Quick open (Ctrl+P), while it is open.
+    quick: Option<quick::Quick>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -170,6 +173,8 @@ enum Message {
     Theme(settings::Theme),
     /// The vault and its sidebar.
     Vault(sidebar::VaultMessage),
+    /// Quick open.
+    Quick(quick::QuickMessage),
 }
 
 impl App {
@@ -203,6 +208,7 @@ impl App {
             vault: None,
             tag: None,
             naming: None,
+            quick: None,
         }
         .with_images()
     }
@@ -336,6 +342,7 @@ impl App {
             }
             Message::Dropped(file) => return self.dropped(file),
             Message::Vault(message) => return self.vault_update(message),
+            Message::Quick(message) => return self.quick_update(message),
             Message::Editor(message) => {
                 // Only a failure is reported; an open or save error stays.
                 if let Some(Err(error)) = message.link().map(open_link) {
