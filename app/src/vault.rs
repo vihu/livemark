@@ -238,8 +238,8 @@ pub fn resolve(from: &Path, dest: &str) -> Option<PathBuf> {
     if dest.is_empty() || dest.contains("://") || dest.starts_with("mailto:") {
         return None;
     }
-    let decoded = decode(dest);
-    let target = Path::new(&decoded);
+    let decoded = percent_encoding::percent_decode_str(dest).decode_utf8_lossy();
+    let target = Path::new(decoded.as_ref());
     if !target
         .extension()
         .is_some_and(|e| e == "md" || e == "markdown")
@@ -259,30 +259,6 @@ pub fn resolve(from: &Path, dest: &str) -> Option<PathBuf> {
         }
     }
     Some(clean)
-}
-
-/// `%XX` escapes decoded, as a link's destination writes spaces and the
-/// like.
-fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = |b: u8| (b as char).to_digit(16);
-        if bytes[i] == b'%'
-            && let (Some(Some(hi)), Some(Some(lo))) = (
-                bytes.get(i + 1).map(|&b| hex(b)),
-                bytes.get(i + 2).map(|&b| hex(b)),
-            )
-        {
-            out.push((hi * 16 + lo) as u8);
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// `title`, `tags` and `created` from front matter: a hand-read subset of

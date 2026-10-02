@@ -2027,6 +2027,7 @@ dependencies = [
  "iced",
  "jiff",
  "livemark",
+ "percent-encoding",
  "rfd",
  "slug",
  "strsim",

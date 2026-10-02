@@ -17,6 +17,7 @@ path = "src/main.rs"
 iced     = { workspace = true }
 jiff = "0.2"
 livemark = { path = ".." }
+percent-encoding = "2"
 # Open and save dialogs (XDG portal on Linux).
 rfd      = "0.17"
 slug = "0.1"

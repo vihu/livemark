@@ -45,14 +45,18 @@ pub fn save(path: &Path, text: &str) -> std::io::Result<()> {
 }
 
 /// The bytes of the picture an image in the note at `note` points to:
-/// a path relative to the note's folder (`%20` read as a space) or an
+/// a path relative to the note's folder (`%20` and the like decoded) or an
 /// absolute one, at most 32 MB. Nothing with a scheme (`https:`, `data:`):
 /// the app makes no network requests.
 pub fn image_bytes(note: &Path, url: &str) -> Option<Vec<u8>> {
     if url.contains(':') || url.starts_with('#') || url.is_empty() {
         return None;
     }
-    let path = note.parent()?.join(url.replace("%20", " "));
+    let path = note.parent()?.join(
+        percent_encoding::percent_decode_str(url)
+            .decode_utf8_lossy()
+            .as_ref(),
+    );
     let size = std::fs::metadata(&path).ok()?.len();
     (size <= 32 << 20)
         .then(|| std::fs::read(&path).ok())
@@ -233,6 +237,11 @@ mod tests {
         );
         assert_eq!(
             std::fs::read(dir.join("assets/my note-2.png")).unwrap(),
+            b"two"
+        );
+        // Read back through any escape, as other tools write them.
+        assert_eq!(
+            super::image_bytes(&note, "assets/my%20note%2D2.png").unwrap(),
             b"two"
         );
         assert_eq!(
