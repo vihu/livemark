@@ -1,5 +1,7 @@
 //! The iced widget over an [`Editor`]: turns events into messages, keeps
 //! focus, the blinking caret and the input method's preedit, and draws.
+//! Side by side's rendered pane is one too, taking presses, the wheel and
+//! its scroll bar, never focus or keys.
 //! Event handling follows iced's `text_editor` at the pinned rev
 //! (`core/src/text/editor.rs`).
 use std::time::{Duration, Instant};
@@ -14,7 +16,7 @@ use iced::{Element, Event, Length, Pixels, Point, Rectangle, Size, Theme, Vector
 
 use super::find::FindInput;
 use super::shape::TEXT_SIZE;
-use super::{Editor, ID, Input, Key, Message, Vertical, keys, scrollbar};
+use super::{Editor, ID, Input, Key, Message, Pane, Vertical, keys, scrollbar};
 use crate::edit::Motion;
 
 /// Space between the widget's edge and the text.
@@ -50,6 +52,7 @@ const WHEEL_LINES: f32 = 3.0;
 
 pub(super) struct Surface<'a> {
     pub editor: &'a Editor,
+    pub pane: Pane,
 }
 
 #[derive(Default)]
@@ -117,8 +120,12 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
 
     fn layout(&mut self, tree: &mut Tree, _renderer: &iced::Renderer, limits: &layout::Limits) {
         let size = limits.resolve(Length::Fill, Length::Fill, Size::ZERO);
+        let lines = match self.pane {
+            Pane::Text => &self.editor.lines,
+            Pane::Preview => &self.editor.preview.lines,
+        };
         let pending = {
-            let mut lines = self.editor.lines.borrow_mut();
+            let mut lines = lines.borrow_mut();
             lines.outer = size;
             lines.fit();
             lines.sized = true;
@@ -130,6 +137,11 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
             let len = self.editor.text().len();
             self.editor
                 .with_lines(|lines, source| lines.reveal(source, offset.min(len), side));
+            self.editor.preview.leader.set(Pane::Text);
+        }
+        // Side by side: where the other pane is, if this one follows it.
+        if self.editor.preview.leader.get() != self.pane {
+            self.editor.follow();
         }
         tree.size = size;
     }
@@ -143,7 +155,9 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         operation: &mut dyn Operation,
     ) {
         let state = tree.state.downcast_mut::<State>();
-        operation.focusable(Some(&ID), layout.bounds(), state);
+        if self.pane == Pane::Text {
+            operation.focusable(Some(&ID), layout.bounds(), state);
+        }
     }
 
     fn update(
@@ -191,7 +205,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 });
             }
             Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
-                if modifiers.shift() != state.modifiers.shift() {
+                if modifiers.shift() != state.modifiers.shift() && self.pane == Pane::Text {
                     publish(shell, Input::Shift(modifiers.shift()));
                 }
                 state.modifiers = *modifiers;
@@ -209,21 +223,31 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 };
                 state.thumb_grab = Some(grab);
                 let t = scrollbar::travel(track, thumb, y - grab);
-                publish(shell, Input::ScrollTo(t));
+                publish(shell, Input::ScrollTo(self.pane, t));
                 shell.capture_event();
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) if state.thumb_grab.is_some() => {
                 let track = scrollbar::track(bounds);
-                if let Some(thumb) = self.editor.thumb(track) {
+                if let Some(thumb) = self.editor.thumb(self.pane, track) {
                     let grab = state.thumb_grab.unwrap_or(0.0);
                     let t = scrollbar::travel(track, thumb, position.y - grab);
-                    publish(shell, Input::ScrollTo(t));
+                    publish(shell, Input::ScrollTo(self.pane, t));
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
                 if state.thumb_grab.is_some() =>
             {
                 state.thumb_grab = None;
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+                if self.pane == Pane::Preview =>
+            {
+                if let Some(position) = cursor.position_over(bounds) {
+                    let at = position - Vector::new(text.x, text.y);
+                    let command = state.modifiers.command();
+                    publish(shell, Input::PreviewPress { at, command });
+                    shell.capture_event();
+                }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(position) = cursor.position_over(bounds) {
@@ -285,7 +309,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                     }
                     mouse::ScrollDelta::Pixels { y, .. } => -y,
                 };
-                publish(shell, Input::Scroll(dy));
+                publish(shell, Input::Scroll(self.pane, dy));
                 shell.capture_event();
             }
             Event::InputMethod(event) if state.focus.is_some() => {
@@ -341,7 +365,9 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 modifiers,
                 text,
                 ..
-            }) if state.focus.is_some() || self.editor.find.is_some() => {
+            }) if self.pane == Pane::Text
+                && (state.focus.is_some() || self.editor.find.is_some()) =>
+            {
                 // The find bar's keys, also while its fields have focus
                 // (REFERENCE-001 section 16).
                 if let Some(input) = self.find_key(key, *physical_key, *modifiers) {
@@ -420,13 +446,13 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         let on_link = state.modifiers.command()
             && cursor.position_over(text).is_some_and(|at| {
                 let at = at - Vector::new(text.x, text.y);
-                self.editor.link_under(at).is_some()
+                self.editor.link_under(self.pane, at).is_some()
             });
         if self.thumb_at(layout.bounds(), cursor).is_some() {
             mouse::Interaction::default()
         } else if on_link {
             mouse::Interaction::Pointer
-        } else if cursor.is_over(layout.bounds()) {
+        } else if cursor.is_over(layout.bounds()) && self.pane == Pane::Text {
             mouse::Interaction::Text
         } else {
             mouse::Interaction::default()
@@ -456,13 +482,14 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
         );
         if let Some(rows) = rows.intersection(viewport) {
             renderer.with_layer(rows, |renderer| {
-                self.editor.draw(renderer, theme, area, caret);
+                self.editor.draw(renderer, theme, area, self.pane, caret);
             });
         }
         // Over the text's layer, not under it.
         if let Some(shown) = bounds.intersection(viewport) {
             renderer.with_layer(shown, |renderer| {
-                self.editor.draw_scrollbar(renderer, theme, bounds);
+                self.editor
+                    .draw_scrollbar(renderer, theme, self.pane, bounds);
             });
         }
     }
@@ -486,7 +513,7 @@ impl Surface<'_> {
         let near = position.x >= track.x - 4.0
             && position.y >= track.y
             && position.y <= track.y + track.height;
-        let thumb = self.editor.thumb(track).filter(|_| near)?;
+        let thumb = self.editor.thumb(self.pane, track).filter(|_| near)?;
         Some((track, thumb, position.y))
     }
 

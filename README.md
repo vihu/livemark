@@ -13,7 +13,8 @@ checkboxes), quotes, rules, code (syntax colors in fenced blocks, fences
 hidden) and tables (grids until the caret enters); list-aware editing;
 formatting keys; line commands; find and replace; a source mode; zoom;
 YAML front matter and `==highlight==`; images drawn under their line from
-bytes the host supplies; a toolbar and a Split mode beside the rendered note. Targets Linux (Wayland) and macOS. It is both a library for
+bytes the host supplies; a toolbar and a Split mode with the rendered note beside the markdown, the
+two scrolled together. Targets Linux (Wayland) and macOS. It is both a library for
 iced apps and a standalone editor (the `livemark` app).
 
 ## The app
@@ -63,7 +64,7 @@ Keys in the editor (Cmd instead of Ctrl on macOS):
 | --- | --- |
 | Ctrl+B, Ctrl+I, Ctrl+E | Bold, italic, inline code: on the selection or the word, off inside one |
 | Ctrl+K | A link: `[text]()` around the selection, `[](url)` around a URL |
-| Ctrl+Shift+E | Live preview, the markdown as written, or Split: the markdown beside the rendered note |
+| Ctrl+Shift+E | Live preview, the markdown as written, or Split: the markdown beside the rendered note, scrolled together (a click there puts the caret at that place) |
 | Ctrl+F, Ctrl+H | Find, find and replace; Enter, F3 or Ctrl+G for the next match, with Shift the previous; Tab to the next field; Escape closes |
 | Enter | Continues a list item (next number, unchecked box) or quote; on an empty item, one level less |
 | Shift+Enter | A new line indented to the item's text, without a marker |

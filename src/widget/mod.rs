@@ -26,6 +26,7 @@ use iced::advanced::widget::Id;
 use iced::{Color, Element, Point, Rectangle, Size, Task};
 
 use self::lines::{Lines, Source};
+use self::preview::Pane;
 use self::shape::Colors;
 use crate::doc::{Doc, Selection};
 use crate::edit::Motion;
@@ -46,8 +47,8 @@ pub enum Mode {
     /// The markdown as written: one size, the code font throughout,
     /// nothing hidden, still highlighted.
     Source,
-    /// The markdown as written beside the note rendered by iced's
-    /// `markdown` widget (PLAN-002).
+    /// The markdown as written beside the rendered note: live preview
+    /// with every marker hidden, the two scrolled together (PLAN-003).
     Split,
 }
 
@@ -84,7 +85,7 @@ pub struct Editor {
     reveal: RefCell<Option<RevealFor>>,
     /// Pictures the host supplied, by image destination (`set_image`).
     pictures: HashMap<String, picture::Picture>,
-    /// Split mode's rendered note.
+    /// Split mode's rendered pane.
     preview: preview::Preview,
 }
 
@@ -94,6 +95,14 @@ type RevealFor = (u64, Range<usize>, Reveal);
 
 /// Hidden markers and concealed marks.
 type Reveal = (Arc<[Range<usize>]>, Arc<[Mark]>);
+
+/// Colors until the first draw gives the theme's.
+const BLACK: Colors = Colors {
+    text: Color::BLACK,
+    marker: Color::BLACK,
+    code: Color::BLACK,
+    link: Color::BLACK,
+};
 
 /// A mouse press being held.
 #[derive(Debug, Clone)]
@@ -168,11 +177,17 @@ enum Input {
     Follow(String),
     Drag(Point),
     Release,
-    /// Pixels to scroll, positive further down.
-    Scroll(f32),
-    /// The scroll bar's thumb dragged or the track pressed: how far down
-    /// its travel, from 0 to 1.
-    ScrollTo(f32),
+    /// A press in side by side's rendered pane, at a point of its text
+    /// area; Ctrl, or Cmd on macOS, held.
+    PreviewPress {
+        at: Point,
+        command: bool,
+    },
+    /// Pixels to scroll a pane, positive further down.
+    Scroll(Pane, f32),
+    /// A pane's scroll bar thumb dragged or its track pressed: how far
+    /// down its travel, from 0 to 1.
+    ScrollTo(Pane, f32),
     /// Ctrl/Cmd with the wheel: notches up (positive) or down, a tenth of
     /// the text size each, as the app's keys step.
     ZoomSteps(f32),
@@ -260,15 +275,10 @@ impl Editor {
             mode: Mode::Live,
             shift: false,
             placed: false,
-            lines: RefCell::new(Lines::new(Colors {
-                text: Color::BLACK,
-                marker: Color::BLACK,
-                code: Color::BLACK,
-                link: Color::BLACK,
-            })),
+            lines: RefCell::new(Lines::new(BLACK)),
             reveal: RefCell::new(None),
             pictures: HashMap::new(),
-            preview: preview::Preview::default(),
+            preview: preview::Preview::new(BLACK),
         }
     }
 
@@ -315,6 +325,7 @@ impl Editor {
                 lines.pending_reveal = Some((selection.head, Affinity::After));
             }
         });
+        self.preview.leader.set(Pane::Text);
     }
 
     /// How the markdown is drawn.
@@ -337,7 +348,7 @@ impl Editor {
         if split {
             self.lines.borrow_mut().pending_reveal = Some((self.doc.selection().head, self.side));
         }
-        self.refresh_preview();
+        self.preview.leader.set(Pane::Text);
     }
 
     /// Supplies the picture for images pointing at `url` (as written in
@@ -349,6 +360,7 @@ impl Editor {
         if let Some(picture) = picture::decode(bytes) {
             self.pictures.insert(url.to_owned(), picture);
             *self.reveal.borrow_mut() = None;
+            *self.preview.reveal.borrow_mut() = None;
         }
     }
 
@@ -382,6 +394,12 @@ impl Editor {
         let zoom = zoom.clamp(0.5, 3.0);
         if zoom != self.zoom() {
             self.keep_caret_row(|lines| lines.zoom = zoom);
+            let mut preview = self.preview.lines.borrow_mut();
+            preview.zoom = zoom;
+            if preview.sized {
+                preview.fit();
+            }
+            self.preview.leader.set(Pane::Text);
         }
     }
 
@@ -422,10 +440,18 @@ impl Editor {
     pub fn view(&self) -> Element<'_, Message> {
         // Always a column, so the surface keeps its state (focus, held
         // modifiers, a preedit) when the find bar opens or closes.
-        let surface = Element::new(surface::Surface { editor: self });
-        // In Split, the rendered note beside it; always a row, so the
+        let surface = Element::new(surface::Surface {
+            editor: self,
+            pane: Pane::Text,
+        });
+        // In Split, the rendered pane beside it; always a row, so the
         // surface keeps its place.
-        let preview = (self.mode == Mode::Split).then(|| self.preview());
+        let preview = (self.mode == Mode::Split).then(|| {
+            Element::new(surface::Surface {
+                editor: self,
+                pane: Pane::Preview,
+            })
+        });
         let text = iced::widget::row![surface]
             .push(preview)
             .height(iced::Length::Fill);
@@ -457,37 +483,46 @@ impl Editor {
         match &*cache {
             Some((v, s, reveal)) if *v == version && *s == selection => reveal.clone(),
             _ => {
-                // An image with its picture hides all its markdown while
-                // untouched (REFERENCE-001 section 5).
-                let mut hidden = self.styled.hidden(selection.clone());
-                let touches =
-                    |r: &Range<usize>| selection.start <= r.end && r.start <= selection.end;
-                let images = self.styled.images().iter();
-                hidden.extend(
-                    images
-                        .filter(|(r, url)| self.pictures.contains_key(url) && !touches(r))
-                        .map(|(r, _)| r.clone()),
-                );
-                hidden.sort_by_key(|h| h.start);
-                let mut merged: Vec<Range<usize>> = Vec::with_capacity(hidden.len());
-                for h in hidden {
-                    match merged.last_mut() {
-                        Some(last) if h.start <= last.end => last.end = last.end.max(h.end),
-                        _ => merged.push(h),
-                    }
-                }
-                let reveal: Reveal = (
-                    merged.into(),
-                    self.styled.concealed(selection.clone()).into(),
-                );
+                let reveal = self.reveal_for(selection.clone());
                 *cache = Some((version, selection, reveal.clone()));
                 reveal
             }
         }
     }
 
+    /// The markers hidden and the marks drawn over with `selection`.
+    fn reveal_for(&self, selection: Range<usize>) -> Reveal {
+        // An image with its picture hides all its markdown while untouched
+        // (REFERENCE-001 section 5).
+        let mut hidden = self.styled.hidden(selection.clone());
+        let touches = |r: &Range<usize>| selection.start <= r.end && r.start <= selection.end;
+        let images = self.styled.images().iter();
+        hidden.extend(
+            images
+                .filter(|(r, url)| self.pictures.contains_key(url) && !touches(r))
+                .map(|(r, _)| r.clone()),
+        );
+        hidden.sort_by_key(|h| h.start);
+        let mut merged: Vec<Range<usize>> = Vec::with_capacity(hidden.len());
+        for h in hidden {
+            match merged.last_mut() {
+                Some(last) if h.start <= last.end => last.end = last.end.max(h.end),
+                _ => merged.push(h),
+            }
+        }
+        (merged.into(), self.styled.concealed(selection).into())
+    }
+
     fn with_lines<R>(&self, f: impl FnOnce(&mut Lines, &Source) -> R) -> R {
-        let (hidden, concealed) = self.reveal();
+        self.with_pane(Pane::Text, f)
+    }
+
+    /// `f` over a pane's lines, with what that pane hides.
+    fn with_pane<R>(&self, pane: Pane, f: impl FnOnce(&mut Lines, &Source) -> R) -> R {
+        let ((hidden, concealed), lines) = match pane {
+            Pane::Text => (self.reveal(), &self.lines),
+            Pane::Preview => (self.preview_reveal(), &self.preview.lines),
+        };
         let source = Source {
             doc: &self.doc,
             styled: &self.styled,
@@ -495,7 +530,7 @@ impl Editor {
             concealed: &concealed,
             pictures: &self.pictures,
         };
-        let mut lines = self.lines.borrow_mut();
+        let mut lines = lines.borrow_mut();
         lines.anchor = lines.anchor.min(self.doc.line_count() - 1);
         f(&mut lines, &source)
     }
@@ -515,6 +550,8 @@ impl Editor {
     }
 }
 
+#[cfg(test)]
+mod split_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -4,7 +4,7 @@
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Point, Rectangle, Size, Theme, border};
 
-use super::Editor;
+use super::{Editor, Pane};
 
 /// The thumb's width.
 pub(super) const WIDTH: f32 = 6.0;
@@ -21,9 +21,10 @@ pub(super) fn track(bounds: Rectangle) -> Rectangle {
 }
 
 impl Editor {
-    /// The thumb in `track`; none when the whole document is in view.
-    pub(super) fn thumb(&self, track: Rectangle) -> Option<Rectangle> {
-        let (start, visible, count) = self.with_lines(|lines, source| {
+    /// The thumb of `pane` in `track`; none when the whole document is in
+    /// view.
+    pub(super) fn thumb(&self, pane: Pane, track: Rectangle) -> Option<Rectangle> {
+        let (start, visible, count) = self.with_pane(pane, |lines, source| {
             let count = source.doc.line_count();
             let start = lines.position(source, (lines.anchor, lines.offset));
             (start, lines.visible, count)
@@ -41,14 +42,15 @@ impl Editor {
         ))
     }
 
-    /// Draws the thumb, faint, in the widget's `bounds`.
+    /// Draws the thumb of `pane`, faint, in the widget's `bounds`.
     pub(super) fn draw_scrollbar(
         &self,
         renderer: &mut iced::Renderer,
         theme: &Theme,
+        pane: Pane,
         bounds: Rectangle,
     ) {
-        if let Some(thumb) = self.thumb(track(bounds)) {
+        if let Some(thumb) = self.thumb(pane, track(bounds)) {
             renderer.fill_quad(
                 renderer::Quad {
                     bounds: thumb,
@@ -60,9 +62,10 @@ impl Editor {
         }
     }
 
-    /// Scrolls so the thumb's top is at `t` of the way down its travel.
-    pub(super) fn scroll_to(&mut self, t: f32) {
-        self.with_lines(|lines, source| {
+    /// Scrolls `pane` so the thumb's top is at `t` of the way down its
+    /// travel.
+    pub(super) fn scroll_to(&mut self, pane: Pane, t: f32) {
+        self.with_pane(pane, |lines, source| {
             let count = source.doc.line_count();
             // At the bottom, the end exactly: the travel counts lines.
             if t >= 1.0 {

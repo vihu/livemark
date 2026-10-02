@@ -8,10 +8,10 @@ use iced::advanced::image::{self, Renderer as _};
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Color, Point, Rectangle, Size, Theme, Vector};
 
-use super::Editor;
 use super::lines::{Shaped, marks_in};
 use super::marks;
 use super::shape::{Colors, TEXT_SIZE, readable};
+use super::{Editor, Pane};
 use crate::style::{MarkKind, Style};
 
 /// How far a code block's band reaches past the text on either side.
@@ -21,15 +21,21 @@ const CODE_INSET: f32 = 8.0;
 const QUOTE_BAR: (f32, f32) = (10.0, 3.0);
 
 impl Editor {
-    /// Draws the visible lines into `area` with the selection, and the
-    /// caret when `caret` is set.
+    /// Draws the visible lines of `pane` into `area`; the text with the
+    /// selection and find matches, and the caret when `caret` is set.
     pub(super) fn draw(
         &self,
         renderer: &mut iced::Renderer,
         theme: &Theme,
         area: Rectangle,
+        pane: Pane,
         caret: bool,
     ) {
+        // Side by side: where the other pane is now, if this one follows.
+        if self.preview.leader.get() != pane {
+            self.follow();
+        }
+        let text_pane = pane == Pane::Text;
         let palette = theme.palette();
         let text = palette.background.base.text;
         let background = palette.background.base.color;
@@ -61,9 +67,16 @@ impl Editor {
         // A marker pen: yellow, lighter on a dark page.
         let dark = palette.background.base.color.relative_luminance() < 0.5;
         let highlight_color = Color::from_rgba8(255, 214, 0, if dark { 0.3 } else { 0.45 });
-        let matches = self.find.as_ref().map_or(&[][..], |f| &f.matches[..]);
-        let selection = self.doc.selection().range();
-        let caret_rect = caret.then(|| self.caret()).flatten();
+        let matches = match &self.find {
+            Some(find) if text_pane => &find.matches[..],
+            _ => &[][..],
+        };
+        let selection = if text_pane {
+            self.doc.selection().range()
+        } else {
+            0..0
+        };
+        let caret_rect = (caret && text_pane).then(|| self.caret()).flatten();
         let quad = |renderer: &mut iced::Renderer, bounds: Rectangle, color: Color| {
             renderer.fill_quad(
                 renderer::Quad {
@@ -73,7 +86,7 @@ impl Editor {
                 color,
             );
         };
-        self.with_lines(|lines, source| {
+        self.with_pane(pane, |lines, source| {
             lines.colors = colors;
             lines.theme = Some(theme.clone());
             let mut drawn = Vec::new();

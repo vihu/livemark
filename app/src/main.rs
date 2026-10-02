@@ -67,8 +67,8 @@ pub fn main() -> iced::Result {
         },
         ..Default::default()
     })
-    // The prose font for the app's own widgets too: the toolbar and Split
-    // mode's preview (iced's `markdown` widget draws in the default font).
+    // The prose font for the app's own widgets too: the toolbar, the File
+    // menu and the bars.
     .fonts(livemark::fonts::ATKINSON_HYPERLEGIBLE_NEXT)
     .font(iced::Font::new(livemark::fonts::PROSE))
     .theme(|app: &App| app.theme.clone())

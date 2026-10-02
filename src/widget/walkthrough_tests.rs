@@ -50,7 +50,10 @@ fn code_and_accent_colors_read_on_both_themes() {
 #[test]
 fn scrolling_to_the_end_stops_with_the_last_line_at_the_bottom() {
     let text = format!("{}last\n", "line\n".repeat(200));
-    for input in [Input::Scroll(1e6), Input::ScrollTo(1.0)] {
+    for input in [
+        Input::Scroll(super::Pane::Text, 1e6),
+        Input::ScrollTo(super::Pane::Text, 1.0),
+    ] {
         let mut editor = Editor::new(text.clone());
         editor.select(0, 0);
         let _ = editor.update(Message(input));
@@ -67,7 +70,7 @@ fn scrolling_to_the_end_stops_with_the_last_line_at_the_bottom() {
     }
     // A document shorter than the view does not scroll.
     let mut editor = Editor::new("short\n".into());
-    let _ = editor.update(Message(Input::Scroll(500.0)));
+    let _ = editor.update(Message(Input::Scroll(super::Pane::Text, 500.0)));
     assert_eq!(editor.lines.borrow().offset, 0.0);
 }
 
@@ -143,7 +146,7 @@ fn the_scroll_bar_at_its_bottom_shows_the_end_of_mixed_lines() {
     let mut editor = Editor::new(text);
     editor.select(0, 0);
     editor.lines.borrow_mut().visible = 15;
-    let _ = editor.update(Message(Input::ScrollTo(1.0)));
+    let _ = editor.update(Message(Input::ScrollTo(super::Pane::Text, 1.0)));
     editor.with_lines(|lines, source| {
         let last = source.doc.line_count() - 1;
         let top = lines.top_of(source, last).expect("on screen");
@@ -174,7 +177,7 @@ fn zoom_scales_every_line_and_keeps_the_caret_row_in_place() {
             (top + row, height)
         })
     };
-    let _ = editor.update(Message(Input::ScrollTo(1.0)));
+    let _ = editor.update(Message(Input::ScrollTo(super::Pane::Text, 1.0)));
     let (y, height) = at(&editor);
     editor.set_zoom(2.0);
     assert_eq!(editor.zoom(), 2.0);
@@ -374,22 +377,6 @@ fn a_picture_starts_under_its_lines_text() {
     editor.select(0, 0);
     let x = editor.with_lines(|lines, source| lines.shaped(source, 0).pictures[0].1.x);
     assert!(x > 4.0, "{x}");
-}
-
-#[test]
-fn the_split_preview_follows_every_edit() {
-    use super::Mode;
-    let mut editor = Editor::new("# Title\n".into());
-    assert!(
-        editor.preview.content.items().is_empty(),
-        "parsed only in split mode"
-    );
-    editor.set_mode(Mode::Split);
-    assert_eq!(editor.preview.content.raw(), "# Title\n");
-    assert!(!editor.preview.content.items().is_empty());
-    editor.select(8, 8);
-    let _ = editor.update(Message(Input::Commit("more".into())));
-    assert_eq!(editor.preview.content.raw(), "# Title\nmore");
 }
 
 #[test]

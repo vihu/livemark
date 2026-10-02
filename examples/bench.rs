@@ -104,6 +104,31 @@ fn main() {
             &format!("{lines} lines, a scroll frame (40 px)"),
             &scrolling,
         );
+
+        // Side by side (PLAN-003): the note drawn twice, the rendered pane
+        // following the text.
+        editor.set_mode(livemark::widget::Mode::Split);
+        editor.select(middle, middle);
+        bench.frame(&mut editor, &[]);
+        let typing: Vec<Timing> = (0..FRAMES)
+            .map(|i| bench.frame(&mut editor, &[key(if i % 2 == 0 { "a" } else { "b" })]))
+            .collect();
+        report(
+            &format!("{lines} lines, side by side, a keystroke"),
+            &typing,
+        );
+        let scrolling: Vec<Timing> = (0..FRAMES)
+            .map(|_| {
+                let wheel = Event::Mouse(mouse::Event::WheelScrolled {
+                    delta: mouse::ScrollDelta::Pixels { x: 0.0, y: -40.0 },
+                });
+                bench.frame(&mut editor, &[wheel])
+            })
+            .collect();
+        report(
+            &format!("{lines} lines, side by side, a scroll frame (40 px)"),
+            &scrolling,
+        );
     }
 
     // Typing in a 400-line Rust block, at its top and at line 200 (scrolled

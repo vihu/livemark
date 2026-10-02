@@ -350,7 +350,7 @@ fn ticking_a_checkbox_far_from_the_caret_keeps_the_view() {
     let mut editor = Editor::new(text.clone());
     editor.select(0, 0);
     // Scroll the task into view, the caret staying at the top.
-    let _ = editor.update(Message(Input::ScrollTo(1.0)));
+    let _ = editor.update(Message(Input::ScrollTo(super::Pane::Text, 1.0)));
     let anchor = editor.lines.borrow().anchor;
     let at = editor.with_lines(|lines, source| {
         let top = lines.top_of(source, task_line).expect("on screen");
@@ -518,7 +518,7 @@ fn up_and_down_start_from_the_caret_even_far_out_of_view() {
     let text = "line\n".repeat(300);
     let mut editor = Editor::new(text);
     editor.select(0, 0);
-    let _ = editor.update(Message(Input::Scroll(5000.0)));
+    let _ = editor.update(Message(Input::Scroll(super::Pane::Text, 5000.0)));
     let _ = editor.update(Message(Input::Key(Key::Vertical(Vertical::Down, true))));
     assert_eq!(editor.selection().range(), 0..5, "line 1, not the view");
 }
@@ -536,13 +536,13 @@ fn releasing_after_scrolling_away_keeps_the_view() {
         other: false,
     };
     let _ = editor.update(Message(press.clone()));
-    let _ = editor.update(Message(Input::Scroll(2000.0)));
+    let _ = editor.update(Message(Input::Scroll(super::Pane::Text, 2000.0)));
     let anchor = editor.lines.borrow().anchor;
     let _ = editor.update(Message(Input::Release));
     assert_eq!(editor.lines.borrow().anchor, anchor);
     // Less than two screens away too.
     let _ = editor.update(Message(press));
-    let _ = editor.update(Message(Input::Scroll(300.0)));
+    let _ = editor.update(Message(Input::Scroll(super::Pane::Text, 300.0)));
     let anchor = editor.lines.borrow().anchor;
     let _ = editor.update(Message(Input::Release));
     assert_eq!(editor.lines.borrow().anchor, anchor, "a short scroll");
@@ -560,7 +560,7 @@ fn find_bar_inputs_that_move_nothing_keep_the_view() {
     };
     send(&mut editor, Input::Find(FindInput::Open { replace: true }));
     send(&mut editor, Input::Find(FindInput::Query("needle".into())));
-    send(&mut editor, Input::Scroll(3000.0));
+    send(&mut editor, Input::Scroll(super::Pane::Text, 3000.0));
     let anchor = editor.lines.borrow().anchor;
     send(
         &mut editor,

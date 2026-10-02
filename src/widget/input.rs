@@ -2,7 +2,7 @@
 //! input method commits and the clipboard (REFERENCE-001 sections 13 to 19).
 use iced::{Point, Task};
 
-use super::{Editor, Input, Key, Message, Mode, Press, Unit, Vertical};
+use super::{Editor, Input, Key, Message, Mode, Pane, Press, Unit, Vertical};
 use crate::doc::Selection;
 use crate::edit::{self, Motion};
 use crate::layout::Affinity;
@@ -27,13 +27,17 @@ impl Editor {
         // caret off screen: following a link, ticking a checkbox, copying,
         // selecting all.
         let mut keep_view = false;
+        // Side by side: the text leads when this input moves it; a press in
+        // the rendered pane sorts that out itself.
+        let view = self.with_lines(|lines, _| (lines.anchor, lines.offset));
+        let in_preview = matches!(input, Input::PreviewPress { .. });
         // Any input but scrolling places the caret (REFERENCE-001
         // section 2); a press only on release, so the text clicked does
         // not move under the pointer.
         self.placed |= !matches!(
             input,
-            Input::Scroll(_)
-                | Input::ScrollTo(_)
+            Input::Scroll(..)
+                | Input::ScrollTo(..)
                 | Input::ZoomSteps(_)
                 | Input::ZoomBy(_)
                 | Input::Shift(_)
@@ -46,12 +50,12 @@ impl Editor {
                 command: true,
                 clicks,
                 ..
-            } if self.link_under(at).is_some() => {
+            } if self.link_under(Pane::Text, at).is_some() => {
                 // Ctrl/Cmd+click on a link follows it and moves nothing
                 // (REFERENCE-001 section 5); a quick second one does
                 // nothing more.
                 if clicks == 1 {
-                    let dest = self.link_under(at).unwrap_or_default();
+                    let dest = self.link_under(Pane::Text, at).unwrap_or_default();
                     task = Task::done(Message(Input::Follow(dest)));
                 }
                 side = self.side;
@@ -94,12 +98,21 @@ impl Editor {
                 self.last_press = press.map(|press| (press, self.doc.version()));
                 side = self.side;
             }
-            Input::Scroll(dy) => {
-                self.with_lines(|lines, source| lines.scroll_by(source, dy));
+            Input::PreviewPress { at, command } => {
+                task = self.preview_press(at, command);
+                side = self.side;
+                keep_view = true;
+            }
+            Input::Scroll(pane, dy) => {
+                self.with_pane(pane, |lines, source| lines.scroll_by(source, dy));
+                self.preview.leader.set(pane);
+                self.follow();
                 return Task::none();
             }
-            Input::ScrollTo(t) => {
-                self.scroll_to(t);
+            Input::ScrollTo(pane, t) => {
+                self.scroll_to(pane, t);
+                self.preview.leader.set(pane);
+                self.follow();
                 return Task::none();
             }
             Input::ZoomSteps(steps) => {
@@ -217,27 +230,34 @@ impl Editor {
         if !keep_view {
             self.with_lines(|lines, source| lines.reveal(source, head, side));
         }
+        if !in_preview && self.with_lines(|lines, _| (lines.anchor, lines.offset)) != view {
+            self.preview.leader.set(Pane::Text);
+        }
+        self.follow();
         self.refresh_matches();
-        self.refresh_preview();
         task
     }
 
-    /// Where the link under `at` goes, if one is there.
-    pub(super) fn link_under(&self, at: Point) -> Option<String> {
-        let (offset, _) = self.hit(at);
+    /// Where the link under `at` in `pane` goes, if one is there.
+    pub(super) fn link_under(&self, pane: Pane, at: Point) -> Option<String> {
+        let (offset, _) = self.hit(pane, at);
         let (range, dest) = self.styled.link_span_at(offset)?;
         // On the link's text, not in the space beside it, which hits its
         // end too.
-        let over = self.with_lines(|lines, source| lines.covers(source, range, at.x, at.y));
+        let over = self.with_pane(pane, |lines, source| {
+            lines.covers(source, range, at.x, at.y)
+        });
         over.then(|| dest.to_owned())
     }
 
-    /// The source offset under `at`: in a table drawn as a grid, the
-    /// cell's (REFERENCE-001 section 10).
-    fn hit(&self, at: Point) -> (usize, Affinity) {
-        self.with_lines(|lines, source| match lines.table_hit(source, at.x, at.y) {
-            Some(offset) => (offset, Affinity::After),
-            None => lines.hit(source, at.x, at.y),
+    /// The source offset under `at` in `pane`: in a table drawn as a grid,
+    /// the cell's (REFERENCE-001 section 10).
+    pub(super) fn hit(&self, pane: Pane, at: Point) -> (usize, Affinity) {
+        self.with_pane(pane, |lines, source| {
+            match lines.table_hit(source, at.x, at.y) {
+                Some(offset) => (offset, Affinity::After),
+                None => lines.hit(source, at.x, at.y),
+            }
         })
     }
 
@@ -273,7 +293,7 @@ impl Editor {
             first: 0..0,
             view,
         });
-        let (offset, side) = self.hit(at);
+        let (offset, side) = self.hit(Pane::Text, at);
         // On a bullet's dot or a quote marker, drawn: the item's or quote's
         // text, so the dot stays (REFERENCE-001 sections 6, 7, 14). Drags,
         // Shift+clicks and the margin keep the line's start.
@@ -318,7 +338,7 @@ impl Editor {
     /// whole words or lines after a double or triple click, towards the
     /// pointer (CodeMirror's `basicMouseSelection`).
     fn drag(&mut self, at: Point) -> Affinity {
-        let (offset, side) = self.hit(at);
+        let (offset, side) = self.hit(Pane::Text, at);
         let Some(press) = &self.press else {
             return side;
         };
