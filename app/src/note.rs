@@ -21,36 +21,9 @@ pub struct Header<'a> {
     pub by: Option<&'a str>,
 }
 
-/// Today's date where the user is, `YYYY-MM-DD`: from the system's `date`
-/// (std has no time zones), else in UTC.
+/// Today's date where the user is, `YYYY-MM-DD`.
 pub fn today() -> String {
-    let local = std::process::Command::new("date")
-        .arg("+%Y-%m-%d")
-        .output()
-        .ok()
-        .and_then(|out| String::from_utf8(out.stdout).ok())
-        .map(|s| s.trim().to_owned())
-        .filter(|s| s.len() == 10 && s.as_bytes()[4] == b'-');
-    local.unwrap_or_else(|| {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        civil(secs / 86_400)
-    })
-}
-
-/// The date `days` after 1970-01-01 (Howard Hinnant's `civil_from_days`).
-fn civil(days: u64) -> String {
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}")
+    jiff::Zoned::now().date().to_string()
 }
 
 /// `title` as a file name's slug: accents folded, lowercase ASCII letters
@@ -161,7 +134,7 @@ pub fn create(folder: &Path, header: &Header, body: &str) -> std::io::Result<Pat
 
 #[cfg(test)]
 mod tests {
-    use super::{Header, civil, create, slug, today};
+    use super::{Header, create, slug, today};
 
     #[test]
     fn slugs_are_lowercase_ascii_with_hyphens() {
@@ -177,9 +150,6 @@ mod tests {
 
     #[test]
     fn dates_come_out_as_the_calendar_has_them() {
-        assert_eq!(civil(0), "1970-01-01");
-        assert_eq!(civil(19_723), "2024-01-01");
-        assert_eq!(civil(20_728), "2026-10-02");
         let today = today();
         assert!(today.len() == 10 && today.starts_with("20"), "{today}");
     }
