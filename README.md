@@ -16,8 +16,9 @@ both a library for iced apps and a standalone editor (the `livemark` app).
 cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 ```
 
-Light or dark follows the system unless a flag says. Ctrl+O opens, Ctrl+S
-saves (asking where for a new note), Ctrl+Shift+S saves as. A `*` in the
+Light or dark follows the system unless a flag says. Ctrl+N starts a new
+note, Ctrl+O opens, Ctrl+S saves (asking where for a new note),
+Ctrl+Shift+S saves as. A `*` in the
 title marks unsaved changes; closing or opening another file then asks.
 When the window comes back into focus and the file changed on disk (git,
 another editor), it is loaded again; with unsaved changes the app asks

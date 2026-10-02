@@ -6,8 +6,8 @@
 //! ```
 //!
 //! Light or dark follows the system unless `--dark` or `--light` says.
-//! Ctrl+O opens, Ctrl+S saves (asking where for a new file), Ctrl+Shift+S
-//! saves as. Ctrl+click on a web or mail link (or Alt+Enter in it) opens it
+//! Ctrl+N starts a new note, Ctrl+O opens, Ctrl+S saves (asking where for
+//! a new file), Ctrl+Shift+S saves as. Ctrl+click on a web or mail link (or Alt+Enter in it) opens it
 //! in the system's browser or mail program. The title shows `*` while there are unsaved changes; closing
 //! the window or opening another file then asks first. When the window
 //! comes back into focus and the file changed on disk, it is loaded again,
@@ -77,11 +77,13 @@ struct App {
 enum After {
     Close,
     Open,
+    New,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
     Editor(widget::Message),
+    New,
     Open,
     Opened(Option<PathBuf>),
     Save {
@@ -180,6 +182,8 @@ impl App {
                 }
                 return self.editor.update(message).map(Message::Editor);
             }
+            Message::New if self.unsaved() => self.pending = Some(After::New),
+            Message::New => return self.new_note(),
             Message::Open if self.unsaved() => self.pending = Some(After::Open),
             Message::Open => return Task::perform(pick_file(), Message::Opened),
             Message::Opened(Some(path)) => match file::load(&path) {
@@ -242,7 +246,19 @@ impl App {
         match after {
             After::Close => iced::exit(),
             After::Open => Task::perform(pick_file(), Message::Opened),
+            After::New => self.new_note(),
         }
+    }
+
+    /// An empty, untitled note in place of the current one.
+    fn new_note(&mut self) -> Task<Message> {
+        self.path = None;
+        self.editor = Editor::new(String::new());
+        self.saved = self.editor.version();
+        self.stamp = None;
+        self.changed = false;
+        self.error = None;
+        Editor::focus()
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -300,6 +316,7 @@ impl App {
                 return None;
             };
             match code {
+                key::Code::KeyN if modifiers.command() => Some(Message::New),
                 key::Code::KeyO if modifiers.command() => Some(Message::Open),
                 key::Code::KeyS if modifiers.command() => Some(Message::Save {
                     choose: modifiers.shift(),
@@ -404,6 +421,12 @@ mod tests {
         let _ = app.update(Message::Focused);
         let _ = app.update(Message::Reload(true));
         assert_eq!(app.editor.text(), "four\n", "loaded, edits dropped");
+        // Ctrl+N with unsaved changes asks first; discarding starts afresh.
+        app.saved = u64::MAX;
+        let _ = app.update(Message::New);
+        assert_eq!(app.editor.text(), "four\n", "asked first");
+        let _ = app.update(Message::Unsaved(Some(false)));
+        assert_eq!((app.editor.text(), app.path.is_none()), ("", true));
         std::fs::remove_file(&path).unwrap();
         std::fs::remove_dir(&dir).unwrap();
     }
