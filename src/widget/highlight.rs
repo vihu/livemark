@@ -1,10 +1,11 @@
 //! Syntax colors for fenced code (REFERENCE-001 section 9): iced's own
-//! highlighter (syntect through two-face) run over a block's lines, kept by
-//! the block's text and language, and colored by the theme.
-use std::collections::HashMap;
+//! highlighter (syntect through two-face) run over a block's lines and
+//! colored by the theme. Lines are parsed only as far down as they are
+//! drawn, and an edited block is parsed again from the snapshot (every 50
+//! lines, iced's) before its first changed line: a line's state depends
+//! only on the lines above it in the block (backlog 14).
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
-use std::sync::Arc;
 
 use iced::highlighter::{Parser, Settings};
 use iced::{Code, Color, Theme, font};
@@ -20,14 +21,24 @@ pub struct Token {
     pub italic: bool,
 }
 
-/// A block's token classes, line by line, in offsets from each line's
-/// start.
-type Classes = Arc<Vec<Vec<(Range<usize>, Code)>>>;
+/// How many blocks keep their parse; the least recently drawn go first.
+const KEEP: usize = 32;
 
-/// Token classes of code blocks by block text and language.
+/// A block parsed from its first line down.
+struct Parsed {
+    language: String,
+    /// A hash of each of the block's lines.
+    lines: Vec<u64>,
+    parser: Parser,
+    /// Token classes of the lines parsed so far, in offsets from each
+    /// line's start.
+    classes: Vec<Vec<(Range<usize>, Code)>>,
+}
+
+/// Parsed code blocks, most recently drawn last.
 #[derive(Default)]
 pub struct Highlights {
-    blocks: HashMap<u64, Classes>,
+    parsed: Vec<Parsed>,
 }
 
 impl Highlights {
@@ -55,8 +66,14 @@ impl Highlights {
             return Vec::new();
         };
         let segment = block.lines[index].start;
-        let classes = self.block(text, block, language);
-        classes[index]
+        let parsed = self.parsed(text, block, language);
+        while parsed.classes.len() <= index {
+            let source = &text[block.lines[parsed.classes.len()].clone()];
+            parsed
+                .classes
+                .push(parsed.parser.parse_line(source).collect());
+        }
+        parsed.classes[index]
             .iter()
             .filter_map(|(r, code)| {
                 let style = code.highlight(theme);
@@ -71,33 +88,61 @@ impl Highlights {
             .collect()
     }
 
-    /// The token classes of `block`'s lines, parsed once per text.
-    fn block(&mut self, text: &str, block: &CodeBlock, language: &str) -> Classes {
-        let mut hasher = DefaultHasher::new();
-        language.hash(&mut hasher);
-        for line in &block.lines {
-            text[line.clone()].hash(&mut hasher);
-        }
-        let key = hasher.finish();
-        if let Some(classes) = self.blocks.get(&key) {
-            return classes.clone();
-        }
-        let mut parser = Parser::new(&Settings {
-            token: language.to_owned(),
-        });
-        let classes: Arc<Vec<Vec<_>>> = Arc::new(
-            block
+    /// The parse of `block`: one made for the same lines, else the one in
+    /// the same language sharing the most first lines with it, rewound to
+    /// its snapshot before the first different line, else a new one.
+    fn parsed(&mut self, text: &str, block: &CodeBlock, language: &str) -> &mut Parsed {
+        let lines: Vec<u64> = block
+            .lines
+            .iter()
+            .map(|line| {
+                let mut hasher = DefaultHasher::new();
+                text[line.clone()].hash(&mut hasher);
+                hasher.finish()
+            })
+            .collect();
+        let shared = |parsed: &Parsed| {
+            parsed
                 .lines
                 .iter()
-                .map(|line| parser.parse_line(&text[line.clone()]).collect())
-                .collect(),
-        );
-        // Every edit inside a block makes a new entry; old ones go at once.
-        if self.blocks.len() >= 64 {
-            self.blocks.clear();
-        }
-        self.blocks.insert(key, classes.clone());
-        classes
+                .zip(&lines)
+                .take_while(|(a, b)| a == b)
+                .count()
+        };
+        let best = self
+            .parsed
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.language == language)
+            .map(|(i, p)| (i, shared(p)))
+            .max_by_key(|&(_, n)| n)
+            .filter(|&(i, n)| n > 0 || self.parsed[i].lines.is_empty());
+        let mut parsed = match best {
+            Some((i, n)) => {
+                let mut parsed = self.parsed.remove(i);
+                if n < parsed.classes.len() {
+                    parsed.parser.change_line(n);
+                    parsed.classes.truncate(parsed.parser.current_line());
+                }
+                parsed
+            }
+            None => {
+                if self.parsed.len() >= KEEP {
+                    self.parsed.remove(0);
+                }
+                Parsed {
+                    language: language.to_owned(),
+                    lines: Vec::new(),
+                    parser: Parser::new(&Settings {
+                        token: language.to_owned(),
+                    }),
+                    classes: Vec::new(),
+                }
+            }
+        };
+        parsed.lines = lines;
+        self.parsed.push(parsed);
+        self.parsed.last_mut().expect("just pushed")
     }
 }
 
@@ -105,7 +150,7 @@ impl Highlights {
 mod tests {
     use iced::{Code, Theme};
 
-    use super::Highlights;
+    use super::{Highlights, Token};
     use crate::layout::Line;
     use crate::style::Styled;
 
@@ -127,5 +172,53 @@ mod tests {
         );
         assert!(tokens(&mut highlights, 0..7).is_empty(), "the fence");
         assert!(tokens(&mut highlights, 28..41).is_empty(), "no language");
+    }
+
+    /// The colors of every line of `text`, asked for in `order`.
+    fn colors(highlights: &mut Highlights, text: &str, order: &[usize]) -> Vec<Vec<Token>> {
+        let styled = Styled::new(text);
+        let starts: Vec<usize> = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        let mut colors = vec![Vec::new(); starts.len() - 1];
+        for &i in order.iter().filter(|&&i| i + 1 < starts.len()) {
+            let range = starts[i]..starts[i + 1] - 1;
+            let line = Line::new(text, range.clone(), &[], styled.runs());
+            colors[i] = highlights.tokens(text, &styled, range, &line, &Theme::Light);
+        }
+        colors
+    }
+
+    #[test]
+    fn an_edited_block_highlights_as_if_parsed_afresh() {
+        let body: Vec<String> = (0..130)
+            .map(|i| format!("    let x{i} = \"s{i}\"; // n{i}"))
+            .collect();
+        let block = |body: &[String]| format!("```rust\n{}\n```\n", body.join("\n"));
+        let mut highlights = Highlights::default();
+        let bottom: Vec<usize> = (100..132).collect();
+        let all: Vec<usize> = (0..132).collect();
+        // Only the bottom drawn, then edits that change how every line
+        // below parses (a comment opened and closed), lines removed and
+        // added, each compared with a parse from scratch.
+        let mut body = body;
+        let edits: [fn(&mut Vec<String>); 6] = [
+            |b| b[70].insert_str(0, "/*"),
+            |b| b[90].push_str("*/"),
+            |b| b[70].replace_range(0..2, ""),
+            |b| {
+                b.drain(50..60);
+            },
+            |b| b.insert(3, "fn f() {}".into()),
+            |b| b.push("}".into()),
+        ];
+        let _ = colors(&mut highlights, &block(&body), &bottom);
+        for (n, edit) in edits.iter().enumerate() {
+            edit(&mut body);
+            let text = block(&body);
+            let order = if n % 2 == 0 { &bottom } else { &all };
+            let fresh = colors(&mut Highlights::default(), &text, order);
+            assert_eq!(colors(&mut highlights, &text, order), fresh, "edit {n}");
+        }
     }
 }

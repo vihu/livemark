@@ -1,5 +1,6 @@
 //! Frame times for the milestone exit checks (PLAN-001): typing in the
-//! middle of a large document, scrolling it, and opening a 1 MB file,
+//! middle of a large document, scrolling it, opening a 1 MB file, and
+//! typing in a long code block,
 //! through iced's own frame loop (build the interface, feed the event,
 //! apply the messages, build again, draw) with a headless renderer.
 //!
@@ -102,6 +103,29 @@ fn main() {
         report(
             &format!("{lines} lines, a scroll frame (40 px)"),
             &scrolling,
+        );
+    }
+
+    // Typing in a 400-line Rust block, at its top and at line 200 (scrolled
+    // there): highlighting parses from the snapshot before the edited line
+    // down to the last line drawn, not the whole block.
+    let code: String = (0..400)
+        .map(|i| format!("    let x{i} = \"s{i}\"; // n{i}\n"))
+        .collect();
+    for line in [0usize, 200] {
+        let mut editor = Editor::new(format!("```rust\nfn main() {{\n{code}}}\n```\n"));
+        let press = Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left));
+        let release = Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left));
+        bench.frame(&mut editor, &[press, release]);
+        let at = editor.text().find(&format!("let x{line} ")).unwrap() + 5;
+        editor.select(at, at);
+        bench.frame(&mut editor, &[]);
+        let typing: Vec<Timing> = (0..FRAMES)
+            .map(|i| bench.frame(&mut editor, &[key(if i % 2 == 0 { "a" } else { "b" })]))
+            .collect();
+        report(
+            &format!("a 400-line code block, a keystroke at line {line}"),
+            &typing,
         );
     }
 }

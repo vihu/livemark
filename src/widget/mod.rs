@@ -12,6 +12,7 @@ mod surface;
 
 use std::cell::RefCell;
 use std::ops::Range;
+use std::sync::Arc;
 use std::time::Instant;
 
 use iced::advanced::widget::Id;
@@ -60,7 +61,13 @@ pub struct Editor {
     find: Option<find::Find>,
     mode: Mode,
     lines: RefCell<Lines>,
+    /// The last `hidden` worked out, by document version and selection:
+    /// several calls per frame ask for it (backlog 12).
+    hidden: RefCell<Option<HiddenFor>>,
 }
+
+/// Hidden markers and the document version and selection they are for.
+type HiddenFor = (u64, Range<usize>, Arc<[Range<usize>]>);
 
 /// A mouse press being held.
 #[derive(Debug, Clone)]
@@ -166,6 +173,7 @@ impl Editor {
                 code: Color::BLACK,
                 link: Color::BLACK,
             })),
+            hidden: RefCell::new(None),
         }
     }
 
@@ -256,15 +264,25 @@ impl Editor {
 
     /// The markers hidden with the selection drawn now; none in source
     /// mode.
-    fn hidden(&self) -> Vec<Range<usize>> {
+    fn hidden(&self) -> Arc<[Range<usize>]> {
         if self.mode == Mode::Source {
-            return Vec::new();
+            return Arc::new([]);
         }
         let selection = self
             .press
             .as_ref()
-            .map_or(self.doc.selection(), |press| press.frozen);
-        self.styled.hidden(selection.range())
+            .map_or(self.doc.selection(), |press| press.frozen)
+            .range();
+        let version = self.doc.version();
+        let mut cache = self.hidden.borrow_mut();
+        match &*cache {
+            Some((v, s, hidden)) if *v == version && *s == selection => hidden.clone(),
+            _ => {
+                let hidden: Arc<[Range<usize>]> = self.styled.hidden(selection.clone()).into();
+                *cache = Some((version, selection, hidden.clone()));
+                hidden
+            }
+        }
     }
 
     fn with_lines<R>(&self, f: impl FnOnce(&mut Lines, &Source) -> R) -> R {
