@@ -13,6 +13,7 @@ impl App {
         // The tag manager in the note's place; the editor is made again
         // when it closes (its text, scroll and caret are the `Editor`'s).
         let editor = match &self.manager {
+            _ if self.appearance => self.appearance_view(),
             Some(manager) => self.manager_view(manager),
             None => self.editor.view().map(Message::Editor),
         };
@@ -135,13 +136,18 @@ impl App {
                 's' => Some(Message::Save {
                     choose: modifiers.shift(),
                 }),
-                '=' | '+' => Some(Message::Zoom(1)),
-                '-' => Some(Message::Zoom(-1)),
-                '0' => Some(Message::Zoom(0)),
+                // The whole interface, as browsers do (PLAN-006); the
+                // text's own size is in Appearance.
+                '=' | '+' => Some(scale(1)),
+                '-' => Some(scale(-1)),
+                '0' => Some(scale(0)),
                 _ => None,
             }
         });
         let close = window::close_requests().map(|_| Message::CloseRequested);
+        // The system going light or dark, for System's picks.
+        let system = iced::system::theme_changes()
+            .map(|mode| Message::Appearance(super::appearance::AppearanceMessage::System(mode)));
         let focus = window::events().filter_map(|(_, event)| match event {
             window::Event::Focused => Some(Message::Focused),
             window::Event::Resized(size) => Some(Message::Resized(size)),
@@ -192,10 +198,15 @@ impl App {
             })
         });
         Subscription::batch(
-            [keys, close, focus, rename]
+            [keys, close, focus, rename, system]
                 .into_iter()
                 .chain(search)
                 .chain(asking),
         )
     }
+}
+
+/// The interface's scale a step: subscriptions take no captures.
+fn scale(step: i8) -> Message {
+    Message::Appearance(super::appearance::AppearanceMessage::Scale(step))
 }

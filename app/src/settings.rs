@@ -8,19 +8,86 @@ use std::path::{Path, PathBuf};
 /// How many recent files are kept.
 const RECENT: usize = 10;
 
-/// Light, dark, or as the system is.
+/// The theme: as the system is (between a light and a dark one picked),
+/// or one of iced's (PLAN-006).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Theme {
     #[default]
     System,
     Light,
     Dark,
+    KanagawaWave,
+    KanagawaLotus,
+    SolarizedLight,
+    SolarizedDark,
+    GruvboxLight,
+    GruvboxDark,
+    CatppuccinMocha,
+    CatppuccinFrappe,
+}
+
+impl Theme {
+    /// Every theme but System, light ones first.
+    pub const NAMED: [Theme; 10] = [
+        Theme::Light,
+        Theme::KanagawaLotus,
+        Theme::SolarizedLight,
+        Theme::GruvboxLight,
+        Theme::Dark,
+        Theme::KanagawaWave,
+        Theme::SolarizedDark,
+        Theme::GruvboxDark,
+        Theme::CatppuccinMocha,
+        Theme::CatppuccinFrappe,
+    ];
+
+    /// Its name as shown, and as kept in the settings file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::System => "System",
+            Theme::Light => "Light",
+            Theme::Dark => "Dark",
+            Theme::KanagawaWave => "Kanagawa Wave",
+            Theme::KanagawaLotus => "Kanagawa Lotus",
+            Theme::SolarizedLight => "Solarized Light",
+            Theme::SolarizedDark => "Solarized Dark",
+            Theme::GruvboxLight => "Gruvbox Light",
+            Theme::GruvboxDark => "Gruvbox Dark",
+            Theme::CatppuccinMocha => "Catppuccin Mocha",
+            Theme::CatppuccinFrappe => "Catppuccin Frappe",
+        }
+    }
+
+    pub fn is_dark(self) -> bool {
+        !matches!(
+            self,
+            Theme::System
+                | Theme::Light
+                | Theme::KanagawaLotus
+                | Theme::SolarizedLight
+                | Theme::GruvboxLight
+        )
+    }
+
+    /// The theme named `name` (any case, spaces or hyphens).
+    fn named(name: &str) -> Option<Theme> {
+        let wanted = name.trim().to_lowercase().replace('-', " ");
+        std::iter::once(Theme::System)
+            .chain(Theme::NAMED)
+            .find(|theme| theme.name().to_lowercase() == wanted)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
+    /// The note's text size (`Editor::set_zoom`).
     pub zoom: f32,
+    /// The whole interface's scale (PLAN-006).
+    pub scale: f32,
     pub theme: Theme,
+    /// What System follows by day and by night.
+    pub light: Theme,
+    pub dark: Theme,
     /// The window's size when it was last closed.
     pub window: Option<(f32, f32)>,
     /// Most recent first.
@@ -37,7 +104,10 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             zoom: 1.0,
+            scale: 1.0,
             theme: Theme::System,
+            light: Theme::Light,
+            dark: Theme::Dark,
             window: None,
             recent: Vec::new(),
             split: 0.5,
@@ -102,11 +172,22 @@ impl Settings {
                         settings.split = split;
                     }
                 }
-                "theme" => {
-                    settings.theme = match value {
-                        "light" => Theme::Light,
-                        "dark" => Theme::Dark,
-                        _ => Theme::System,
+                "scale" => {
+                    if let Ok(scale) = value.parse::<f32>()
+                        && (0.5..=2.0).contains(&scale)
+                    {
+                        settings.scale = scale;
+                    }
+                }
+                "theme" => settings.theme = Theme::named(value).unwrap_or_default(),
+                "theme by day" => {
+                    if let Some(theme) = Theme::named(value).filter(|t| !t.is_dark()) {
+                        settings.light = theme;
+                    }
+                }
+                "theme by night" => {
+                    if let Some(theme) = Theme::named(value).filter(|t| t.is_dark()) {
+                        settings.dark = theme;
                     }
                 }
                 "window" => {
@@ -131,12 +212,10 @@ impl Settings {
             "# livemark's settings: one `key = value` a line; unknown lines are ignored.\n",
         );
         text += &format!("zoom = {}\n", self.zoom);
-        let theme = match self.theme {
-            Theme::System => "system",
-            Theme::Light => "light",
-            Theme::Dark => "dark",
-        };
-        text += &format!("theme = {theme}\n");
+        text += &format!("scale = {}\n", self.scale);
+        text += &format!("theme = {}\n", self.theme.name().to_lowercase());
+        text += &format!("theme by day = {}\n", self.light.name().to_lowercase());
+        text += &format!("theme by night = {}\n", self.dark.name().to_lowercase());
         text += &format!("split = {}\n", self.split);
         if let Some((width, height)) = self.window {
             text += &format!("window = {}x{}\n", width.round(), height.round());
@@ -170,7 +249,10 @@ mod tests {
     fn settings_round_trip_and_survive_hand_edits() {
         let mut settings = Settings {
             zoom: 1.3,
-            theme: Theme::Dark,
+            scale: 1.2,
+            theme: Theme::KanagawaWave,
+            light: Theme::KanagawaLotus,
+            dark: Theme::CatppuccinMocha,
             window: Some((1200.0, 800.0)),
             recent: Vec::new(),
             split: 0.35,
@@ -191,6 +273,13 @@ mod tests {
         assert_eq!(broken, Settings::default());
         assert_eq!(Settings::parse("zoom = 9\n").zoom, 1.0);
         assert_eq!(Settings::parse("split = 0.9\n").split, 0.5);
+        // Themes by name, any case; a dark one is not System's by day.
+        assert_eq!(
+            Settings::parse("theme = Gruvbox-Dark\n").theme,
+            Theme::GruvboxDark
+        );
+        assert_eq!(Settings::parse("theme = light\n").theme, Theme::Light);
+        assert_eq!(Settings::parse("theme by day = dark\n").light, Theme::Light);
         // At most ten recent files.
         let mut many = Settings::default();
         for i in 0..15 {

@@ -212,7 +212,7 @@ fn a_pasted_picture_is_kept_next_to_the_note_and_linked() {
 
 #[test]
 fn the_file_menu_opens_recent_notes_and_sets_the_theme() {
-    use crate::settings::{Settings, Theme};
+    use crate::settings::Settings;
     let dir = std::env::temp_dir().join(format!("livemark-menu-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let (a, b, gone) = (dir.join("a.md"), dir.join("b.md"), dir.join("gone.md"));
@@ -250,12 +250,6 @@ fn the_file_menu_opens_recent_notes_and_sets_the_theme() {
     app.saved = u64::MAX;
     let _ = app.update(Message::Recent(a.clone()));
     assert!(matches!(app.pending, Some(super::After::Load(_))));
-    // The theme is shown and remembered.
-    let _ = app.update(Message::Theme(Theme::Dark));
-    assert_eq!(app.theme, Some(iced::Theme::Dark));
-    assert_eq!(app.settings.theme, Theme::Dark);
-    let _ = app.update(Message::Theme(Theme::System));
-    assert_eq!(app.theme, None);
     std::fs::remove_file(&a).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
@@ -323,4 +317,52 @@ fn the_bar_says_whether_the_note_is_saved_and_the_sidebar_hides() {
     assert!(app.settings.sidebar);
     let _ = app.view();
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn appearance_picks_themes_follows_the_system_and_scales_the_interface() {
+    use crate::appearance::AppearanceMessage as A;
+    use crate::settings::Theme as Named;
+    use iced::theme::Mode;
+    let send = |app: &mut App, message| {
+        let _ = app.update(Message::Appearance(message));
+        let _ = app.view();
+    };
+    // A flag's theme until one is picked.
+    let mut app = App::open(None, Some(iced::Theme::Dark));
+    assert_eq!(app.current_theme(), Some(iced::Theme::Dark));
+    send(&mut app, A::Open);
+    assert!(app.appearance);
+    send(&mut app, A::Theme(Named::KanagawaWave));
+    assert_eq!(app.current_theme(), Some(iced::Theme::KanagawaWave));
+    // System: the night pick when the system is dark, the day pick in light.
+    send(
+        &mut app,
+        A::Pick {
+            dark: true,
+            theme: Named::CatppuccinMocha,
+        },
+    );
+    assert_eq!(app.settings.theme, Named::System);
+    assert_eq!(app.current_theme(), None, "until the system says");
+    send(&mut app, A::System(Mode::Dark));
+    assert_eq!(app.current_theme(), Some(iced::Theme::CatppuccinMocha));
+    send(&mut app, A::System(Mode::Light));
+    assert_eq!(app.current_theme(), Some(iced::Theme::Light));
+    // The interface by tenths, from 50% to 200%.
+    send(&mut app, A::Scale(1));
+    send(&mut app, A::Scale(1));
+    assert_eq!(app.settings.scale, 1.2);
+    for _ in 0..20 {
+        send(&mut app, A::Scale(1));
+    }
+    assert_eq!(app.settings.scale, 2.0);
+    send(&mut app, A::Scale(0));
+    assert_eq!(app.settings.scale, 1.0);
+    // The note's text is left alone meanwhile; closing goes back to it.
+    app.editor.insert_text("x");
+    let before = app.editor.text().to_owned();
+    send(&mut app, A::Close);
+    assert!(!app.appearance);
+    assert_eq!(app.editor.text(), before);
 }

@@ -42,10 +42,11 @@ Or run it from source:
 cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 ```
 
-Light or dark follows the system unless a flag says. Ctrl+N starts a new
+The theme follows the system unless a flag says or you pick one. Ctrl+N starts a new
 note, Ctrl+O opens, Ctrl+S saves (asking where for a new note),
-Ctrl+Shift+S saves as; Ctrl+= and Ctrl+- (or Ctrl with the mouse wheel)
-make the text bigger or smaller (50% to 300%), Ctrl+0 resets it. A `*` in the
+Ctrl+Shift+S saves as; Ctrl+= and Ctrl+- scale the whole window (50% to
+200%), Ctrl+0 resets it; Ctrl with the mouse wheel over the note sizes its
+text, also set in Appearance. A `*` in the
 title marks unsaved changes; closing or opening another file then asks.
 When the window comes back into focus and the file changed on disk (git,
 another editor), it is loaded again; with unsaved changes the app asks
@@ -93,7 +94,12 @@ Ctrl+Q), "+" for a new note, and the button that hides the sidebar
 formatting buttons, the search field, whether the note is saved (Saved,
 Unsaved with a dot, or Not in the vault for a file from elsewhere) and the
 mode. Without a vault the sidebar offers to open one and lists the recent
-files. The zoom, the window's size, the theme,
+files. Appearance (in the vault menu) picks the theme: System, Light,
+Dark, Kanagawa Wave and Lotus, Solarized Light and Dark, Gruvbox Light and
+Dark, Catppuccin Mocha and Frappe, each shown as a little window in its
+colours; System follows the system between a light and a dark one you
+pick. It also sets the interface's size and the text's. The sizes, the
+window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click
 puts it back in the middle) and the ten most recent files are kept in `~/.config/livemark/settings` (macOS:
 `~/Library/Application Support/livemark/settings`), a `key = value` file.

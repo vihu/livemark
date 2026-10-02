@@ -6,6 +6,10 @@
   File's place; the note's bar has the formatting buttons without boxes,
   the search, whether the note is saved, and the mode as three icons.
   Ctrl+\ hides the sidebar; Ctrl+Q quits.
+- Appearance: Kanagawa Wave and Lotus, Solarized, Gruvbox and Catppuccin
+  Mocha and Frappe themes besides Light and Dark, System following the
+  system between a light and a dark pick; Ctrl+= and Ctrl+- scale the
+  whole interface, the text's size set apart.
 - Vaults: Open vault (in the vault menu) makes a folder of notes a vault, kept in your
   own git repository (the app never runs git). A sidebar lists the notes
   and their tags (front matter and inline `#tags`), a click on a tag

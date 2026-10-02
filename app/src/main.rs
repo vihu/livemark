@@ -19,6 +19,7 @@
 //! makes a folder of notes a vault with a sidebar (PLAN-004, `vault.rs`,
 //! `sidebar.rs`); with one and no file given, the note last open in it
 //! opens.
+mod appearance;
 mod cli;
 mod file;
 mod icons;
@@ -65,12 +66,13 @@ pub fn main() -> iced::Result {
         let last = settings.recent.first()?;
         (last.starts_with(vault) && last.exists()).then(|| last.clone())
     });
+    // A flag wins over the settings' theme until one is picked.
     let theme = if args.iter().any(|a| a == "--dark") {
         Some(Theme::Dark)
     } else if args.iter().any(|a| a == "--light") {
         Some(Theme::Light)
     } else {
-        iced_theme(settings.theme)
+        None
     };
     let size = settings
         .window
@@ -81,7 +83,10 @@ pub fn main() -> iced::Result {
         move || {
             let app = App::open(path.clone(), theme.clone())
                 .with_settings(settings.clone(), settings_file.clone());
-            (app, Editor::focus())
+            // Whether the system is light or dark, for System's picks.
+            let mode = iced::system::theme()
+                .map(|mode| Message::Appearance(appearance::AppearanceMessage::System(mode)));
+            (app, Task::batch([Editor::focus(), mode]))
         },
         App::update,
         App::view,
@@ -100,7 +105,8 @@ pub fn main() -> iced::Result {
     // menu and the bars.
     .fonts(livemark::fonts::ATKINSON_HYPERLEGIBLE_NEXT)
     .font(iced::Font::new(livemark::fonts::PROSE))
-    .theme(|app: &App| app.theme.clone())
+    .theme(App::current_theme)
+    .scale_factor(|app: &App| app.settings.scale)
     .subscription(App::subscription)
     .exit_on_close_request(false)
     .run()
@@ -115,7 +121,12 @@ struct App {
     /// The last open or save error, until the next success.
     error: Option<String>,
     /// `None` follows the system.
+    /// A `--dark` or `--light` flag's theme, until one is picked.
     theme: Option<Theme>,
+    /// Whether the system is light or dark, for System's picks.
+    system_mode: iced::theme::Mode,
+    /// The Appearance panel, in the note's place while it is open.
+    appearance: bool,
     /// What waits on an answer about unsaved changes.
     pending: Option<After>,
     /// The file's modification time when last opened or saved.
@@ -206,8 +217,8 @@ enum Message {
     Sidebar,
     /// A recent note picked in the File menu.
     Recent(PathBuf),
-    /// The theme picked in the File menu, remembered.
-    Theme(settings::Theme),
+    /// The Appearance panel and what it sets.
+    Appearance(appearance::AppearanceMessage),
     /// The vault and its sidebar.
     Vault(sidebar::VaultMessage),
     /// A tag's menu and what it does.
@@ -238,6 +249,8 @@ impl App {
             editor,
             error,
             theme,
+            system_mode: iced::theme::Mode::None,
+            appearance: false,
             pending: None,
             changed: false,
             discarded: None,
@@ -344,7 +357,7 @@ impl App {
         match message {
             // The note is out of sight behind the tag manager: its toolbar
             // does nothing meanwhile.
-            Message::Editor(_) if self.manager.is_some() => {}
+            Message::Editor(_) if self.manager.is_some() || self.appearance => {}
             Message::Editor(message) if message.pasted_image().is_some() => {
                 return self.paste_picture(message.pasted_image().unwrap_or_default());
             }
@@ -476,11 +489,7 @@ impl App {
                 self.settings.sidebar = !self.settings.sidebar;
                 self.remember();
             }
-            Message::Theme(theme) => {
-                self.theme = iced_theme(theme);
-                self.settings.theme = theme;
-                self.remember();
-            }
+            Message::Appearance(message) => return self.appearance_update(message),
             Message::Reload(false) => {
                 // Keep this text; saving will replace the file's.
                 self.changed = false;
@@ -488,15 +497,6 @@ impl App {
             }
         }
         Task::none()
-    }
-}
-
-/// The iced theme for a remembered one; `None` follows the system.
-fn iced_theme(theme: settings::Theme) -> Option<Theme> {
-    match theme {
-        settings::Theme::System => None,
-        settings::Theme::Light => Some(Theme::Light),
-        settings::Theme::Dark => Some(Theme::Dark),
     }
 }
 

@@ -58,6 +58,7 @@ impl App {
     pub(crate) fn manager_update(&mut self, message: ManagerMessage) -> Task<Message> {
         match message {
             ManagerMessage::Open(tag) => {
+                self.appearance = false;
                 self.tag_menu = None;
                 self.tag_action = None;
                 self.manager = Some(Manager {

@@ -1,7 +1,7 @@
 //! The app's icons (PLAN-006) as canvas outlines drawn in a 20 px box and
 //! scaled, as the library draws its toolbar's: no image files, crisp at
 //! any scale, in a tone of the theme.
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use iced::widget::canvas::{self, Frame, LineCap, LineJoin, Path, Stroke, path::Arc};
 use iced::{Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse};
@@ -13,6 +13,7 @@ pub enum Icon {
     Panel,
     Chevron,
     Plus,
+    Minus,
     Search,
     Check,
     Folder,
@@ -20,6 +21,7 @@ pub enum Icon {
     Clock,
     Save,
     Quit,
+    Palette,
 }
 
 /// The color an icon is drawn in.
@@ -102,6 +104,7 @@ impl<M> canvas::Program<M> for Glyph {
                 frame.stroke(&line(&[(10.0, 4.0), (10.0, 16.0)]), stroke(2.0));
                 frame.stroke(&line(&[(4.0, 10.0), (16.0, 10.0)]), stroke(2.0));
             }
+            Icon::Minus => frame.stroke(&line(&[(4.0, 10.0), (16.0, 10.0)]), stroke(2.0)),
             Icon::Search => {
                 s(circle(8.5, 8.5, 5.0));
                 s(line(&[(12.5, 12.5), (16.5, 16.5)]));
@@ -136,6 +139,13 @@ impl<M> canvas::Program<M> for Glyph {
                     (13.5, 12.0),
                     (13.5, 16.5),
                 ]));
+            }
+            Icon::Palette => {
+                s(arc(10.0, 10.0, 7.5, PI * 0.25, PI * 2.0));
+                s(line(&[(15.3, 15.3), (13.0, 13.0), (12.0, 13.0)]));
+                for (x, y) in [(6.5, 9.0), (9.0, 6.0), (13.0, 6.5)] {
+                    frame.fill(&circle(x, y, 1.0), color);
+                }
             }
             Icon::Quit => {
                 s(line(&[(10.0, 3.0), (10.0, 9.0)]));

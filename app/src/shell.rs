@@ -12,9 +12,10 @@ use iced::widget::{
 };
 use iced::{Element, Length, Theme};
 
+use super::appearance::AppearanceMessage;
 use super::icons::{Icon, Tone, icon};
 use super::sidebar::{VaultMessage, WIDTH, choice};
-use super::{App, Message, settings};
+use super::{App, Message};
 
 /// The note's state as its bar shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -299,7 +300,7 @@ impl App {
     }
 
     /// The vault menu: new, open, open vault, the recent files, save, save
-    /// as, the theme, quit.
+    /// as, Appearance, the interface's zoom, quit.
     pub(crate) fn vault_menu(&self) -> Element<'_, Message> {
         let item = |glyph: Icon, label: &'static str, key: &str, message: Message| {
             button(
@@ -373,31 +374,31 @@ impl App {
                 Message::Save { choose: true },
             ))
             .push(rule::horizontal(1));
-        // As shown: a `--dark` or `--light` flag wins over the settings.
-        let shown = match &self.theme {
-            None => settings::Theme::System,
-            Some(Theme::Dark) => settings::Theme::Dark,
-            Some(_) => settings::Theme::Light,
+        let step = |glyph: Icon, message: Message| {
+            button(icon(glyph, 12.0, Tone::Quiet))
+                .padding([5, 7])
+                .style(button::secondary)
+                .on_press(message)
         };
-        let theme = |label: &'static str, theme: settings::Theme| {
-            button(text(label).size(13))
-                .padding([4, 10])
-                .style(if theme == shown {
-                    button::primary
-                } else {
-                    button::text
-                })
-                .on_press(Message::Theme(theme))
-        };
+        let scale = |step| Message::Appearance(AppearanceMessage::Scale(step));
         items = items
+            .push(item(
+                Icon::Palette,
+                "Appearance...",
+                "",
+                Message::Appearance(AppearanceMessage::Open),
+            ))
             .push(
                 row![
-                    text("Theme").size(14).width(Length::Fill),
-                    theme("System", settings::Theme::System),
-                    theme("Light", settings::Theme::Light),
-                    theme("Dark", settings::Theme::Dark),
+                    text("Zoom").size(14).width(Length::Fill),
+                    step(Icon::Minus, scale(-1)),
+                    text(format!("{:.0}%", self.settings.scale * 100.0))
+                        .size(13)
+                        .width(48)
+                        .center(),
+                    step(Icon::Plus, scale(1)),
                 ]
-                .spacing(2)
+                .spacing(6)
                 .padding([4, 10])
                 .align_y(iced::Center),
             )
