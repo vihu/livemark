@@ -234,14 +234,34 @@ fn code_blocks_dim_their_fences_and_keep_their_lines() {
 fn a_table_is_monospace_with_its_pipes_and_delimiter_row_dimmed() {
     let text = "| a | b |\n| :- | -: |\n| 1 | 2 |\n";
     let styled = Styled::new(text);
-    assert!(styled.runs().iter().all(|(_, s)| s.table));
+    // Rows, not the line endings between them (in a list or quote the
+    // prefixes there would be in the code font too).
+    assert!(
+        styled
+            .runs()
+            .iter()
+            .all(|(r, s)| s.table || &text[r.clone()] == "\n")
+    );
     let marked: Vec<&str> = styled
         .runs()
         .iter()
         .filter(|(_, style)| style.marker)
         .map(|(r, _)| &text[r.clone()])
         .collect();
-    assert_eq!(marked, ["|", "|", "|\n| :- | -: |\n|", "|", "|"]);
+    assert_eq!(
+        marked,
+        ["|", "|", "|", "\n", "| :- | -: |", "\n", "|", "|", "|"]
+    );
+}
+
+#[test]
+fn a_table_in_a_list_keeps_its_rows_indentation_in_the_prose_font() {
+    let text = "- x\n\n  | a |\n  | - |\n  | b |\n";
+    let styled = Styled::new(text);
+    let table = picked(text, &styled, |s| s.table);
+    // No run starts with the indentation; the header's text is bold, so
+    // its padding is a run of its own.
+    assert_eq!(table, ["|", " ", "a", " ", "|", "| - |", "|", " b ", "|"]);
 }
 
 #[test]

@@ -141,8 +141,10 @@ impl Walk<'_> {
             Event::Start(Tag::CodeBlock(kind)) => self.code_start(kind, range),
             Event::End(TagEnd::CodeBlock) => self.code_end(),
             Event::Start(Tag::Table(align)) => {
+                // The code font goes on each row, not on the table's range,
+                // which also holds the container prefixes of the rows
+                // after the first.
                 let end = range.start + line_trim(&self.text[range.clone()]);
-                self.toggles.push((range.start..end, Flag::Table));
                 self.cells = Some((range.start..end, Vec::new()));
                 let align = align.iter().map(|a| match a {
                     Alignment::None => Align::None,
@@ -159,6 +161,7 @@ impl Walk<'_> {
             }
             Event::Start(Tag::TableHead | Tag::TableRow) if self.cells.is_some() => {
                 let end = range.start + line_trim(&self.text[range.clone()]);
+                self.toggles.push((range.start..end, Flag::Table));
                 if let Some(table) = self.tables.last_mut() {
                     table.rows.push((range.start..end, Vec::new()));
                 }

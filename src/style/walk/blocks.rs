@@ -141,8 +141,10 @@ impl Walk<'_> {
             let next = &self.text[line..touch.end];
             let len = next.find(['\n', '\r']).unwrap_or(next.len());
             let rule = next[..len].trim_start_matches(['>', ' ', '\t']);
+            let range = line + len - rule.len()..line + len;
+            self.toggles.push((range.clone(), Flag::Table));
             marks.push(Mark {
-                range: line + len - rule.len()..line + len,
+                range,
                 touch,
                 kind: MarkKind::TableRule(index),
             });

@@ -155,7 +155,16 @@ impl Editor {
                         continue;
                     };
                     let grid = lines.grid(source, table);
-                    let x = marks::start_x(&shaped, mark.range.start);
+                    // The band's own line is shaped thin: it lines up with
+                    // the header row's.
+                    let x = match mark.kind {
+                        MarkKind::TableRule(_) => {
+                            let header = source.styled.tables()[table].rows[0].0.start;
+                            let shaped = lines.shaped(source, source.doc.line_at(header));
+                            marks::start_x(&shaped, header)
+                        }
+                        _ => marks::start_x(&shaped, mark.range.start),
+                    };
                     let at = origin + Vector::new(x, 0.0);
                     if let MarkKind::TableRow(_, row) = mark.kind {
                         let colors = (text, quote_bar, code_background);
