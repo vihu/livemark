@@ -2,7 +2,7 @@
 //! their own modules hand over to them.
 use iced::Task;
 
-use super::{After, App, Message, file, open_link, sidebar, tag_actions};
+use super::{After, App, Message, file, note_actions, open_link, sidebar, tag_actions};
 
 impl App {
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
@@ -12,6 +12,27 @@ impl App {
             Message::New | Message::Open | Message::Save { .. } | Message::Recent(_)
         ) {
             self.menu = false;
+        }
+        // Autosave: the note written before it gives way, the window loses
+        // focus, or a change across the vault needs it saved.
+        let gives_way = matches!(
+            message,
+            Message::New
+                | Message::Open
+                | Message::Opened(Some(_))
+                | Message::Recent(_)
+                | Message::CloseRequested
+                | Message::Blurred
+                | Message::Manager(_)
+                | Message::IntoVault(_)
+                | Message::Tag(tag_actions::TagMessage::Confirm)
+                | Message::Note(
+                    note_actions::NoteMessage::Confirm | note_actions::NoteMessage::Duplicate(_)
+                )
+                | Message::Vault(sidebar::VaultMessage::Picked(_) | sidebar::VaultMessage::Create)
+        );
+        if gives_way {
+            self.save_quietly();
         }
         match message {
             // The note is out of sight behind the tag manager: its toolbar
@@ -38,11 +59,17 @@ impl App {
                 if let Some(Err(error)) = message.link().map(open_link) {
                     self.error = Some(error);
                 }
+                let version = self.editor.version();
                 let task = self.editor.update(message).map(Message::Editor);
                 self.load_images();
                 self.remember_zoom();
                 self.offer_choices();
-                return task;
+                let typed = if self.editor.version() == version {
+                    Task::none()
+                } else {
+                    self.typed()
+                };
+                return Task::batch([task, typed]);
             }
             // In a vault a new note is named first and made there.
             Message::New if self.vault.is_some() => {
@@ -60,6 +87,8 @@ impl App {
             }
             Message::Opened(Some(path)) => return self.load(path),
             Message::Opened(None) => {}
+            Message::Blurred => {}
+            Message::AutosaveTick => return self.autosave_tick(),
             // Never over a file changed on disk since it was opened or
             // saved: ask first (Load it, Keep mine), then save again.
             Message::Save { choose: false } if self.changed_on_disk() => self.changed = true,

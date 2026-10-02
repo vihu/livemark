@@ -104,6 +104,8 @@ pub struct Settings {
     pub sidebar: bool,
     /// The sidebar's width, its edge dragged (PLAN-006).
     pub sidebar_width: f32,
+    /// Whether notes are written as they are typed (PLAN-006).
+    pub autosave: bool,
 }
 
 impl Default for Settings {
@@ -120,6 +122,7 @@ impl Default for Settings {
             vault: None,
             sidebar: true,
             sidebar_width: SIDEBAR_WIDTH,
+            autosave: true,
         }
     }
 }
@@ -205,6 +208,7 @@ impl Settings {
                 }
                 "vault" if !value.is_empty() => settings.vault = Some(PathBuf::from(value)),
                 "sidebar" => settings.sidebar = value != "hidden",
+                "autosave" => settings.autosave = value != "off",
                 "sidebar width" => {
                     if let Ok(width) = value.parse::<f32>()
                         && SIDEBAR_WIDTHS.contains(&width)
@@ -241,6 +245,9 @@ impl Settings {
             text += "sidebar = hidden\n";
         }
         text += &format!("sidebar width = {}\n", self.sidebar_width.round());
+        if !self.autosave {
+            text += "autosave = off\n";
+        }
         for path in &self.recent {
             text += &format!("recent = {}\n", path.display());
         }
@@ -274,6 +281,7 @@ mod tests {
             vault: Some("/notes".into()),
             sidebar: false,
             sidebar_width: 320.0,
+            autosave: false,
         };
         settings.opened(std::path::Path::new("/notes/a.md"));
         settings.opened(std::path::Path::new("/notes/b.md"));

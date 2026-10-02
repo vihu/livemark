@@ -45,10 +45,12 @@ fn a_file_changed_on_disk_loads_on_focus_or_asks_with_edits() {
     let _ = app.update(Message::Reload(false));
     let _ = app.update(Message::Save { choose: false });
     assert!(!app.changed, "saving");
-    // A file picked while there is unsaved typing waits for an answer;
-    // one picked after discarding loads.
+    // A file picked while there is unsaved typing waits for an answer
+    // (autosave off; on, it writes the note first); one picked after
+    // discarding loads.
     let other = dir.join("other.md");
     write(&other, "other\n", 0);
+    app.settings.autosave = false;
     app.saved = u64::MAX;
     let _ = app.update(Message::Opened(Some(other.clone())));
     assert!(matches!(app.pending, Some(super::After::Load(_))));
@@ -246,7 +248,8 @@ fn the_file_menu_opens_recent_notes_and_sets_the_theme() {
     let _ = app.update(Message::Recent(gone.clone()));
     assert!(app.error.as_deref().is_some_and(|e| e.contains("gone.md")));
     assert!(!app.settings.recent.contains(&gone));
-    // With unsaved typing, it asks first.
+    // With unsaved typing and autosave off, it asks first.
+    app.settings.autosave = false;
     app.saved = u64::MAX;
     let _ = app.update(Message::Recent(a.clone()));
     assert!(matches!(app.pending, Some(super::After::Load(_))));
@@ -388,4 +391,48 @@ fn the_sidebars_edge_drags_between_bounds_and_a_double_click_resets_it() {
     assert!(!app.resizing);
     drag(&mut app, Resize::Reset);
     assert_eq!(app.settings.sidebar_width, 260.0);
+}
+
+#[test]
+fn autosave_writes_after_the_quiet_on_leaving_and_before_another_note() {
+    use std::time::{Duration, Instant};
+    let dir = std::env::temp_dir().join(format!("livemark-autosave-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b) = (dir.join("a.md"), dir.join("b.md"));
+    write(&a, "a\n", 0);
+    write(&b, "b\n", 0);
+    let mut app = App::open(Some(a.clone()), None);
+    let typing = |app: &mut App, text: &str| {
+        let end = app.editor.text().len();
+        app.editor.select(end, end);
+        app.editor.insert_text(text);
+        let _ = app.typed();
+    };
+    // Typing starts one wait; the wait ends early while typing goes on.
+    typing(&mut app, "1");
+    assert!(app.autosave_waiting);
+    typing(&mut app, "2");
+    let _ = app.autosave_tick();
+    assert!(app.autosave_waiting, "waits again for the rest");
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "a\n");
+    // Two quiet seconds: written.
+    app.last_edit = Some(Instant::now() - Duration::from_secs(3));
+    let _ = app.autosave_tick();
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "a\n12");
+    assert!(!app.unsaved());
+    // Leaving the window writes it, and so does opening another note.
+    typing(&mut app, "3");
+    let _ = app.update(Message::Blurred);
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "a\n123");
+    typing(&mut app, "4");
+    let _ = app.update(Message::Opened(Some(b.clone())));
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "a\n1234");
+    assert!(app.pending.is_none(), "nothing asked");
+    assert_eq!(app.path.as_ref(), Some(&b));
+    // Never over a file changed on disk since.
+    typing(&mut app, "5");
+    write(&b, "theirs\n", 30);
+    let _ = app.update(Message::Blurred);
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "theirs\n");
+    std::fs::remove_dir_all(&dir).unwrap();
 }

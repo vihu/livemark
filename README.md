@@ -46,8 +46,12 @@ The theme follows the system unless a flag says or you pick one. Ctrl+N starts a
 note, Ctrl+O opens, Ctrl+S saves (asking where for a new note),
 Ctrl+Shift+S saves as; Ctrl+= and Ctrl+- scale the whole window (50% to
 200%), Ctrl+0 resets it; Ctrl with the mouse wheel over the note sizes its
-text, also set in Appearance. A `*` in the
-title marks unsaved changes; closing or opening another file then asks.
+text, also set in Appearance. Autosave (on unless turned off in
+Appearance) writes a note two seconds after typing stops, when the window
+loses focus, and before another note opens or the window closes; never
+over a file changed on disk, and a new note still asks where. A `*` in the
+title marks unsaved changes; with autosave off, closing or opening another
+file then asks.
 When the window comes back into focus and the file changed on disk (git,
 another editor), it is loaded again; with unsaved changes the app asks
 which to keep. Images are read from files next to the note (relative

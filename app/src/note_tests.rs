@@ -77,7 +77,9 @@ fn a_rename_moves_the_file_retitles_it_and_its_links_follow_then_undo() {
     assert!(read(&old).contains("title: Lisbon hotels"));
     assert!(read(&root.join("plan.md")).contains("(2026-09-30-lisbon-hotels.md#rooms)"));
     assert_eq!(app.path.as_ref(), Some(&old));
-    // F2 asks to rename the open note; refused over unsaved typing.
+    // F2 asks to rename the open note; refused over unsaved typing when
+    // autosave is off (on, it writes the note first).
+    app.settings.autosave = false;
     note(&mut app, NoteMessage::StartRename(None));
     assert!(matches!(&app.note_action, Some(NoteAction::Rename { path, .. }) if *path == old));
     app.editor.insert_text("typed ");
@@ -159,7 +161,8 @@ fn a_note_outside_the_vault_moves_or_copies_in_with_front_matter_and_back() {
         let _ = app.update(Message::IntoVault(message));
         let _ = app.view();
     };
-    // Unsaved typing first: refused.
+    // Unsaved typing first, autosave off: refused.
+    app.settings.autosave = false;
     let end = app.editor.text().len();
     app.editor.select(end, end);
     app.editor.insert_text("x");

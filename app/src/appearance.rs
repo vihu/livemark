@@ -4,7 +4,7 @@
 //! interface's scale (Ctrl+=, Ctrl+- and Ctrl+0) and the note's text size
 //! on top of it.
 use iced::theme::Mode;
-use iced::widget::{Space, button, column, container, pick_list, row, scrollable, text};
+use iced::widget::{Space, button, column, container, pick_list, row, scrollable, text, toggler};
 use iced::{Color, Element, Length, Task, Theme};
 
 use super::icons::{Icon, Tone, icon};
@@ -26,6 +26,8 @@ pub enum AppearanceMessage {
     Scale(i8),
     /// The system went light or dark.
     System(Mode),
+    /// Autosave on or off.
+    Autosave(bool),
 }
 
 /// The iced theme for a named one; `None` for System.
@@ -99,6 +101,10 @@ impl App {
                 self.remember();
             }
             AppearanceMessage::System(mode) => self.system_mode = mode,
+            AppearanceMessage::Autosave(on) => {
+                self.settings.autosave = on;
+                self.remember();
+            }
         }
         Task::none()
     }
@@ -173,6 +179,34 @@ impl App {
                 Space::new().height(8),
                 heading("Size"),
                 sizes,
+                Space::new().height(8),
+                heading("Saving"),
+                container(
+                    row![
+                        column![
+                            text("Autosave").size(14),
+                            text("Two seconds after typing stops, on leaving the window, and before another note opens. A new note still asks where.")
+                                .size(12)
+                                .style(text::secondary),
+                        ]
+                        .spacing(2)
+                        .width(Length::Fill),
+                        toggler(self.settings.autosave)
+                            .on_toggle(|on| Message::Appearance(AppearanceMessage::Autosave(on)))
+                            .size(22),
+                    ]
+                    .spacing(12)
+                    .align_y(iced::Center),
+                )
+                .padding([12, 14])
+                .style(|theme: &Theme| container::Style {
+                    border: iced::Border {
+                        color: theme.palette().background.strong.color,
+                        width: 1.0,
+                        radius: 12.0.into(),
+                    },
+                    ..container::Style::default()
+                }),
             ]
             .spacing(12)
             .padding(iced::Padding {

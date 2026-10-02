@@ -20,6 +20,7 @@
 //! `sidebar.rs`); with one and no file given, the note last open in it
 //! opens.
 mod appearance;
+mod autosave;
 mod cli;
 mod file;
 mod icons;
@@ -137,6 +138,10 @@ struct App {
     resizing: bool,
     /// The file whose "outside the vault" bar was closed.
     outside_dismissed: Option<PathBuf>,
+    /// When the note was last edited, for autosave, and whether a wait
+    /// for the quiet after it is under way.
+    last_edit: Option<std::time::Instant>,
+    autosave_waiting: bool,
     /// What waits on an answer about unsaved changes.
     pending: Option<After>,
     /// The file's modification time when last opened or saved.
@@ -241,6 +246,10 @@ enum Message {
     Escape,
     /// The bar over a note outside the vault.
     IntoVault(into_vault::IntoVault),
+    /// The window lost focus: autosave writes the note.
+    Blurred,
+    /// Autosave's wait for the quiet after typing is over.
+    AutosaveTick,
     /// A recent note picked in the File menu.
     Recent(PathBuf),
     /// The Appearance panel and what it sets.
@@ -281,6 +290,8 @@ impl App {
             appearance: false,
             resizing: false,
             outside_dismissed: None,
+            last_edit: None,
+            autosave_waiting: false,
             pending: None,
             changed: false,
             discarded: None,

@@ -154,6 +154,7 @@ impl App {
             .map(|mode| Message::Appearance(super::appearance::AppearanceMessage::System(mode)));
         let focus = window::events().filter_map(|(_, event)| match event {
             window::Event::Focused => Some(Message::Focused),
+            window::Event::Unfocused => Some(Message::Blurred),
             window::Event::Resized(size) => Some(Message::Resized(size)),
             window::Event::FileDropped(file) => Some(Message::Dropped(file)),
             _ => None,
