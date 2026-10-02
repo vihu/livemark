@@ -11,7 +11,7 @@ use super::Editor;
 use super::lines::{Shaped, marks_in};
 use super::marks;
 use super::shape::{Colors, TEXT_SIZE};
-use crate::style::Style;
+use crate::style::{MarkKind, Style};
 
 /// How far a code block's band reaches past the text on either side.
 const CODE_INSET: f32 = 8.0;
@@ -89,7 +89,16 @@ impl Editor {
                     );
                     quad(renderer, bar, quote_bar);
                 }
-                for code in spans(&shaped.line.runs, |s| s.code) {
+                let in_grid = marks_in(source.concealed, range.clone())
+                    .any(|m| matches!(m.kind, MarkKind::TableRow(..) | MarkKind::TableRule(_)));
+                // Inline code boxes and the decorations below belong to the
+                // source, which a grid covers.
+                let boxes = if in_grid {
+                    Vec::new()
+                } else {
+                    spans(&shaped.line.runs, |s| s.code)
+                };
+                for code in boxes {
                     for (r, _) in shaped.stretches(code) {
                         let r = Rectangle::new(
                             Point::new(r.x - 2.0, r.y + 2.0),
@@ -106,7 +115,7 @@ impl Editor {
                         .hidden
                         .iter()
                         .any(|h| h.start < found.end && found.start < h.end);
-                    if hidden || found.end > range.end {
+                    if hidden || found.end > range.end || in_grid {
                         continue;
                     }
                     let from = shaped.line.to_display(found.start);
@@ -139,6 +148,26 @@ impl Editor {
                     }
                 }
                 draw_text(renderer, &shaped, origin, area, text);
+                // A table outside the selection: its grid over the rows.
+                for mark in marks_in(source.concealed, range.clone()) {
+                    let (MarkKind::TableRow(table, _) | MarkKind::TableRule(table)) = mark.kind
+                    else {
+                        continue;
+                    };
+                    let grid = lines.grid(source, table);
+                    let x = marks::start_x(&shaped, mark.range.start);
+                    let at = origin + Vector::new(x, 0.0);
+                    if let MarkKind::TableRow(_, row) = mark.kind {
+                        let colors = (text, quote_bar, code_background);
+                        grid.draw_row(renderer, row, at, shaped.height, area, colors);
+                    } else {
+                        quad(
+                            renderer,
+                            Rectangle::new(at, Size::new(grid.width(), shaped.height)),
+                            quote_bar,
+                        );
+                    }
+                }
                 let line_text = &source.doc.text()[range.clone()];
                 marks::draw(
                     renderer,
@@ -171,7 +200,7 @@ impl Editor {
                         colors.link,
                     ),
                 ];
-                for (stretch, rise, color) in decorations {
+                for (stretch, rise, color) in decorations.into_iter().filter(|_| !in_grid) {
                     for range in stretch {
                         for (r, baseline) in shaped.stretches(range) {
                             let line = Rectangle::new(

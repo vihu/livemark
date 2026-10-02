@@ -104,6 +104,7 @@ pub(super) fn draw<'a>(
                 }
             }
             MarkKind::Underline => {}
+            MarkKind::TableRow(..) | MarkKind::TableRule(_) => {}
             MarkKind::Rule => {
                 let thickness = (size / 12.0).max(1.0).round();
                 let rule = Rectangle::new(
@@ -187,4 +188,10 @@ fn centered(x: f32, y: f32, width: f32, height: f32) -> Rectangle {
         Point::new((x - width / 2.0).round(), (y - height / 2.0).round()),
         Size::new(width, height),
     )
+}
+
+/// Where source offset `at` of the line `shaped` is drawn, from the line's
+/// left edge (on its first row).
+pub(super) fn start_x(shaped: &Shaped, at: usize) -> f32 {
+    box_of(shaped, at..at).map_or(0.0, |(rect, _)| rect.x)
 }

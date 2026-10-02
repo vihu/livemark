@@ -3,10 +3,12 @@
 //! and the points wrapped rows hang from.
 use std::ops::Range;
 
-use pulldown_cmark::{CodeBlockKind, Event, LinkType, Tag, TagEnd};
+use pulldown_cmark::{Alignment, Event, LinkType, Tag, TagEnd};
 
 use super::sweep::{Flag, sweep};
-use super::{CodeBlock, Construct, Mark, MarkKind, Styled, Syntax};
+
+mod blocks;
+use super::{Align, CodeBlock, Construct, Mark, MarkKind, Styled, Syntax, Table};
 use crate::parse;
 
 /// Styles `text`.
@@ -26,6 +28,7 @@ pub(super) fn walk(text: &str) -> Styled {
         quote_depth: 0,
         item: None,
         marks: Vec::new(),
+        tables: Vec::new(),
     };
     for (event, range) in parse::events(text) {
         walk.inside_span(&range);
@@ -69,6 +72,9 @@ struct Walk<'a> {
     /// The start of a list item whose first inline content is to come.
     item: Option<usize>,
     marks: Vec<Mark>,
+    /// Finished tables, and the last one is being read while `cells` is
+    /// set.
+    tables: Vec<Table>,
 }
 
 impl Walk<'_> {
@@ -121,14 +127,38 @@ impl Walk<'_> {
             }
             Event::Start(Tag::CodeBlock(kind)) => self.code_start(kind, range),
             Event::End(TagEnd::CodeBlock) => self.code_end(),
-            Event::Start(Tag::Table(_)) => {
+            Event::Start(Tag::Table(align)) => {
                 let end = range.start + line_trim(&self.text[range.clone()]);
                 self.toggles.push((range.start..end, Flag::Table));
                 self.cells = Some((range.start..end, Vec::new()));
+                let align = align.iter().map(|a| match a {
+                    Alignment::None => Align::None,
+                    Alignment::Left => Align::Left,
+                    Alignment::Center => Align::Center,
+                    Alignment::Right => Align::Right,
+                });
+                self.tables.push(Table {
+                    range: range.start..end,
+                    align: align.collect(),
+                    rows: Vec::new(),
+                    markers: Vec::new(),
+                });
+            }
+            Event::Start(Tag::TableHead | Tag::TableRow) if self.cells.is_some() => {
+                let end = range.start + line_trim(&self.text[range.clone()]);
+                if let Some(table) = self.tables.last_mut() {
+                    table.rows.push((range.start..end, Vec::new()));
+                }
             }
             Event::Start(Tag::TableCell) => {
                 if let Some((_, cells)) = &mut self.cells {
-                    cells.push(range);
+                    cells.push(range.clone());
+                }
+                let cell = &self.text[range.clone()];
+                let start = range.start + cell.len() - cell.trim_start().len();
+                let end = (range.start + cell.trim_end().len()).max(start);
+                if let Some((_, cells)) = self.tables.last_mut().and_then(|t| t.rows.last_mut()) {
+                    cells.push(start..end);
                 }
             }
             Event::End(TagEnd::Table) => {
@@ -138,6 +168,7 @@ impl Walk<'_> {
                         self.toggles.push((gap, Flag::Marker));
                     }
                 }
+                self.table_marks();
             }
             Event::Start(Tag::BlockQuote(_)) => {
                 if self.quote_depth == 0 {
@@ -261,6 +292,8 @@ impl Walk<'_> {
                 markers,
                 group: self.open.first().copied().unwrap_or(index),
             });
+        } else {
+            self.cell_markers(markers);
         }
         index
     }
@@ -321,109 +354,17 @@ impl Walk<'_> {
         }
         if let Some(index) = span.construct {
             self.constructs[index].markers = [opening, closing];
+        } else if self.cells.is_some() && !span.image {
+            self.cell_markers([opening, closing]);
         }
     }
 
-    fn code_start(&mut self, kind: CodeBlockKind, range: Range<usize>) {
-        let end = range.start + line_trim(&self.text[range.clone()]);
-        let (language, indent) = match kind {
-            CodeBlockKind::Fenced(info) => {
-                let language = info.split_whitespace().next().unwrap_or("");
-                (Some(language.to_owned()), 0)
-            }
-            // An indented block's range starts after its first line's
-            // indentation, which is the block's too.
-            CodeBlockKind::Indented => {
-                let before = &self.text[..range.start];
-                (
-                    None,
-                    before.len() - before.trim_end_matches([' ', '\t']).len(),
-                )
-            }
-        };
-        let start = range.start - indent;
-        self.toggles.push((start..end, Flag::CodeBlock));
-        let block = CodeBlock {
-            range: start..end,
-            language,
-            lines: Vec::new(),
-        };
-        self.code = Some((block, Vec::new()));
-    }
-
-    fn code_end(&mut self) {
-        if let Some((mut block, texts)) = self.code.take() {
-            // Around a fenced block's code: fences and the prefixes of the
-            // container it sits in.
-            if block.language.is_some() {
-                for gap in gaps(block.range.clone(), &texts) {
-                    self.toggles.push((gap.clone(), Flag::Marker));
-                    // The fences among them: a run of ``` or ~~~ after
-                    // any container prefix, to the line's end.
-                    for line in lines_of(self.text, gap) {
-                        let text = &self.text[line.clone()];
-                        let fence = text.trim_start_matches(['>', ' ', '\t']);
-                        if fence.starts_with("```") || fence.starts_with("~~~") {
-                            self.marks.push(Mark {
-                                range: line.end - fence.len()..line.end,
-                                touch: block.range.clone(),
-                                kind: MarkKind::Fence,
-                            });
-                        }
-                    }
-                }
-            }
-            // In a container, pulldown-cmark ends a CRLF line with a text
-            // event of its own after skipping the `\r`: join them, or the
-            // ending would make a line.
-            let mut joined: Vec<Range<usize>> = Vec::with_capacity(texts.len());
-            for text in texts {
-                match joined.last_mut() {
-                    Some(last)
-                        if text.start == last.end + 1
-                            && self.text[last.end..].starts_with("\r\n") =>
-                    {
-                        last.end = text.end;
-                    }
-                    _ => joined.push(text),
-                }
-            }
-            block.lines = joined
-                .into_iter()
-                .flat_map(|t| lines_of(self.text, t))
-                .collect();
-            self.code_blocks.push(block);
-        }
-    }
-
-    /// Each line of a quote: its `>` markers (nested ones too, never inside
-    /// text) dimmed, and its wrapped rows hanging after them.
-    fn quote_markers(&mut self, quote: Range<usize>) {
-        let bytes = self.text.as_bytes();
-        let mut line = quote.start;
-        loop {
-            let mut at = line;
-            let mut hang = None;
-            loop {
-                while matches!(bytes.get(at), Some(b' ' | b'\t')) {
-                    at += 1;
-                }
-                if bytes.get(at) != Some(&b'>') || self.in_text(at) {
-                    break;
-                }
-                self.toggles.push((at..at + 1, Flag::Marker));
-                self.mark(at..at + 1, MarkKind::Quote);
-                at += 1;
-                if bytes.get(at) == Some(&b' ') {
-                    at += 1;
-                }
-                hang = Some(at);
-            }
-            self.hangs.extend(hang);
-            match self.text[line..quote.end].find('\n') {
-                Some(i) => line += i + 1,
-                None => break,
-            }
+    /// Markers inside a table cell, for the grid to hide.
+    fn cell_markers(&mut self, markers: [Range<usize>; 2]) {
+        if let Some(table) = self.tables.last_mut() {
+            table
+                .markers
+                .extend(markers.into_iter().filter(|m| !m.is_empty()));
         }
     }
 
@@ -455,6 +396,7 @@ impl Walk<'_> {
             quotes: self.quotes,
             hangs: self.hangs,
             marks: self.marks,
+            tables: self.tables,
         }
     }
 }
@@ -497,34 +439,6 @@ fn gaps(outer: Range<usize>, inner: &[Range<usize>]) -> Vec<Range<usize>> {
         gaps.push(at..outer.end);
     }
     gaps
-}
-
-/// The lines of `range` in `text`, each without its line ending (`\n`,
-/// `\r\n` or a lone `\r`, as in `Doc`).
-fn lines_of(text: &str, range: Range<usize>) -> Vec<Range<usize>> {
-    let bytes = text.as_bytes();
-    let mut lines = Vec::new();
-    let (mut start, mut at) = (range.start, range.start);
-    while at < range.end {
-        match bytes[at] {
-            b'\n' => {
-                lines.push(start..at);
-                at += 1;
-                start = at;
-            }
-            b'\r' => {
-                lines.push(start..at);
-                let crlf = at + 1 < range.end && bytes[at + 1] == b'\n';
-                at += if crlf { 2 } else { 1 };
-                start = at;
-            }
-            _ => at += 1,
-        }
-    }
-    if start < range.end {
-        lines.push(start..range.end);
-    }
-    lines
 }
 
 /// How many `byte`s `text` starts with.

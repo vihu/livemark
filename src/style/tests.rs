@@ -5,7 +5,7 @@ use std::ops::Range;
 use pulldown_cmark::Event;
 use serde::Deserialize;
 
-use super::{Construct, MarkKind, Style, Styled, Syntax};
+use super::{Align, Construct, MarkKind, Style, Styled, Syntax};
 use crate::parse;
 
 fn heading(level: u8, marker: bool) -> Style {
@@ -420,4 +420,48 @@ fn quoted_fences_split_on_crlf_and_lf() {
             .collect();
         assert_eq!(fences, ["```", "```"], "{ending:?}");
     }
+}
+
+#[test]
+fn a_table_records_its_rows_cells_and_alignment_for_the_grid() {
+    let text = "> | a | **b** |\r\n> | :- | -: |\r\n> | c |\r\n\nafter\n";
+    let styled = Styled::new(text);
+    let table = &styled.tables()[0];
+    assert_eq!(table.align, [Align::Left, Align::Right]);
+    let rows: Vec<(&str, Vec<&str>)> = table
+        .rows
+        .iter()
+        .map(|(row, cells)| {
+            let cells = cells.iter().map(|c| &text[c.clone()]).collect();
+            (&text[row.clone()], cells)
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("| a | **b** |", vec!["a", "**b**"]),
+            ("| c |", vec!["c", ""]),
+        ]
+    );
+    let marks: Vec<(&str, MarkKind)> = styled
+        .concealed(text.len()..text.len())
+        .into_iter()
+        .filter(|m| matches!(m.kind, MarkKind::TableRow(..) | MarkKind::TableRule(_)))
+        .map(|m| (&text[m.range], m.kind))
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            ("| a | **b** |", MarkKind::TableRow(0, 0)),
+            ("| :- | -: |", MarkKind::TableRule(0)),
+            ("| c |", MarkKind::TableRow(0, 1)),
+        ]
+    );
+    assert!(
+        styled
+            .concealed(3..3)
+            .iter()
+            .all(|m| m.touch != table.range),
+        "a caret in the table shows all of it"
+    );
 }

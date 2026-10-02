@@ -12,9 +12,10 @@ use iced::advanced::graphics::text::cosmic_text;
 
 use super::highlight::{Highlights, Token};
 use super::shape::{Cached, Colors, cursor, heading_level, shape};
+use super::table::Grid;
 use crate::doc::Doc;
 use crate::layout::{Affinity, Line};
-use crate::style::{Mark, Styled};
+use crate::style::{Mark, MarkKind, Styled};
 
 /// A source line shaped for drawing.
 pub struct Shaped {
@@ -81,6 +82,8 @@ pub struct Lines {
     pub source: bool,
     highlights: Highlights,
     cache: HashMap<u64, Cached>,
+    /// Tables as grids, by table text, width and colors.
+    grids: HashMap<u64, Arc<Grid>>,
 }
 
 impl Lines {
@@ -95,6 +98,7 @@ impl Lines {
             visible: 0,
             source: false,
             highlights: Highlights::default(),
+            grids: HashMap::new(),
             cache: HashMap::new(),
         }
     }
@@ -129,13 +133,16 @@ impl Lines {
             None => Vec::new(),
         };
         // Concealed marks keep their place but are not drawn.
-        tokens.extend(marks_in(source.concealed, range).map(|mark| Token {
+        tokens.extend(marks_in(source.concealed, range.clone()).map(|mark| Token {
             range: line.to_display(mark.range.start)..line.to_display(mark.range.end),
             color: iced::Color::TRANSPARENT,
             italic: false,
         }));
         let mut hasher = DefaultHasher::new();
         let mono = self.source;
+        let compact = marks_in(source.concealed, range.clone())
+            .any(|m| matches!(m.kind, MarkKind::TableRule(_)));
+        compact.hash(&mut hasher);
         (
             &line.text,
             &line.runs,
@@ -160,7 +167,7 @@ impl Lines {
         let cached = match self.cache.get(&key) {
             Some(cached) => cached.clone(),
             None => {
-                let looks = (level, mono, self.colors);
+                let looks = (level, mono, self.colors, compact);
                 let cached = shape(&line, looks, hang, self.width, &tokens);
                 self.cache.insert(key, cached.clone());
                 cached
@@ -362,6 +369,57 @@ pub fn marks_in(marks: &[Mark], range: Range<usize>) -> impl Iterator<Item = &Ma
 }
 
 impl Lines {
+    /// Table `index` of `source` as a grid.
+    pub fn grid(&mut self, source: &Source, index: usize) -> Arc<Grid> {
+        let table = &source.styled.tables()[index];
+        let mut hasher = DefaultHasher::new();
+        source.doc.text()[table.range.clone()].hash(&mut hasher);
+        self.width.to_bits().hash(&mut hasher);
+        for color in [
+            self.colors.text,
+            self.colors.marker,
+            self.colors.code,
+            self.colors.link,
+        ] {
+            color.into_rgba8().hash(&mut hasher);
+        }
+        let key = hasher.finish();
+        if let Some(grid) = self.grids.get(&key) {
+            return grid.clone();
+        }
+        if self.grids.len() >= 32 {
+            self.grids.clear();
+        }
+        let grid = Arc::new(Grid::new(
+            source.doc.text(),
+            source.styled,
+            table,
+            self.colors,
+            self.width,
+        ));
+        self.grids.insert(key, grid.clone());
+        grid
+    }
+
+    /// The source offset under `x`, `y` in the text area when that is a
+    /// table drawn as a grid: in the cell there (a click on the rule
+    /// under the header goes to the header's first cell).
+    pub fn table_hit(&mut self, source: &Source, x: f32, y: f32) -> Option<usize> {
+        let (index, _) = self.line_at_y(source, y);
+        let range = source.doc.line_range(index);
+        let mark = marks_in(source.concealed, range)
+            .find(|m| matches!(m.kind, MarkKind::TableRow(..) | MarkKind::TableRule(_)))?
+            .clone();
+        let shaped = self.shaped(source, index);
+        let start = super::marks::start_x(&shaped, mark.range.start);
+        let (table, row) = match mark.kind {
+            MarkKind::TableRow(table, row) => (table, row),
+            MarkKind::TableRule(table) => (table, 0),
+            _ => return None,
+        };
+        Some(self.grid(source, table).hit(row, x - start))
+    }
+
     /// The concealed task box whose checkbox is at `x`, `y` in the text
     /// area, if any.
     pub fn task_at(&mut self, source: &Source, x: f32, y: f32) -> Option<Range<usize>> {

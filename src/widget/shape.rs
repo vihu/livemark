@@ -71,12 +71,16 @@ pub fn heading_level(styled: &Styled, range: Range<usize>) -> u8 {
 /// is in the code font, and the colors.
 pub fn shape(
     line: &Line,
-    (level, mono, colors): (u8, bool, Colors),
+    (level, mono, colors, compact): (u8, bool, Colors, bool),
     hang: Option<usize>,
     width: f32,
     tokens: &[Token],
 ) -> Cached {
-    let scale = if level == 0 {
+    // A compact line (a table's delimiter row under its grid) is a thin
+    // band.
+    let scale = if compact {
+        0.25
+    } else if level == 0 {
         1.0
     } else {
         HEADING[usize::from(level) - 1]

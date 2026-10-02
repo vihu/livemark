@@ -113,6 +113,41 @@ pub enum MarkKind {
     Fence,
     /// A setext heading's underline: nothing (section 3).
     Underline,
+    /// Row `.1` of table `.0` (in [`Styled::tables`], the header row
+    /// first): a row of the grid (section 10).
+    TableRow(usize, usize),
+    /// The delimiter row of table `.0`: the line under the grid's header.
+    TableRule(usize),
+}
+
+/// A column's alignment, from the delimiter row.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    /// No colon: the start.
+    #[default]
+    None,
+    /// `:--`
+    Left,
+    /// `:-:`
+    Center,
+    /// `--:`
+    Right,
+}
+
+/// A GFM table (REFERENCE-001 section 10).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Table {
+    /// The table, without its last line ending.
+    pub range: Range<usize>,
+    /// One per column.
+    pub align: Vec<Align>,
+    /// The header row, then the body rows: each row's source (from its
+    /// first pipe, without the line ending) and its cells' contents,
+    /// trimmed (empty at the row's end where cells are missing).
+    pub rows: Vec<(Range<usize>, Vec<Range<usize>>)>,
+    /// The inline markers in its cells (emphasis, code, links), which the
+    /// grid hides; sorted.
+    pub markers: Vec<Range<usize>>,
 }
 
 /// A document's styling, worked out once per edit.
@@ -128,6 +163,7 @@ pub struct Styled {
     hangs: Vec<usize>,
     /// Sorted by start.
     marks: Vec<Mark>,
+    tables: Vec<Table>,
 }
 
 impl Styled {
@@ -180,6 +216,11 @@ impl Styled {
             .last()
             .copied()
             .filter(|&h| h >= line.start)
+    }
+
+    /// The tables, in order; [`MarkKind::TableRow`] indexes them.
+    pub fn tables(&self) -> &[Table] {
+        &self.tables
     }
 
     /// The marks drawn as something else with `selection` in place: those

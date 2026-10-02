@@ -109,3 +109,27 @@ fn nothing_is_revealed_before_the_caret_is_first_placed() {
     assert_eq!(editor.selection().head, offset);
     assert!(hidden(&editor).is_empty(), "placed at the heading");
 }
+
+#[test]
+fn a_click_on_a_grid_cell_puts_the_caret_in_its_source() {
+    use super::{Input, Message};
+    let text = "x\n\n| a | bb |\n| - | - |\n| c | **dd** |\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    // The left edge of row 2's second column, a little in.
+    let at = editor.with_lines(|lines, source| {
+        let grid = lines.grid(source, 0);
+        let top = lines.top_of(source, 4).expect("on screen");
+        let shaped = lines.shaped(source, 4);
+        let start = super::marks::start_x(&shaped, source.doc.line_range(4).start);
+        iced::Point::new(start + grid.columns[1].0 + 9.0, top + 5.0)
+    });
+    let _ = editor.update(Message(Input::Press {
+        at,
+        shift: false,
+        clicks: 1,
+    }));
+    let _ = editor.update(Message(Input::Release));
+    let head = editor.selection().head;
+    assert_eq!(&text[head..head + 2], "dd", "after the hidden `**`");
+}

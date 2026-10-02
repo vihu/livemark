@@ -11,6 +11,7 @@ mod marks;
 mod scrollbar;
 mod shape;
 mod surface;
+mod table;
 
 use std::cell::RefCell;
 use std::ops::Range;

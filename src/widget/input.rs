@@ -117,6 +117,15 @@ impl Editor {
         task
     }
 
+    /// The source offset under `at`: in a table drawn as a grid, the
+    /// cell's (REFERENCE-001 section 10).
+    fn hit(&self, at: Point) -> (usize, Affinity) {
+        self.with_lines(|lines, source| match lines.table_hit(source, at.x, at.y) {
+            Some(offset) => (offset, Affinity::After),
+            None => lines.hit(source, at.x, at.y),
+        })
+    }
+
     /// A press: a caret (Shift extends the selection), a word on a double
     /// click, a line on a triple click (REFERENCE-001 section 14).
     fn press(&mut self, at: Point, shift: bool, clicks: u8) -> Affinity {
@@ -129,7 +138,7 @@ impl Editor {
                 return self.side;
             }
         }
-        let (offset, side) = self.with_lines(|lines, source| lines.hit(source, at.x, at.y));
+        let (offset, side) = self.hit(at);
         let frozen = self.doc.selection();
         let (unit, first) = match clicks {
             1 => (Unit::Char, offset..offset),
@@ -163,7 +172,7 @@ impl Editor {
     /// whole words or lines after a double or triple click, towards the
     /// pointer (CodeMirror's `basicMouseSelection`).
     fn drag(&mut self, at: Point) -> Affinity {
-        let (offset, side) = self.with_lines(|lines, source| lines.hit(source, at.x, at.y));
+        let (offset, side) = self.hit(at);
         let Some(press) = &self.press else {
             return side;
         };
