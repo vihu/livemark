@@ -10,6 +10,8 @@
   for the open note; the file is renamed with the title and the links to
   it follow), duplicate, copy a link, show it in its folder, delete. Each
   can be undone.
+- A note opened from outside the vault says so in a bar over it, with
+  Move into vault and Copy into vault (front matter added when missing).
 - Appearance: Kanagawa Wave and Lotus, Solarized, Gruvbox and Catppuccin
   Mocha and Frappe themes besides Light and Dark, System following the
   system between a light and a dark pick; Ctrl+= and Ctrl+- scale the

@@ -160,6 +160,7 @@ impl App {
                 }
             }
             Message::DismissToast => self.toast = None,
+            Message::IntoVault(message) => return self.bring_in_update(message),
             Message::Escape => {
                 self.tag_menu = None;
                 self.tag_action = None;

@@ -79,7 +79,9 @@ line its link sits in, a click opening it. A right press on a note in the sideba
 the open note: the title and the file's name change together, its date
 kept, and the links in other notes follow), Duplicate, Copy link (a
 markdown link to paste into another note), Show in folder, and Delete
-(which says first how many notes link to it); each ends with Undo. Each tag in the sidebar has a
+(which says first how many notes link to it); each ends with Undo. A file
+opened from outside the vault gets a bar over it: Move into vault, or Copy
+into vault (front matter added when it has none), also undoable. Each tag in the sidebar has a
 menu: Rename or merge (typing a tag that exists merges the two, and
 says so first) and Delete from every note (an inline `#tag` keeps its
 word), and Open in the tag manager. Manage tags, under the list, shows

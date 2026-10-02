@@ -21,6 +21,9 @@ pub struct Undo {
     pub created: Option<PathBuf>,
     /// A file the change removed, with its text.
     pub deleted: Option<(PathBuf, String)>,
+    /// The note open before the change, open again when Undo removes the
+    /// one it made.
+    pub back: Option<PathBuf>,
 }
 
 impl Undo {
@@ -50,7 +53,7 @@ impl Undo {
             && to.exists()
             && !from.exists()
         {
-            std::fs::rename(to, from).map_err(|e| failed(to, e))?;
+            super::into_vault::move_file(to, from).map_err(|e| failed(to, e))?;
         }
         let mut kept = 0;
         for (path, before, after) in &self.files {
@@ -112,10 +115,18 @@ impl App {
         }
         self.refresh_vault();
         if undo.created.is_some() && undo.created == open {
-            // The copy that was open is gone: an empty note in its place.
-            self.path = None;
-            self.editor = self.editor_for(String::new());
-            self.saved = self.editor.version();
+            // The copy that was open is gone: the note it came from, or an
+            // empty one, in its place.
+            match &undo.back {
+                Some(back) => {
+                    let _ = self.load(back.clone());
+                }
+                None => {
+                    self.path = None;
+                    self.editor = self.editor_for(String::new());
+                    self.saved = self.editor.version();
+                }
+            }
         } else if let Some((path, _)) = &undo.deleted
             && self.path.is_none()
             && !self.unsaved()

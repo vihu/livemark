@@ -288,6 +288,7 @@ impl App {
         write().map_err(|e| format!("{}: {e}", copy.display()))?;
         self.undo = Some(Undo {
             created: Some(copy.clone()),
+            back: Some(path.to_path_buf()),
             ..Undo::default()
         });
         self.refresh_vault();

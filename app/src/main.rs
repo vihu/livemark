@@ -23,6 +23,7 @@ mod appearance;
 mod cli;
 mod file;
 mod icons;
+mod into_vault;
 mod links;
 mod manager;
 mod manager_view;
@@ -134,6 +135,8 @@ struct App {
     appearance: bool,
     /// The sidebar's edge is being dragged.
     resizing: bool,
+    /// The file whose "outside the vault" bar was closed.
+    outside_dismissed: Option<PathBuf>,
     /// What waits on an answer about unsaved changes.
     pending: Option<After>,
     /// The file's modification time when last opened or saved.
@@ -236,6 +239,8 @@ enum Message {
     DismissToast,
     /// Escape: a menu or question under a tag or a note taken back.
     Escape,
+    /// The bar over a note outside the vault.
+    IntoVault(into_vault::IntoVault),
     /// A recent note picked in the File menu.
     Recent(PathBuf),
     /// The Appearance panel and what it sets.
@@ -275,6 +280,7 @@ impl App {
             system_mode: iced::theme::Mode::None,
             appearance: false,
             resizing: false,
+            outside_dismissed: None,
             pending: None,
             changed: false,
             discarded: None,

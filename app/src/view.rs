@@ -104,6 +104,7 @@ impl App {
         // its focus) when a bar or the menu comes or goes.
         let note = column![
             self.note_bar(),
+            self.outside_place(),
             stack![editor].push(self.search_panel()).push(toast)
         ]
         .push(bar.map(|bar| container(bar).padding(12)));

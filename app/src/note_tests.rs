@@ -126,7 +126,7 @@ fn duplicate_opens_a_copy_and_copy_link_says_so_without_undo() {
     );
     let _ = app.update(Message::Undo);
     assert!(!copy.exists());
-    assert_eq!(app.path, None);
+    assert_eq!(app.path.as_ref(), Some(&hotels), "back to the original");
     // A link from the open note, to paste; nothing to undo.
     let _ = app.update(Message::Opened(Some(root.join("sub/trip.md"))));
     note(&mut app, NoteMessage::CopyLink(hotels.clone()));
@@ -137,4 +137,66 @@ fn duplicate_opens_a_copy_and_copy_link_says_so_without_undo() {
     let _ = app.update(Message::Escape);
     assert_eq!(app.note_menu, None);
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_note_outside_the_vault_moves_or_copies_in_with_front_matter_and_back() {
+    use crate::into_vault::IntoVault;
+    let base = std::env::temp_dir().join(format!("livemark-into-{}", std::process::id()));
+    let (vault_dir, away) = (base.join("vault"), base.join("away"));
+    std::fs::create_dir_all(&vault_dir).unwrap();
+    std::fs::create_dir_all(&away).unwrap();
+    let outside = away.join("notes.md");
+    write(&outside, "# Meeting notes\nbody\n", 0);
+    let mut app = App::open(Some(outside.clone()), None);
+    let _ = app.update(Message::Vault(crate::sidebar::VaultMessage::Picked(Some(
+        vault_dir.clone(),
+    ))));
+    let root = app.vault.as_ref().unwrap().root.clone();
+    let inside = root.join("notes.md");
+    assert!(app.outside_bar().is_some());
+    let send = |app: &mut App, message| {
+        let _ = app.update(Message::IntoVault(message));
+        let _ = app.view();
+    };
+    // Unsaved typing first: refused.
+    let end = app.editor.text().len();
+    app.editor.select(end, end);
+    app.editor.insert_text("x");
+    send(&mut app, IntoVault::Move);
+    assert!(outside.exists() && !inside.exists());
+    app.saved = app.editor.version();
+    let typed = app.editor.text().to_owned();
+    std::fs::write(&outside, &typed).unwrap();
+    // Moved: gone from where it was, in the vault with front matter.
+    send(&mut app, IntoVault::Move);
+    assert!(!outside.exists());
+    let moved = read(&inside);
+    assert!(moved.starts_with("---\ntitle: Meeting notes\ntags: []\ncreated: "));
+    assert!(moved.ends_with(&typed));
+    assert_eq!(app.path.as_ref(), Some(&inside));
+    assert!(app.outside_bar().is_none());
+    assert!(
+        app.vault
+            .as_ref()
+            .unwrap()
+            .notes
+            .iter()
+            .any(|n| n.path == inside)
+    );
+    let _ = app.update(Message::Undo);
+    assert_eq!(read(&outside), typed, "back as it was");
+    assert!(!inside.exists());
+    assert_eq!(app.path.as_ref(), Some(&outside));
+    // Copied: the original stays, the copy opens; Undo goes back to it.
+    send(&mut app, IntoVault::Copy);
+    assert!(outside.exists() && inside.exists());
+    assert_eq!(app.path.as_ref(), Some(&inside));
+    let _ = app.update(Message::Undo);
+    assert!(!inside.exists());
+    assert_eq!(app.path.as_ref(), Some(&outside));
+    // The cross hides the bar for this file.
+    send(&mut app, IntoVault::Dismiss);
+    assert!(app.outside_bar().is_none());
+    std::fs::remove_dir_all(&base).unwrap();
 }
