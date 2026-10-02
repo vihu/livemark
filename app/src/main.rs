@@ -5,7 +5,9 @@
 //! cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 //! ```
 //!
-//! Light or dark follows the system unless `--dark` or `--light` says.
+//! Light or dark follows the system unless `--dark`, `--light` or the
+//! settings say. The zoom, the window's size and the recent files are
+//! remembered between starts (`settings.rs`).
 //! Ctrl+N starts a new note, Ctrl+O opens, Ctrl+S saves (asking where for
 //! a new file), Ctrl+Shift+S saves as. Ctrl+click on a web or mail link (or Alt+Enter in it) opens it
 //! in the system's browser or mail program. The title shows `*` while there are unsaved changes; closing
@@ -13,6 +15,7 @@
 //! comes back into focus and the file changed on disk, it is loaded again,
 //! or with unsaved changes the app asks which to keep.
 mod file;
+mod settings;
 
 use std::path::PathBuf;
 
@@ -20,6 +23,7 @@ use iced::keyboard;
 use iced::widget::{button, column, container, row, text};
 use iced::{Element, Length, Subscription, Task, Theme, window};
 use livemark::widget::{self, Editor};
+use settings::Settings;
 
 pub fn main() -> iced::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -27,20 +31,39 @@ pub fn main() -> iced::Result {
         .iter()
         .find(|a| !a.starts_with("--"))
         .map(PathBuf::from);
+    let settings_file = Settings::path();
+    let settings = settings_file
+        .as_deref()
+        .map(Settings::load)
+        .unwrap_or_default();
     let theme = if args.iter().any(|a| a == "--dark") {
         Some(Theme::Dark)
     } else if args.iter().any(|a| a == "--light") {
         Some(Theme::Light)
     } else {
-        None
+        match settings.theme {
+            settings::Theme::System => None,
+            settings::Theme::Light => Some(Theme::Light),
+            settings::Theme::Dark => Some(Theme::Dark),
+        }
     };
+    let size = settings
+        .window
+        .map_or(window::Settings::default().size, |(w, h)| {
+            iced::Size::new(w, h)
+        });
     iced::application(
-        move || (App::open(path.clone(), theme.clone()), Editor::focus()),
+        move || {
+            let app = App::open(path.clone(), theme.clone())
+                .with_settings(settings.clone(), settings_file.clone());
+            (app, Editor::focus())
+        },
         App::update,
         App::view,
     )
     .title(App::title)
     .window(window::Settings {
+        size,
         #[cfg(target_os = "linux")]
         platform_specific: window::settings::PlatformSpecific {
             application_id: "io.github.vihu.livemark".into(),
@@ -75,6 +98,9 @@ struct App {
     /// Image destinations already looked for next to the note, for this
     /// editor and path.
     tried: std::collections::HashSet<String>,
+    settings: Settings,
+    /// Where the settings are written; `None` writes nothing (tests).
+    settings_file: Option<PathBuf>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -110,6 +136,8 @@ enum Message {
     /// Ctrl+= or Ctrl++ (1), Ctrl+- (-1): the text size a 10% step up or
     /// down; Ctrl+0 (0): back to 100%.
     Zoom(i8),
+    /// The window's new size, remembered for the next start.
+    Resized(iced::Size),
 }
 
 impl App {
@@ -136,8 +164,45 @@ impl App {
             changed: false,
             discarded: None,
             tried: std::collections::HashSet::new(),
+            settings: Settings::default(),
+            settings_file: None,
         }
         .with_images()
+    }
+
+    /// The remembered settings applied (the zoom), kept in `file`, with
+    /// the note opened first among the recent files.
+    fn with_settings(mut self, settings: Settings, file: Option<PathBuf>) -> Self {
+        self.settings = settings;
+        self.settings_file = file;
+        self.editor.set_zoom(self.settings.zoom);
+        if let Some(path) = self.path.clone() {
+            self.settings.opened(&path);
+        }
+        self.remember();
+        self
+    }
+
+    /// The editor's zoom remembered when it changed (keys, Ctrl+wheel).
+    fn remember_zoom(&mut self) {
+        if self.editor.zoom() != self.settings.zoom {
+            self.settings.zoom = self.editor.zoom();
+            self.remember();
+        }
+    }
+
+    /// Writes the settings, when there is a file for them; a failure only
+    /// loses what was remembered.
+    fn remember(&self) {
+        if let Some(file) = &self.settings_file {
+            let _ = self.settings.save(file);
+        }
+    }
+
+    /// Closes the window, the settings written first.
+    fn exit(&mut self) -> Task<Message> {
+        self.remember();
+        iced::exit()
     }
 
     fn with_images(mut self) -> Self {
@@ -231,6 +296,7 @@ impl App {
                 }
                 let task = self.editor.update(message).map(Message::Editor);
                 self.load_images();
+                self.remember_zoom();
                 return task;
             }
             Message::New if self.unsaved() => self.pending = Some(After::New),
@@ -264,6 +330,8 @@ impl App {
                 if self.path.as_ref() != Some(&path) {
                     self.tried.clear();
                 }
+                self.settings.opened(&path);
+                self.remember();
                 self.path = Some(path);
                 self.saved = version;
                 self.load_images();
@@ -282,7 +350,7 @@ impl App {
                 self.pending = None;
             }
             Message::CloseRequested if self.unsaved() => self.pending = Some(After::Close),
-            Message::CloseRequested => return iced::exit(),
+            Message::CloseRequested => return self.exit(),
             Message::Unsaved(Some(true)) => return self.update(Message::Save { choose: false }),
             Message::Unsaved(Some(false)) => {
                 self.discarded = Some(self.editor.version());
@@ -292,6 +360,7 @@ impl App {
             }
             Message::Unsaved(None) => self.pending = None,
             Message::Focused => self.check_disk(),
+            Message::Resized(size) => self.settings.window = Some((size.width, size.height)),
             Message::Reload(true) => {
                 // Nothing is unsaved after it: a close or open waiting on
                 // the unsaved text is asked for again.
@@ -302,6 +371,7 @@ impl App {
                 let tenths = (self.editor.zoom() * 10.0).round() + f32::from(step);
                 self.editor
                     .set_zoom(if step == 0 { 1.0 } else { tenths / 10.0 });
+                self.remember_zoom();
             }
             Message::Reload(false) => {
                 // Keep this text; saving will replace the file's.
@@ -314,7 +384,7 @@ impl App {
 
     fn carry_on(&mut self, after: After) -> Task<Message> {
         match after {
-            After::Close => iced::exit(),
+            After::Close => self.exit(),
             After::Open => Task::perform(pick_file(), Message::Opened),
             After::New => self.new_note(),
             After::Load(path) => self.load(path),
@@ -332,6 +402,8 @@ impl App {
                 self.discarded = None;
                 self.stamp = file::modified(&path);
                 self.changed = false;
+                self.settings.opened(&path);
+                self.remember();
                 self.path = Some(path);
                 self.error = None;
                 self.load_images();
@@ -431,8 +503,10 @@ impl App {
             }
         });
         let close = window::close_requests().map(|_| Message::CloseRequested);
-        let focus = window::events().filter_map(|(_, event)| {
-            matches!(event, window::Event::Focused).then_some(Message::Focused)
+        let focus = window::events().filter_map(|(_, event)| match event {
+            window::Event::Focused => Some(Message::Focused),
+            window::Event::Resized(size) => Some(Message::Resized(size)),
+            _ => None,
         });
         Subscription::batch([keys, close, focus])
     }

@@ -152,3 +152,29 @@ fn pictures_next_to_the_note_are_handed_to_the_editor() {
     std::fs::remove_file(&note).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn settings_remember_the_zoom_the_window_and_recent_notes() {
+    use crate::settings::Settings;
+    let dir = std::env::temp_dir().join(format!("livemark-settings-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("config").join("settings");
+    let note = dir.join("note.md");
+    write(&note, "# Note\n", 0);
+    let mut app =
+        App::open(Some(note.clone()), None).with_settings(Settings::default(), Some(file.clone()));
+    let _ = app.update(Message::Zoom(1));
+    let _ = app.update(Message::Resized(iced::Size::new(900.0, 700.0)));
+    let _ = app.update(Message::CloseRequested);
+    // The next start finds them.
+    let saved = Settings::load(&file);
+    assert_eq!(saved.zoom, 1.1);
+    assert_eq!(saved.window, Some((900.0, 700.0)));
+    assert_eq!(saved.recent, [std::fs::canonicalize(&note).unwrap()]);
+    let again = App::open(None, None).with_settings(saved, None);
+    assert_eq!(again.editor.zoom(), 1.1);
+    std::fs::remove_file(&file).unwrap();
+    std::fs::remove_dir(dir.join("config")).unwrap();
+    std::fs::remove_file(&note).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+}

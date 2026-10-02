@@ -27,7 +27,9 @@ title marks unsaved changes; closing or opening another file then asks.
 When the window comes back into focus and the file changed on disk (git,
 another editor), it is loaded again; with unsaved changes the app asks
 which to keep. Images are read from files next to the note (relative
-paths); the app makes no network requests, so web images stay as markdown.
+paths); the app makes no network requests, so web images stay as markdown. The zoom, the window's size, the theme and the
+ten most recent files are kept in `~/.config/livemark/settings` (macOS:
+`~/Library/Application Support/livemark/settings`), a `key = value` file.
 
 Keys in the editor (Cmd instead of Ctrl on macOS):
 
