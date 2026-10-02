@@ -167,8 +167,17 @@ impl App {
             .spacing(8)
             .into(),
         };
+        // How much is not committed yet: the user's git keeps the vault.
+        let status = vault.uncommitted().map(|count| {
+            let line = match count {
+                0 => "All notes committed".to_owned(),
+                1 => "1 note changed since the last commit".to_owned(),
+                n => format!("{n} notes changed since the last commit"),
+            };
+            text(line).size(11).style(text::secondary)
+        });
         Some(
-            container(column![header, body].spacing(8))
+            container(column![header, body].push(status).spacing(8))
                 .width(WIDTH)
                 .height(Length::Fill)
                 .padding([8, 8])

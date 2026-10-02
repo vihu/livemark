@@ -71,7 +71,9 @@ note with its matching lines, a click opening it with the match selected
 normal markdown link to the one chosen (`[Lisbon hotels](2026-10-02-lisbon-hotels.md)`,
 so links work in the git web UI too); typing `#` and a letter lists the
 vault's tags. Ctrl+click on a link to a note opens it here, and the
-sidebar lists the notes linking to the open one.
+sidebar lists the notes linking to the open one. Its foot says how many
+notes changed since your last commit (going by file times; the app never
+runs git, so committing, signing and pushing stay yours).
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
 the theme (System, Light, Dark). The zoom, the window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click

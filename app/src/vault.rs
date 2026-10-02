@@ -35,6 +35,9 @@ pub struct Vault {
     /// Changes whenever a note comes, goes or changes: what a view of the
     /// notes is cached by.
     pub generation: u64,
+    /// When the git repository the vault is in last moved its HEAD (a
+    /// commit, a pull), read from `.git/logs/HEAD`; `None` outside one.
+    pub last_commit: Option<SystemTime>,
 }
 
 impl Vault {
@@ -51,6 +54,7 @@ impl Vault {
             root: std::fs::canonicalize(root)?,
             notes: Vec::new(),
             generation: 0,
+            last_commit: None,
         };
         vault.refresh();
         Ok(vault)
@@ -86,10 +90,26 @@ impl Vault {
                 .cmp(&(a.modified, &a.created))
                 .then_with(|| a.title.cmp(&b.title))
         });
+        let last_commit = last_commit(&self.root);
+        changed |= last_commit != self.last_commit;
+        self.last_commit = last_commit;
         if changed {
             self.generation += 1;
         }
         changed
+    }
+
+    /// How many notes changed since the last commit, going by file times
+    /// (the app never runs git, PLAN-004 answer 4): `None` outside a git
+    /// repository. Deleted notes are not counted.
+    pub fn uncommitted(&self) -> Option<usize> {
+        let since = self.last_commit?;
+        Some(
+            self.notes
+                .iter()
+                .filter(|note| note.modified > since)
+                .count(),
+        )
     }
 
     /// Every tag with how many notes have it, most used first, then by
@@ -122,6 +142,29 @@ impl Vault {
             |name| name.to_string_lossy().into_owned(),
         )
     }
+}
+
+/// When HEAD last moved in the repository holding `root`: the time on the
+/// last line of `.git/logs/HEAD` (`<old> <new> <name> <<email>> <seconds>
+/// <zone>\t<message>`), looking up from `root` for `.git`.
+fn last_commit(root: &Path) -> Option<SystemTime> {
+    let git = root
+        .ancestors()
+        .map(|dir| dir.join(".git"))
+        .find(|git| git.exists())?;
+    // A worktree's or submodule's `.git` file points at its git folder.
+    let git = if git.is_file() {
+        let pointer = std::fs::read_to_string(&git).ok()?;
+        let dir = pointer.trim().strip_prefix("gitdir:")?.trim();
+        git.parent()?.join(dir)
+    } else {
+        git
+    };
+    let log = std::fs::read_to_string(git.join("logs").join("HEAD")).ok()?;
+    let line = log.lines().last()?;
+    let head = line.split('\t').next()?;
+    let seconds: u64 = head.rsplit(' ').nth(1)?.parse().ok()?;
+    Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
 }
 
 /// The markdown files under `dir` with their modification times and
@@ -311,6 +354,33 @@ fn date_prefix(s: &str) -> Option<String> {
 mod tests {
     use super::{Vault, properties, resolve};
     use std::path::Path;
+
+    #[test]
+    fn notes_newer_than_the_last_commit_are_counted() {
+        let dir = std::env::temp_dir().join(format!("livemark-git-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join(".git/logs")).unwrap();
+        let note = |name: &str, secs: u64| {
+            let path = dir.join(name);
+            std::fs::write(&path, "x\n").unwrap();
+            let file = std::fs::File::options().write(true).open(&path).unwrap();
+            let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+            file.set_modified(at).unwrap();
+        };
+        note("old.md", 1_000);
+        note("new.md", 3_000);
+        note("newer.md", 4_000);
+        // Outside a repository (no log yet): nothing to say.
+        let mut vault = Vault::open(&dir).unwrap();
+        assert_eq!(vault.uncommitted(), None);
+        std::fs::write(
+            dir.join(".git/logs/HEAD"),
+            "0 a Me <me@x> 500 +0400\tclone\na b Me <me@x> 2000 +0400\tcommit: notes\n",
+        )
+        .unwrap();
+        vault.refresh();
+        assert_eq!(vault.uncommitted(), Some(2));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn links_resolve_to_files_next_to_the_note() {
