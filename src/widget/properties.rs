@@ -38,10 +38,10 @@ pub enum Hit {
 }
 
 /// Text shaped on its own, placed in the block.
-struct Label {
-    buffer: Arc<cosmic_text::Buffer>,
-    at: Point,
-    size: Size,
+pub(super) struct Label {
+    pub(super) buffer: Arc<cosmic_text::Buffer>,
+    pub(super) at: Point,
+    pub(super) size: Size,
 }
 
 /// A tag's chip.
@@ -63,7 +63,13 @@ pub struct Block {
 }
 
 /// `text` shaped in the prose font at `size`, wrapped at `width`.
-fn label(text: &str, size: f32, weight: cosmic_text::Weight, color: Color, width: f32) -> Label {
+pub(super) fn label(
+    text: &str,
+    size: f32,
+    weight: cosmic_text::Weight,
+    color: Color,
+    width: f32,
+) -> Label {
     let metrics = cosmic_text::Metrics::new(size, (size * 1.35).round());
     let mut system = font_system().write().expect("font system lock");
     let raw = system.raw();

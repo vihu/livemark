@@ -46,6 +46,15 @@ impl Editor {
                 | Input::Drag(_)
         );
         match input {
+            // A link in the host's footer: followed on a click.
+            Input::Press { at, clicks, .. } if self.footer_under(Pane::Text, at).is_some() => {
+                if clicks == 1 {
+                    let dest = self.footer_under(Pane::Text, at).unwrap_or_default();
+                    task = Task::done(Message(Input::Follow(dest)));
+                }
+                side = self.side;
+                keep_view = true;
+            }
             Input::Press {
                 at,
                 command: true,

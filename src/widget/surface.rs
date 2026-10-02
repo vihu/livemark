@@ -479,6 +479,11 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 self.editor
                     .with_lines(|lines, source| lines.block_hit(source, at.x, at.y))
                     .is_some_and(|(control, _)| control.is_some())
+            })
+            // Or a link in the host's footer, in either pane.
+            || cursor.position_over(text).is_some_and(|at| {
+                let at = at - Vector::new(text.x, text.y);
+                self.editor.footer_under(self.pane, at).is_some()
             });
         if self.thumb_at(layout.bounds(), cursor).is_some() {
             mouse::Interaction::default()

@@ -5,6 +5,7 @@ mod complete;
 mod divider;
 mod draw;
 mod find;
+mod footer;
 mod highlight;
 mod icons;
 mod input;
@@ -30,6 +31,7 @@ use iced::advanced::widget::Id;
 use iced::{Color, Element, Point, Rectangle, Size, Task};
 
 pub use self::complete::{Choice, Complete, Completing};
+pub use self::footer::FooterLink;
 use self::lines::{Lines, Source};
 use self::preview::Pane;
 use self::shape::Colors;
@@ -96,6 +98,8 @@ pub struct Editor {
     split_ratio: f32,
     /// A completion the host fills, after `[[` or `#`.
     completion: complete::Completion,
+    /// Links the host lists under the note (`set_footer`).
+    footer: Option<footer::Footer>,
 }
 
 /// What live preview hides and draws over, and the document version and
@@ -310,6 +314,7 @@ impl Editor {
             preview: preview::Preview::new(BLACK),
             split_ratio: 0.5,
             completion: complete::Completion::default(),
+            footer: None,
         }
     }
 
@@ -583,6 +588,7 @@ impl Editor {
             hidden: &hidden,
             concealed: &concealed,
             pictures: &self.pictures,
+            footer: self.footer.as_ref(),
         };
         let mut lines = lines.borrow_mut();
         lines.anchor = lines.anchor.min(self.doc.line_count() - 1);

@@ -20,8 +20,8 @@
   vault's tags offered.
 - `#tags` are drawn as tags; Ctrl+click on one shows its notes.
 - Typing `[[` picks a note and puts in a normal markdown link to it;
-  links to notes open in the app, and the sidebar lists the notes linking
-  to the open one.
+  links to notes open in the app, and "Linked from" at the end of a note
+  lists the notes linking to it, with the line each link sits in.
 - `livemark note` and `livemark tags` write and list notes from scripts
   and coding agents, and a skill teaches agents to use them.
 

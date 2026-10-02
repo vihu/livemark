@@ -131,14 +131,19 @@ pub fn tags(text: &str) -> Vec<Range<usize>> {
 /// The destinations of the links in `text`, as written: inline and
 /// reference links, not images, bare URLs or `<...>` autolinks.
 pub fn links(text: &str) -> Vec<String> {
+    link_spans(text).into_iter().map(|(_, dest)| dest).collect()
+}
+
+/// The links of [`links`] with their source, brackets included.
+pub fn link_spans(text: &str) -> Vec<(Range<usize>, String)> {
     events(text)
-        .filter_map(|(event, _)| match event {
+        .filter_map(|(event, range)| match event {
             Event::Start(Tag::Link {
                 link_type,
                 dest_url,
                 ..
             }) if !matches!(link_type, LinkType::Autolink | LinkType::Email) => {
-                Some(dest_url.into_string())
+                Some((range, dest_url.into_string()))
             }
             _ => None,
         })

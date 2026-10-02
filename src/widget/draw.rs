@@ -106,6 +106,15 @@ impl Editor {
                         let block = lines.block(source);
                         block.draw(renderer, origin, area, palette.primary.base.color);
                     }
+                    draw_footer(
+                        lines,
+                        source,
+                        index,
+                        (&shaped, origin),
+                        renderer,
+                        area,
+                        (colors.link, quote_bar),
+                    );
                     top += shaped.height;
                     index += 1;
                     drawn.push(shaped);
@@ -325,6 +334,15 @@ impl Editor {
                         }
                     }
                 }
+                draw_footer(
+                    lines,
+                    source,
+                    index,
+                    (&shaped, origin),
+                    renderer,
+                    area,
+                    (colors.link, quote_bar),
+                );
                 top += shaped.height;
                 index += 1;
                 drawn.push(shaped);
@@ -344,6 +362,26 @@ impl Editor {
                 quad(renderer, bounds, text);
             }
         }
+    }
+}
+
+/// The host's footer under line `index` when it is the last, at the bottom
+/// of its height.
+fn draw_footer(
+    lines: &mut super::lines::Lines,
+    source: &super::lines::Source,
+    index: usize,
+    (shaped, origin): (&Shaped, Point),
+    renderer: &mut iced::Renderer,
+    area: Rectangle,
+    (link, line): (Color, Color),
+) {
+    if index + 1 != source.doc.line_count() {
+        return;
+    }
+    if let Some(footer) = lines.footer(source) {
+        let at = origin + Vector::new(0.0, shaped.height - footer.height);
+        footer.draw(renderer, at, area.width, area, (link, line));
     }
 }
 

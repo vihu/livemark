@@ -90,6 +90,9 @@ impl Editor {
     /// followed with Ctrl/Cmd, a checkbox ticked, or else the caret put at
     /// that place in the markdown, which takes the keyboard.
     pub(super) fn preview_press(&mut self, at: Point, command: bool) -> Task<Message> {
+        if let Some(dest) = self.footer_under(Pane::Preview, at) {
+            return Task::done(Message(Input::Follow(dest)));
+        }
         if command && let Some(dest) = self.link_under(Pane::Preview, at) {
             return Task::done(Message(Input::Follow(dest)));
         }

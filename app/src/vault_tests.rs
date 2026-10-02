@@ -174,7 +174,15 @@ fn links_between_notes_are_offered_opened_and_listed_back() {
         ["Plan"]
     );
     let _ = app.update(Message::Opened(Some(hotels.clone())));
-    assert!(app.linked_from().is_some());
+    // Under the note, with the line the link sits in, pointing back.
+    assert_eq!(
+        crate::links::footer_links(app.vault.as_ref().unwrap(), &hotels),
+        [livemark::widget::FooterLink {
+            label: "Plan".into(),
+            detail: "See hotels.".into(),
+            destination: "sub/plan.md".into(),
+        }]
+    );
     let _ = app.view();
     // Typing `[[` in the plan offers the hotels, as a link from there.
     let plan = root.join("sub/plan.md");

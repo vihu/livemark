@@ -72,8 +72,9 @@ lists every matching note in the sidebar, each with its lines, until Clear.
 Outside a vault it finds the recent files by name. Typing `[[` lists notes by title and puts in a
 normal markdown link to the one chosen (`[Lisbon hotels](2026-10-02-lisbon-hotels.md)`,
 so links work in the git web UI too); typing `#` and a letter lists the
-vault's tags. Ctrl+click on a link to a note opens it here, and the
-sidebar lists the notes linking to the open one. Each tag in the sidebar has a
+vault's tags. Ctrl+click on a link to a note opens it here, and "Linked
+from" at the end of the note lists the notes linking to it, each with the
+line its link sits in, a click opening it. Each tag in the sidebar has a
 menu: Rename or merge (F2; typing a tag that exists merges the two, and
 says so first) and Delete from every note (an inline `#tag` keeps its
 word), and Open in the tag manager. Manage tags, under the list, shows
@@ -195,7 +196,9 @@ key's command. `Editor::toolbar_tools` and `Editor::toolbar_modes` are its
 two halves, for a host that puts its own items between them. A paste with no text but a picture comes to the host as
 `Message::pasted_image` (PNG bytes); keep it and answer with
 `Editor::insert_text`. `Message::tag` is a `#tag` the user Ctrl+clicked (drawn as a pill), for the
-host to show. `Editor::completing` says what is typed after `[[` or a tag's `#`;
+host to show. `Editor::set_footer` lists links under the note's last line
+(`FooterLink`: a label, a line beside it, a destination), each handed back as
+`Message::link` on a click: the app's "Linked from". `Editor::completing` says what is typed after `[[` or a tag's `#`;
 answer with `Editor::set_choices` and the editor lists them under the
 caret. `Editor::image_urls` lists where the note's images point; hand each
 picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn

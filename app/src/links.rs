@@ -1,16 +1,13 @@
 //! Links between notes (PLAN-004 answer 7): plain markdown links,
 //! `[Lisbon hotels](2026-10-02-lisbon-hotels.md)`, picked from a list
 //! after `[[` (and tags after `#`), opened in the app when clicked, and
-//! the notes linking to the open one listed in the sidebar.
+//! the notes linking to the open one listed under it (`Editor::set_footer`).
 use std::path::{Path, PathBuf};
 
-use iced::widget::text::{Ellipsis, Wrapping};
-use iced::widget::{button, column, lazy, text};
-use iced::{Element, Length, Theme};
-use livemark::widget::{Choice, Complete};
+use livemark::widget::{Choice, Complete, FooterLink};
 
+use super::App;
 use super::vault::{self, Vault};
-use super::{App, Message};
 
 /// The most notes listed as linking here.
 const LINKED: usize = 8;
@@ -61,18 +58,14 @@ impl App {
             .then(|| std::fs::canonicalize(&path).unwrap_or(path))
     }
 
-    /// The notes linking to the open one, under the sidebar's list.
-    pub(crate) fn linked_from(&self) -> Option<Element<'_, Message>> {
-        let (vault, path) = (self.vault.as_ref()?, self.path.as_ref()?);
-        if vault.linked_from(path).is_empty() {
-            return None;
-        }
-        Some(
-            lazy((vault.generation, path.clone()), move |(_, path)| {
-                linked_list(vault, path)
-            })
-            .into(),
-        )
+    /// The notes linking to the open one, under it (PLAN-005): each with
+    /// the line its link sits in, a click opening it.
+    pub(crate) fn refresh_footer(&mut self) {
+        let links = match (&self.vault, &self.path) {
+            (Some(vault), Some(path)) => footer_links(vault, path),
+            _ => Vec::new(),
+        };
+        self.editor.set_footer("Linked from", links);
     }
 }
 
@@ -119,36 +112,59 @@ fn relative(from: &Path, to: &Path) -> String {
     parts.join("/").replace(' ', "%20")
 }
 
-fn linked_list(vault: &Vault, path: &Path) -> Element<'static, Message> {
-    let notes = vault.linked_from(path);
-    let mut list = column![text("Linked from").size(12).style(text::secondary)].spacing(1);
-    for note in notes.iter().take(LINKED) {
-        list = list.push(
-            button(
-                text(note.title.clone())
-                    .size(13)
-                    .wrapping(Wrapping::None)
-                    .ellipsis(Ellipsis::End),
-            )
-            .width(Length::Fill)
-            .padding([3, 8])
-            .style(|theme: &Theme, status| super::sidebar::choice(theme, status, false))
-            .on_press(Message::Opened(Some(note.path.clone()))),
-        );
-    }
-    if notes.len() > LINKED {
-        list = list.push(
-            text(format!("and {} more", notes.len() - LINKED))
-                .size(11)
-                .style(text::secondary),
-        );
-    }
-    list.into()
+/// The notes linking to the note at `path`, most recent first, as links
+/// from it with the line each link sits in.
+pub(crate) fn footer_links(vault: &Vault, path: &Path) -> Vec<FooterLink> {
+    vault
+        .linked_from(path)
+        .into_iter()
+        .take(LINKED)
+        .map(|note| FooterLink {
+            label: note.title.clone(),
+            detail: context(&note.text, &note.path, path),
+            destination: relative(path, &note.path),
+        })
+        .collect()
+}
+
+/// The line of `text` (the note at `from`) with its first link to `to`:
+/// that link's text in place of its markdown, list and quote markup off.
+fn context(text: &str, from: &Path, to: &Path) -> String {
+    let spans = livemark::parse::link_spans(text);
+    let Some((range, _)) = spans
+        .iter()
+        .find(|(_, dest)| vault::resolve(from, dest).as_deref() == Some(to))
+    else {
+        return String::new();
+    };
+    let start = text[..range.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    let end = range.end
+        + text[range.end..]
+            .find(['\n', '\r'])
+            .unwrap_or(text.len() - range.end);
+    let link = &text[range.clone()];
+    let label = link
+        .strip_prefix('[')
+        .and_then(|rest| rest.split("](").next())
+        .map_or(link, |label| label.split("][").next().unwrap_or(label));
+    let line = format!(
+        "{}{label}{}",
+        &text[start..range.start],
+        &text[range.end..end]
+    );
+    let line = line
+        .trim_start_matches([' ', '\t', '>', '-', '*', '+'])
+        .trim_start();
+    let line = ["[ ] ", "[x] ", "[X] "]
+        .iter()
+        .find_map(|task| line.strip_prefix(task))
+        .unwrap_or(line);
+    line.trim().to_owned()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::relative;
+    use super::{context, relative};
     use std::path::Path;
 
     #[test]
@@ -157,5 +173,16 @@ mod tests {
         assert_eq!(at("/v/a.md", "/v/b c.md"), "b%20c.md");
         assert_eq!(at("/v/sub/a.md", "/v/b.md"), "../b.md");
         assert_eq!(at("/v/a.md", "/v/sub/b.md"), "sub/b.md");
+    }
+
+    #[test]
+    fn the_linking_line_reads_as_text() {
+        let line = |text: &str| context(text, Path::new("/v/a.md"), Path::new("/v/b.md"));
+        assert_eq!(
+            line("# A\n- [ ] Book it, see [the hotels](b.md#rooms) first.\nmore\n"),
+            "Book it, see the hotels first."
+        );
+        assert_eq!(line("> [B][b] says so\n\n[b]: b.md\n"), "B says so");
+        assert_eq!(line("no link here\n"), "");
     }
 }

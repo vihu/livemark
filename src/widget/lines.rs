@@ -151,6 +151,8 @@ pub struct Source<'a> {
     pub concealed: &'a [Mark],
     /// Pictures for images, by destination (`Editor::set_image`).
     pub pictures: &'a HashMap<String, Picture>,
+    /// Links the host lists under the last line (`Editor::set_footer`).
+    pub footer: Option<&'a super::footer::Footer>,
 }
 
 /// Shaped lines and the scroll position.
@@ -192,6 +194,9 @@ pub struct Lines {
     /// The front matter as properties, by its text, the inline tags,
     /// width, colors and zoom (`properties.rs`).
     pub(super) block: Option<(u64, Arc<Block>)>,
+    /// The host's footer laid out, by its links, width, colors and zoom
+    /// (`footer.rs`).
+    pub(super) laid_footer: Option<(u64, Arc<super::footer::Laid>)>,
 }
 
 impl Lines {
@@ -214,6 +219,7 @@ impl Lines {
             grids: HashMap::new(),
             grids_used: Vec::new(),
             block: None,
+            laid_footer: None,
             cache: HashMap::new(),
         }
     }
@@ -234,6 +240,12 @@ impl Lines {
                 } else {
                     0.0
                 };
+            }
+            // The host's footer under the last line.
+            if index + 1 == source.doc.line_count()
+                && let Some(footer) = self.footer(source)
+            {
+                shaped.height += footer.height;
             }
         }
         shaped

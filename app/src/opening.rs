@@ -50,6 +50,7 @@ impl App {
                 self.stamp = file::modified(&path);
                 self.error = None;
                 self.load_images();
+                self.refresh_footer();
             }
             Err(error) => self.error = Some(error),
         }
@@ -80,6 +81,7 @@ impl App {
                 self.settings.opened(&path);
                 self.remember();
                 self.path = Some(path);
+                self.refresh_footer();
                 self.error = None;
                 self.load_images();
                 Editor::focus()

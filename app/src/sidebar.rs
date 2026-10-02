@@ -91,6 +91,7 @@ impl App {
                     self.remember();
                     self.vault = Some(vault);
                     self.shown = Shown::All;
+                    self.refresh_footer();
                 }
                 Err(error) => self.error = Some(error.to_string()),
             },
@@ -157,6 +158,7 @@ impl App {
         if let Some(vault) = &mut self.vault {
             vault.refresh();
         }
+        self.refresh_footer();
     }
 
     /// The sidebar, when a vault is open.
@@ -298,10 +300,6 @@ impl App {
             heading,
             scrollable(notes).height(Length::Fill)
         ]
-        .push(
-            self.linked_from()
-                .map(|linked| column![rule::horizontal(1), linked].spacing(8)),
-        )
         .spacing(8);
         // How much is not committed yet: the user's git keeps the vault.
         let status = vault.uncommitted().map(|count| {

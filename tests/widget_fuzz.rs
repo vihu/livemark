@@ -88,6 +88,15 @@ fn random_widget_sessions_keep_the_text_whole() {
         let mut editor = Editor::new(text.clone());
         // Images pointing at `p.png` have a picture: lines grow under them.
         editor.set_image("p.png", &picture());
+        // Half with links listed under the last line.
+        if rng.below(2) == 0 {
+            let link = livemark::widget::FooterLink {
+                label: "Another note".into(),
+                detail: "a longer line where the link sits, which wraps at the width".into(),
+                destination: "b.md".into(),
+            };
+            editor.set_footer("Linked from", vec![link.clone(), link]);
+        }
         let mut edited = false;
         for round in 0..ROUNDS {
             let events: Vec<Vec<Event>> = (0..1 + rng.below(4)).map(|_| event(&mut rng)).collect();
