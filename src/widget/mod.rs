@@ -128,8 +128,9 @@ enum Input {
         clicks: u8,
         /// Ctrl, or Cmd on macOS: a click on a link follows it.
         command: bool,
-        /// Alt: with any modifier a checkbox is not toggled.
-        alt: bool,
+        /// Any other modifier (Alt, the logo key, Control on macOS): with
+        /// any modifier a checkbox is not toggled.
+        other: bool,
     },
     /// A link to follow: the host's to open (REFERENCE-001 section 5).
     Follow(String),

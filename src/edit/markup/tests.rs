@@ -149,20 +149,21 @@ fn tab_moves_an_item_and_its_children_under_the_one_before() {
     assert_eq!(tab("\tx|", true), "x|");
 }
 
+/// Tab or Shift+Tab over the selection `[` to `]` in `text`.
+fn tab_over(text: &str, outdent: bool) -> String {
+    let (anchor, head) = (text.find('[').unwrap(), text.find(']').unwrap() - 1);
+    let mut doc = Doc::new(text.replacen('[', "", 1).replacen(']', "", 1));
+    doc.set_selection(Selection { anchor, head });
+    indent(&mut doc, outdent, Duration::ZERO);
+    let range = doc.selection().range();
+    let mut shown = doc.text().to_owned();
+    shown.insert(range.end, ']');
+    shown.insert(range.start, '[');
+    shown
+}
+
 #[test]
 fn tab_moves_every_item_a_selection_reaches() {
-    // `[` and `]` mark the selection here.
-    let tab_over = |text: &str, outdent: bool| {
-        let (anchor, head) = (text.find('[').unwrap(), text.find(']').unwrap() - 1);
-        let mut doc = Doc::new(text.replacen('[', "", 1).replacen(']', "", 1));
-        doc.set_selection(Selection { anchor, head });
-        indent(&mut doc, outdent, Duration::ZERO);
-        let range = doc.selection().range();
-        let mut shown = doc.text().to_owned();
-        shown.insert(range.end, ']');
-        shown.insert(range.start, '[');
-        shown
-    };
     assert_eq!(
         tab_over("- a\n- [b\n- c]\n- d", false),
         "- a\n  - [b\n  - c]\n- d"
@@ -179,5 +180,43 @@ fn tab_moves_every_item_a_selection_reaches() {
     assert_eq!(
         tab_over("1. a\n2. [b\n3. c]\n4. d\n5. e", false),
         "1. a\n   1. [b\n   2. c]\n2. d\n3. e"
+    );
+}
+
+#[test]
+fn a_selection_from_a_lines_start_moves_the_item_on_that_line() {
+    assert_eq!(
+        tab_over("- z\n- a\n[  - b\n  - c]", false),
+        "- z\n- a\n[  - b\n  - c]",
+        "b is a first item: nothing moves, not a"
+    );
+    assert_eq!(
+        tab_over("- z\n- a\n  - y\n[  - b\n  - c\n]", false),
+        "- z\n- a\n  - y\n  [  - b\n    - c\n]"
+    );
+    assert_eq!(tab_over("- a\n[  - b\n  - c\n]", true), "- a\n[- b\n- c\n]");
+}
+
+#[test]
+fn renumbering_replaces_the_digits_as_written() {
+    assert_eq!(tab("1. a\n02. b|", false), "1. a\n   1. b|");
+    assert_eq!(
+        tab_over("1. a\n02. [b\n03. c]\n04. d", false),
+        "1. a\n   1. [b\n   2. c]\n2. d"
+    );
+}
+
+#[test]
+fn in_a_quote_items_move_after_the_quote_marker() {
+    assert_eq!(tab("> - a\n> - b|", false), "> - a\n>   - b|");
+    assert_eq!(
+        tab("> 1. a\n> 2. b|\n> 3. c", false),
+        "> 1. a\n>    1. b|\n> 2. c"
+    );
+    assert_eq!(tab("> - a\n>   - b|", true), "> - a\n> - b|");
+    assert_eq!(
+        tab("> - a\n> - b|\n>   more 😀\n> - c", false),
+        "> - a\n>   - b|\n>     more 😀\n> - c",
+        "every line of the item"
     );
 }

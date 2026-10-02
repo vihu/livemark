@@ -65,7 +65,7 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_caret() {
             shift: false,
             clicks: 1,
             command: false,
-            alt: false,
+            other: false,
         };
         let _ = editor.update(Message(press));
         let _ = editor.update(Message(Input::Release));
@@ -81,7 +81,7 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_caret() {
         shift: false,
         clicks: 1,
         command: true,
-        alt: false,
+        other: false,
     };
     let _ = editor.update(Message(press));
     let _ = editor.update(Message(Input::Release));
@@ -112,7 +112,7 @@ fn nothing_is_revealed_before_the_caret_is_first_placed() {
         shift: false,
         clicks: 1,
         command: false,
-        alt: false,
+        other: false,
     };
     let _ = editor.update(super::Message(press));
     assert_eq!(
@@ -144,7 +144,7 @@ fn a_click_on_a_grid_cell_puts_the_caret_in_its_source() {
         shift: false,
         clicks: 1,
         command: false,
-        alt: false,
+        other: false,
     }));
     let _ = editor.update(Message(Input::Release));
     let head = editor.selection().head;
@@ -160,7 +160,7 @@ fn a_click_on_a_grid_cell_puts_the_caret_in_its_source() {
         shift: false,
         clicks: 1,
         command: false,
-        alt: false,
+        other: false,
     }));
     let _ = editor.update(Message(Input::Release));
     let head = editor.selection().head;
@@ -182,7 +182,7 @@ fn ctrl_click_and_alt_enter_hand_a_link_to_the_host() {
             shift: false,
             clicks: 1,
             command,
-            alt: false,
+            other: false,
         })
     };
     // Ctrl+click on the link text (its markers hidden, the caret elsewhere).
@@ -295,7 +295,7 @@ fn a_press_keeps_markers_as_drawn_until_the_release() {
         shift: false,
         clicks: 1,
         command: false,
-        alt: false,
+        other: false,
     };
     let _ = editor.update(Message(press));
     assert_eq!(editor.selection().head, 9, "between `b` and `o`");
@@ -355,11 +355,57 @@ fn ticking_a_checkbox_far_from_the_caret_keeps_the_view() {
         shift: false,
         clicks: 1,
         command: false,
-        alt: false,
+        other: false,
     };
     let _ = editor.update(Message(press));
     let _ = editor.update(Message(Input::Release));
     assert!(editor.text().ends_with("- [x] task\n"));
     assert_eq!(editor.selection().head, 0, "the caret stays");
     assert_eq!(editor.lines.borrow().anchor, anchor, "and so does the view");
+}
+
+#[test]
+fn a_grid_follows_links_only_on_cell_text_and_its_rule_maps_by_column() {
+    use super::{Input, Message};
+    let text = "> | a | [l](http://x.y) |\n> | - | - |\n> | b | c |\n\nend\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    let (x0, second, top0, top1) = editor.with_lines(|lines, source| {
+        let grid = lines.grid(source, 0);
+        let x0 = lines.grid_x(source, 0);
+        let top0 = lines.top_of(source, 0).unwrap();
+        let top1 = lines.top_of(source, 1).unwrap();
+        (x0, grid.columns[1].0, top0, top1)
+    });
+    let press = |at: iced::Point| {
+        Message(Input::Press {
+            at,
+            shift: false,
+            clicks: 1,
+            command: true,
+            other: false,
+        })
+    };
+    // Far right of the grid, on the link's row: nothing to follow.
+    let task = editor.update(press(iced::Point::new(x0 + second + 150.0, top0 + 8.0)));
+    assert!(outputs(task).iter().all(|m| m.link().is_none()));
+    // On the link's text it follows.
+    let task = editor.update(press(iced::Point::new(x0 + second + 10.0, top0 + 8.0)));
+    assert_eq!(
+        outputs(task)
+            .iter()
+            .filter_map(|m| m.link())
+            .collect::<Vec<_>>(),
+        ["http://x.y"]
+    );
+    // A click on the rule under the header goes to the header's cell in
+    // that column.
+    let offset =
+        editor.with_lines(|lines, source| lines.table_hit(source, x0 + second + 2.0, top1 + 1.0));
+    let offset = offset.expect("on the grid");
+    let cell = editor.styled.tables()[0].rows[0].1[1].clone();
+    assert!(
+        cell.contains(&offset),
+        "{offset} in the header's second cell {cell:?}"
+    );
 }

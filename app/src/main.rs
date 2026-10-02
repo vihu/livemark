@@ -123,6 +123,13 @@ impl App {
         }
     }
 
+    /// Whether the file was modified on disk since it was opened or saved
+    /// here.
+    fn changed_on_disk(&self) -> bool {
+        let stamp = self.path.as_deref().and_then(file::modified);
+        stamp.is_some() && stamp != self.stamp
+    }
+
     /// Loads the file again if it changed on disk; with unsaved changes,
     /// asks first.
     fn check_disk(&mut self) {
@@ -199,6 +206,9 @@ impl App {
                 Err(error) => self.error = Some(error),
             },
             Message::Opened(None) => {}
+            // Never over a file changed on disk since it was opened or
+            // saved: ask first (Load it, Keep mine), then save again.
+            Message::Save { choose: false } if self.changed_on_disk() => self.changed = true,
             Message::Save { choose } => {
                 let text = self.editor.text().to_owned();
                 let version = self.editor.version();
@@ -421,6 +431,14 @@ mod tests {
         let _ = app.update(Message::Focused);
         let _ = app.update(Message::Reload(true));
         assert_eq!(app.editor.text(), "four\n", "loaded, edits dropped");
+        // Saving over a change made on disk asks first; keeping mine lets
+        // the next save through.
+        write(&path, "five\n", 40);
+        let _ = app.update(Message::Save { choose: false });
+        assert!(app.changed, "asked, not saved");
+        let _ = app.update(Message::Reload(false));
+        let _ = app.update(Message::Save { choose: false });
+        assert!(!app.changed, "saving");
         // Ctrl+N with unsaved changes asks first; discarding starts afresh.
         app.saved = u64::MAX;
         let _ = app.update(Message::New);

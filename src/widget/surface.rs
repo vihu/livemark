@@ -205,7 +205,8 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                         mouse::click::Kind::Triple => 3,
                     };
                     let command = state.modifiers.command();
-                    let alt = state.modifiers.alt();
+                    let rest = keyboard::Modifiers::SHIFT | keyboard::Modifiers::COMMAND;
+                    let other = !state.modifiers.difference(rest).is_empty();
                     publish(
                         shell,
                         Input::Press {
@@ -213,7 +214,7 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                             shift,
                             clicks,
                             command,
-                            alt,
+                            other,
                         },
                     );
                     shell.capture_event();

@@ -244,7 +244,7 @@ fn bullet(text: &str) -> Option<(char, &str, usize)> {
 }
 
 /// The indentation and number of the ordered item starting at `start`.
-pub(super) fn item_number(text: &str, start: usize) -> Option<(usize, u64)> {
+pub(super) fn item_number(text: &str, start: usize) -> Option<(Range<usize>, u64)> {
     let rest = &text[start..];
     let spaces = rest
         .bytes()
@@ -256,10 +256,11 @@ pub(super) fn item_number(text: &str, start: usize) -> Option<(usize, u64)> {
         .take(9)
         .take_while(u8::is_ascii_digit)
         .count();
+    let at = start + spaces;
     rest[spaces..spaces + digits]
         .parse()
         .ok()
-        .map(|n| (spaces, n))
+        .map(|n| (at..at + digits, n))
 }
 
 /// Renumbers the consecutive ordered items after `after` in its list,
@@ -281,17 +282,15 @@ pub(super) fn renumber(
     };
     for &next in &items[position + 1..] {
         let start = blocks.containers[next].range.start;
-        let Some((spaces, number)) = item_number(text, start) else {
+        let Some((digits, number)) = item_number(text, start) else {
             return;
         };
         if number != prev + 1 {
             return;
         }
-        let digits = number.to_string().len();
-        let at = start + spaces;
         let new = (prev as i64 + 2 + offset).max(0).to_string();
         changes.push(Change {
-            range: at..at + digits,
+            range: digits,
             text: new,
         });
         prev = number;

@@ -132,6 +132,15 @@ impl Grid {
             }
     }
 
+    /// Whether `x` (from the row's start) is on the text of a cell of row
+    /// `row`.
+    pub fn covers(&self, row: usize, x: f32) -> bool {
+        (0..self.columns.len()).any(|column| {
+            let start = self.text_x(row, column);
+            (start..=start + self.cells[row][column].size.width).contains(&x)
+        })
+    }
+
     /// The source offset under `x` (from the row's start) in row `row` of
     /// `table`, a table with this grid's text.
     pub fn hit(&self, table: &Table, row: usize, x: f32) -> usize {

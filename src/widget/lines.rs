@@ -461,26 +461,37 @@ impl Lines {
         let mark = marks_in(source.concealed, range)
             .find(|m| matches!(m.kind, MarkKind::TableRow(..) | MarkKind::TableRule(_)))?
             .clone();
-        let shaped = self.shaped(source, index);
-        let start = super::marks::start_x(&shaped, mark.range.start);
         let (table, row) = match mark.kind {
             MarkKind::TableRow(table, row) => (table, row),
             MarkKind::TableRule(table) => (table, 0),
             _ => return None,
         };
+        let start = self.grid_x(source, table);
         let grid = self.grid(source, table);
         Some(grid.hit(&source.styled.tables()[table], row, x - start))
     }
 
+    /// Where table `table`'s grid starts, from the text area's left edge:
+    /// at its header row's first pipe, for every row (rows after the first
+    /// can have other prefixes, and the delimiter row's line is thin).
+    pub fn grid_x(&mut self, source: &Source, table: usize) -> f32 {
+        let header = source.styled.tables()[table].rows[0].0.start;
+        let shaped = self.shaped(source, source.doc.line_at(header));
+        super::marks::start_x(&shaped, header)
+    }
+
     /// Whether `x`, `y` in the text area is on where source `range` is
-    /// drawn (in a table drawn as a grid: anywhere in the row).
+    /// drawn (in a table drawn as a grid: on the text of the cell there).
     pub fn covers(&mut self, source: &Source, range: Range<usize>, x: f32, y: f32) -> bool {
         let (index, top) = self.line_at_y(source, y);
         let line = source.doc.line_range(index);
-        let grid = marks_in(source.concealed, line.clone())
-            .any(|m| matches!(m.kind, MarkKind::TableRow(..)));
-        if grid {
-            return true;
+        let row = marks_in(source.concealed, line.clone()).find_map(|m| match m.kind {
+            MarkKind::TableRow(table, row) => Some((table, row)),
+            _ => None,
+        });
+        if let Some((table, row)) = row {
+            let start = self.grid_x(source, table);
+            return self.grid(source, table).covers(row, x - start);
         }
         let (start, end) = (range.start.max(line.start), range.end.min(line.end));
         if start > end {

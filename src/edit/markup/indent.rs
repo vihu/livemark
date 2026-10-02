@@ -17,7 +17,13 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     let pos = selection.head;
     let reach = selection.range();
     let blocks = Blocks::new(text);
-    let item = contexts(text, &blocks, reach.start)
+    let column = |start: usize| start - text[..start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    // A selection starting in a line's indentation or quote prefix belongs
+    // to the item on that line, not to the one around it.
+    let line_start = reach.start - column(reach.start);
+    let rest = &text[line_start..];
+    let prefix = line_start + rest.len() - rest.trim_start_matches([' ', '\t', '>']).len();
+    let item = contexts(text, &blocks, reach.start.max(prefix))
         .into_iter()
         .rev()
         .find_map(|c| c.item);
@@ -63,7 +69,6 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         }
         return;
     };
-    let column = |start: usize| start - text[..start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
     let item_start = blocks.containers[item].range.start;
     let items = &blocks.lists[list].items;
     let position = items.iter().position(|&i| i == item).unwrap_or(0);
@@ -105,7 +110,13 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     if shift == 0 {
         return;
     }
-    // Every line of the items and their children moves.
+    // Every line of the items and their children moves, after the `>` of
+    // the quotes the list is in.
+    let quotes = blocks
+        .containers
+        .iter()
+        .filter(|c| c.list.is_none() && c.range.start < item_start && item_start <= c.range.end)
+        .count();
     let end = blocks.containers[items[last]].range.end;
     let first_line = item_start - column(item_start);
     let mut changes = Vec::new();
@@ -113,15 +124,16 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     loop {
         let rest = &text[line..end];
         let len = rest.find(['\n', '\r']).unwrap_or(rest.len());
-        if shift > 0 && len > 0 {
-            changes.push(Change::insert(line, " ".repeat(shift as usize)));
+        let at = line + quote_prefix(&rest[..len], quotes);
+        if shift > 0 && at < line + len {
+            changes.push(Change::insert(at, " ".repeat(shift as usize)));
         } else if shift < 0 {
-            let spaces = rest
+            let spaces = text[at..end]
                 .bytes()
                 .take(-shift as usize)
                 .take_while(|&b| b == b' ')
                 .count();
-            changes.push(Change::delete(line..line + spaces));
+            changes.push(Change::delete(at..at + spaces));
         }
         match rest.find('\n') {
             Some(i) if line + i < end => line += i + 1,
@@ -133,10 +145,9 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
     if !outdent && blocks.lists[list].ordered {
         for (n, &moved) in items[position..=last].iter().enumerate() {
             let start = blocks.containers[moved].range.start;
-            if let Some((spaces, number)) = item_number(text, start) {
-                let at = start + spaces;
+            if let Some((digits, _)) = item_number(text, start) {
                 changes.push(Change {
-                    range: at..at + number.to_string().len(),
+                    range: digits,
                     text: (n + 1).to_string(),
                 });
             }
@@ -149,6 +160,28 @@ pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
         head: map(&changes, selection.head),
     };
     doc.apply(changes, selection, Kind::Other, now);
+}
+
+/// The length of up to `depth` quote markers (`>` with up to three spaces
+/// before and one after) at the start of `line`.
+fn quote_prefix(line: &str, depth: usize) -> usize {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    for _ in 0..depth {
+        let mut i = at;
+        while i < bytes.len() && i - at < 3 && bytes[i] == b' ' {
+            i += 1;
+        }
+        if bytes.get(i) != Some(&b'>') {
+            break;
+        }
+        i += 1;
+        if bytes.get(i) == Some(&b' ') {
+            i += 1;
+        }
+        at = i;
+    }
+    at
 }
 
 /// After ordered items `moved` went into their own list, the consecutive
@@ -169,15 +202,14 @@ fn renumber_after(
     };
     for &item in &items[moved.end() + 1..] {
         let start = blocks.containers[item].range.start;
-        let Some((spaces, number)) = item_number(text, start) else {
+        let Some((digits, number)) = item_number(text, start) else {
             return;
         };
         if number != previous + 1 {
             return;
         }
-        let at = start + spaces;
         changes.push(Change {
-            range: at..at + number.to_string().len(),
+            range: digits,
             text: next.to_string(),
         });
         previous = number;

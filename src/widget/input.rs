@@ -19,7 +19,7 @@ impl Editor {
         let mut task = Task::none();
         // Inputs that move nothing keep the view where it is, even with the
         // caret off screen: following a link, ticking a checkbox, letting
-        // go of the button.
+        // go of the button, copying, selecting all.
         let mut keep_view = false;
         // Any input but scrolling places the caret (REFERENCE-001
         // section 2); a press only on release, so the text clicked does
@@ -51,8 +51,8 @@ impl Editor {
                 shift,
                 clicks,
                 command,
-                alt,
-            } => match self.press(at, shift, clicks, !(shift || command || alt)) {
+                other,
+            } => match self.press(at, shift, clicks, !(shift || command || other)) {
                 Some(placed) => side = placed,
                 None => {
                     side = self.side;
@@ -132,13 +132,18 @@ impl Editor {
                     self.linewise = linewise.then(|| text.clone());
                     if cut {
                         edit::cut(&mut self.doc, now);
+                    } else {
+                        keep_view = true;
                     }
                     task = iced::clipboard::write(text).discard();
                 }
-                Key::SelectAll => self.doc.set_selection(Selection {
-                    anchor: 0,
-                    head: self.doc.text().len(),
-                }),
+                Key::SelectAll => {
+                    self.doc.set_selection(Selection {
+                        anchor: 0,
+                        head: self.doc.text().len(),
+                    });
+                    keep_view = true;
+                }
                 Key::Undo => {
                     self.doc.undo();
                 }
