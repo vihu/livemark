@@ -277,3 +277,29 @@ fn enter_in_the_find_field_with_shift_held_steps_back() {
     send(&mut editor, Input::Find(FindInput::Step { forward: true }));
     assert_eq!(editor.selection().range(), 4..5);
 }
+
+#[test]
+fn a_press_keeps_markers_as_drawn_until_the_release() {
+    use super::{Input, Message};
+    let text = "plain **bold** end\n";
+    let mut editor = Editor::new(text.into());
+    editor.select(text.len(), text.len());
+    let hidden = |editor: &Editor| editor.with_lines(|_, source| source.hidden.to_vec());
+    let before = hidden(&editor);
+    assert_eq!(before.len(), 2, "the bold markers");
+    // A press on the bold text: the caret goes there, the text stays put.
+    let x = editor.with_lines(|lines, source| lines.caret_in_line(source, 9, Affinity::After).0);
+    let at = iced::Point::new(x, 10.0);
+    let press = Input::Press {
+        at,
+        shift: false,
+        clicks: 1,
+        command: false,
+        alt: false,
+    };
+    let _ = editor.update(Message(press));
+    assert_eq!(editor.selection().head, 9, "between `b` and `o`");
+    assert_eq!(hidden(&editor), before, "frozen while pressed");
+    let _ = editor.update(Message(Input::Release));
+    assert!(hidden(&editor).is_empty(), "revealed on release");
+}
