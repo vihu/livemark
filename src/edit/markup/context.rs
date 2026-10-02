@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 
+use super::{next_line, quote_prefix};
 use crate::doc::Change;
 use crate::parse;
 
@@ -299,10 +300,37 @@ pub(super) fn renumber(
             return;
         }
         let new = (prev as i64 + 2 + offset).max(0).to_string();
+        // A number gaining a digit: the item's other lines move with its
+        // text, or a list nested in it would end up outside it.
+        if new.len() > digits.len() {
+            indent_rest(text, blocks, next, changes);
+        }
         changes.push(Change {
             range: digits,
             text: new,
         });
         prev = number;
+    }
+}
+
+/// One more column for every line of `item` after its first: a space
+/// where its indentation ends, after the quotes the item is in.
+fn indent_rest(text: &str, blocks: &Blocks, item: usize, changes: &mut Vec<Change>) {
+    let range = &blocks.containers[item].range;
+    let quotes = blocks
+        .containers
+        .iter()
+        .filter(|c| c.list.is_none() && c.range.start < range.start && range.start <= c.range.end)
+        .count();
+    let mut line = range.start;
+    while let Some(next) = next_line(text, line).filter(|&n| n < range.end) {
+        line = next;
+        let rest = &text[line..range.end];
+        let rest = &rest[..rest.find(['\n', '\r']).unwrap_or(rest.len())];
+        let at = quote_prefix(rest, quotes);
+        let blank = rest[at..].len() - rest[at..].trim_start_matches([' ', '\t']).len();
+        if at + blank < rest.len() {
+            changes.push(Change::insert(line + at + blank, " "));
+        }
     }
 }

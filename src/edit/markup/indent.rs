@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use super::context::{Blocks, Container, contexts, item_number};
-use super::{line_at, map, quote_prefix};
+use super::{line_at, map, next_line, quote_prefix};
 use crate::doc::{Change, Doc, Kind, Selection};
 
 /// Tab and Shift+Tab (REFERENCE-001 section 7). In a list item: the item
@@ -419,16 +419,6 @@ fn renumber_after(
         }
     }
     renumbered
-}
-
-/// Where the line after the one at `line` starts, after any line ending.
-fn next_line(text: &str, line: usize) -> Option<usize> {
-    let i = line + text[line..].find(['\n', '\r'])?;
-    Some(if text[i..].starts_with("\r\n") {
-        i + 2
-    } else {
-        i + 1
-    })
 }
 
 /// How wide an item's marker is with the space after it (`- `, `10. `):

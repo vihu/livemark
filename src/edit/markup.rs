@@ -229,6 +229,16 @@ fn quote_prefix(line: &str, depth: usize) -> usize {
     at
 }
 
+/// Where the line after the one at `line` starts, after any line ending.
+fn next_line(text: &str, line: usize) -> Option<usize> {
+    let i = line + text[line..].find(['\n', '\r'])?;
+    Some(if text[i..].starts_with("\r\n") {
+        i + 2
+    } else {
+        i + 1
+    })
+}
+
 /// Whether `context`'s container starts on the line at `line_start`.
 fn inner_starts_here(blocks: &Blocks, context: &context::Context, line_start: usize) -> bool {
     match context.item {

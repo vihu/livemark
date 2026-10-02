@@ -415,3 +415,15 @@ fn shift_tab_into_another_kind_of_list_keeps_both_numbers() {
         "1. a\n2. b|\n   1. x\n   2. c"
     );
 }
+
+#[test]
+fn enter_moves_the_children_of_an_item_whose_number_gains_a_digit() {
+    assert_eq!(
+        enter("8. a|\n9. b\n   - c\n\n   text").as_deref(),
+        Some("8. a\n9. |\n10. b\n    - c\n\n    text")
+    );
+    assert_eq!(
+        enter("> 8. a|\n> 9. b\n>    - c").as_deref(),
+        Some("> 8. a\n> 9. |\n> 10. b\n>     - c")
+    );
+}
