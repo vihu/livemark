@@ -23,6 +23,8 @@ pub struct Note {
     /// The whole text, and in lowercase, for search.
     pub text: String,
     pub lower: String,
+    /// The notes it links to, as files (for "Linked from").
+    pub links: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -105,6 +107,14 @@ impl Vault {
         tags
     }
 
+    /// The notes linking to the note at `path`, most recent first.
+    pub fn linked_from(&self, path: &Path) -> Vec<&Note> {
+        self.notes
+            .iter()
+            .filter(|note| note.path != path && note.links.iter().any(|l| l == path))
+            .collect()
+    }
+
     /// The folder's name, for the sidebar.
     pub fn name(&self) -> String {
         self.root.file_name().map_or_else(
@@ -159,6 +169,10 @@ pub fn read(path: PathBuf, modified: SystemTime, text: String) -> Note {
         .or_else(|| first_heading(&text))
         .unwrap_or_else(|| stem.clone());
     let created = created.or_else(|| date_prefix(&stem));
+    let links = livemark::parse::links(&text)
+        .iter()
+        .filter_map(|dest| resolve(&path, dest))
+        .collect();
     Note {
         path,
         title,
@@ -167,8 +181,65 @@ pub fn read(path: PathBuf, modified: SystemTime, text: String) -> Note {
         modified,
         size: text.len() as u64,
         lower: text.to_lowercase(),
+        links,
         text,
     }
+}
+
+/// The markdown file a link in the note at `from` points to: relative to
+/// the note's folder, `%20` and the like decoded, any `#part` dropped;
+/// `None` for web and mail links and links to other files. The file need
+/// not exist.
+pub fn resolve(from: &Path, dest: &str) -> Option<PathBuf> {
+    let dest = dest.split(['#', '?']).next()?;
+    if dest.is_empty() || dest.contains("://") || dest.starts_with("mailto:") {
+        return None;
+    }
+    let decoded = decode(dest);
+    let target = Path::new(&decoded);
+    if !target
+        .extension()
+        .is_some_and(|e| e == "md" || e == "markdown")
+    {
+        return None;
+    }
+    let joined = from.parent().unwrap_or(Path::new("")).join(target);
+    // `..` and `.` taken out by the names alone: the file may not exist.
+    let mut clean = PathBuf::new();
+    for part in joined.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                clean.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => clean.push(other),
+        }
+    }
+    Some(clean)
+}
+
+/// `%XX` escapes decoded, as a link's destination writes spaces and the
+/// like.
+fn decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        if bytes[i] == b'%'
+            && let (Some(Some(hi)), Some(Some(lo))) = (
+                bytes.get(i + 1).map(|&b| hex(b)),
+                bytes.get(i + 2).map(|&b| hex(b)),
+            )
+        {
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// `title`, `tags` and `created` from front matter: a hand-read subset of
@@ -238,7 +309,22 @@ fn date_prefix(s: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Vault, properties};
+    use super::{Vault, properties, resolve};
+    use std::path::Path;
+
+    #[test]
+    fn links_resolve_to_files_next_to_the_note() {
+        let from = Path::new("/v/notes/a.md");
+        assert_eq!(resolve(from, "b.md"), Some("/v/notes/b.md".into()));
+        assert_eq!(resolve(from, "../c%20d.md#part"), Some("/v/c d.md".into()));
+        assert_eq!(
+            resolve(from, "./sub/e.markdown"),
+            Some("/v/notes/sub/e.markdown".into())
+        );
+        for dest in ["https://x.org/a.md", "mailto:a@b.c", "#top", "pic.png", ""] {
+            assert_eq!(resolve(from, dest), None, "{dest:?}");
+        }
+    }
 
     #[test]
     fn front_matter_tags_titles_and_dates_are_read_leniently() {

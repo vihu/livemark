@@ -160,6 +160,10 @@ impl App {
                 rule::horizontal(1),
                 scrollable(notes).height(Length::Fill)
             ]
+            .push(
+                self.linked_from()
+                    .map(|linked| column![rule::horizontal(1), linked].spacing(8)),
+            )
             .spacing(8)
             .into(),
         };

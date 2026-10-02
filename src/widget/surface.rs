@@ -20,7 +20,7 @@ use super::{Editor, ID, Input, Key, Message, Pane, Vertical, keys, scrollbar};
 use crate::edit::Motion;
 
 /// Space between the widget's edge and the text.
-const PADDING: f32 = 16.0;
+pub(super) const PADDING: f32 = 16.0;
 
 /// The gutter left of the text, at 100%, where a revealed heading's `#`
 /// run hangs (REFERENCE-001 section 3): with the padding, room for `### `
@@ -386,6 +386,29 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                         shell.capture_event();
                     }
                     return;
+                }
+                // The completion list's keys, while it is up.
+                if self.pane == Pane::Text
+                    && self.editor.choosing()
+                    && !modifiers.command()
+                    && !modifiers.alt()
+                    && let keyboard::Key::Named(named) = key
+                {
+                    use super::complete::CompleteInput;
+                    let input = match named {
+                        keyboard::key::Named::ArrowUp => Some(CompleteInput::Move(-1)),
+                        keyboard::key::Named::ArrowDown => Some(CompleteInput::Move(1)),
+                        keyboard::key::Named::Enter | keyboard::key::Named::Tab => {
+                            Some(CompleteInput::Accept(None))
+                        }
+                        keyboard::key::Named::Escape => Some(CompleteInput::Dismiss),
+                        _ => None,
+                    };
+                    if let Some(input) = input {
+                        publish(shell, Input::Complete(input));
+                        shell.capture_event();
+                        return;
+                    }
                 }
                 let press = KeyPress {
                     key: key.clone(),

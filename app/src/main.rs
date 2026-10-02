@@ -18,6 +18,7 @@
 //! `sidebar.rs`); with one and no file given, the note last open in it
 //! opens.
 mod file;
+mod links;
 mod note;
 mod pictures;
 mod quick;
@@ -129,6 +130,8 @@ struct App {
     quick: Option<quick::Quick>,
     /// Search across the vault (Ctrl+Shift+F), while it is open.
     search: Option<search::Search>,
+    /// What the editor was completing when choices were last offered.
+    completing: Option<livemark::widget::Completing>,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -215,6 +218,7 @@ impl App {
             naming: None,
             quick: None,
             search: None,
+            completing: None,
         }
         .with_images()
     }
@@ -354,6 +358,10 @@ impl App {
                 if let Some(tag) = message.tag() {
                     self.show_tag(tag);
                 }
+                // A link to a note in the vault opens here.
+                if let Some(path) = message.link().and_then(|dest| self.note_link(dest)) {
+                    return self.update(Message::Opened(Some(path)));
+                }
                 // Only a failure is reported; an open or save error stays.
                 if let Some(Err(error)) = message.link().map(open_link) {
                     self.error = Some(error);
@@ -361,6 +369,7 @@ impl App {
                 let task = self.editor.update(message).map(Message::Editor);
                 self.load_images();
                 self.remember_zoom();
+                self.offer_choices();
                 return task;
             }
             // In a vault a new note is named first and made there.

@@ -1,6 +1,7 @@
 //! The iced editor. [`Editor`] keeps the markdown, its styling and how it
 //! is drawn; [`Editor::view`] shows it and [`Editor::update`] takes back the
 //! messages the view produces (`input.rs`). Behaviour per REFERENCE-001.
+mod complete;
 mod divider;
 mod draw;
 mod find;
@@ -27,6 +28,7 @@ use std::time::Instant;
 use iced::advanced::widget::Id;
 use iced::{Color, Element, Point, Rectangle, Size, Task};
 
+pub use self::complete::{Choice, Complete, Completing};
 use self::lines::{Lines, Source};
 use self::preview::Pane;
 use self::shape::Colors;
@@ -91,6 +93,8 @@ pub struct Editor {
     preview: preview::Preview,
     /// The share of the width the text takes in Split mode.
     split_ratio: f32,
+    /// A completion the host fills, after `[[` or `#`.
+    completion: complete::Completion,
 }
 
 /// What live preview hides and draws over, and the document version and
@@ -207,6 +211,8 @@ enum Input {
     /// The divider dragged, or double-clicked (0.5): the text's share of
     /// the width.
     SplitRatio(f32),
+    /// A key or click on the completion list.
+    Complete(complete::CompleteInput),
     /// Ctrl/Cmd with the wheel: notches up (positive) or down, a tenth of
     /// the text size each, as the app's keys step.
     ZoomSteps(f32),
@@ -299,6 +305,7 @@ impl Editor {
             pictures: HashMap::new(),
             preview: preview::Preview::new(BLACK),
             split_ratio: 0.5,
+            completion: complete::Completion::default(),
         }
     }
 
@@ -495,6 +502,9 @@ impl Editor {
             .push(divider)
             .push(preview)
             .height(iced::Length::Fill);
+        // The completion list over the text; always a stack, so the
+        // surface keeps its place.
+        let text = iced::widget::stack![text].push(self.completion_view());
         iced::widget::column![text].push(self.find_bar()).into()
     }
 

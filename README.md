@@ -67,7 +67,11 @@ recent first; `#travel` narrows to a tag; Up, Down, Enter, Escape);
 outside a vault it lists the recent files. Ctrl+Shift+F searches every
 note in the sidebar: all the words, in any case, `#tag` to narrow; each
 note with its matching lines, a click opening it with the match selected
-(Enter: the first one).
+(Enter: the first one). Typing `[[` lists notes by title and puts in a
+normal markdown link to the one chosen (`[Lisbon hotels](2026-10-02-lisbon-hotels.md)`,
+so links work in the git web UI too); typing `#` and a letter lists the
+vault's tags. Ctrl+click on a link to a note opens it here, and the
+sidebar lists the notes linking to the open one.
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and
 the theme (System, Light, Dark). The zoom, the window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click
@@ -137,7 +141,9 @@ list, task, quote, the mode) to show where the host likes; each runs its
 key's command. A paste with no text but a picture comes to the host as
 `Message::pasted_image` (PNG bytes); keep it and answer with
 `Editor::insert_text`. `Message::tag` is a `#tag` the user Ctrl+clicked (drawn as a pill), for the
-host to show. `Editor::image_urls` lists where the note's images point; hand each
+host to show. `Editor::completing` says what is typed after `[[` or a tag's `#`;
+answer with `Editor::set_choices` and the editor lists them under the
+caret. `Editor::image_urls` lists where the note's images point; hand each
 picture's bytes to `Editor::set_image` (PNG, JPEG, GIF, WebP) and it is drawn
 under its line while its markdown hides. `Editor::set_zoom` scales the
 text; `Editor::split_ratio` and `set_split_ratio` are the markdown's share

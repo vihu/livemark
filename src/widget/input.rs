@@ -103,6 +103,12 @@ impl Editor {
                 self.last_press = press.map(|press| (press, self.doc.version()));
                 side = self.side;
             }
+            Input::Complete(input) => {
+                let accept = matches!(input, super::complete::CompleteInput::Accept(_));
+                self.complete_input(input);
+                side = self.side;
+                keep_view = !accept;
+            }
             Input::PreviewPress { at, command } => {
                 task = self.preview_press(at, command);
                 side = self.side;
@@ -248,6 +254,7 @@ impl Editor {
         }
         self.follow();
         self.refresh_matches();
+        self.refresh_completion();
         task
     }
 

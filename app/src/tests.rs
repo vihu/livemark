@@ -544,3 +544,57 @@ fn a_tag_clicked_in_a_note_filters_the_sidebar() {
     assert!(app.search.is_none(), "back to the notes");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn links_between_notes_are_offered_opened_and_listed_back() {
+    use crate::sidebar::VaultMessage;
+    let dir = std::env::temp_dir().join(format!("livemark-links-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    write(
+        &dir.join("2026-10-01-lisbon-hotels.md"),
+        "---\ntitle: Lisbon [hotels]\ntags: [travel]\n---\n",
+        0,
+    );
+    write(
+        &dir.join("sub/plan.md"),
+        "# Plan\nSee [hotels](../2026-10-01-lisbon-hotels.md).\n",
+        10,
+    );
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let root = app.vault.as_ref().unwrap().root.clone();
+    let hotels = root.join("2026-10-01-lisbon-hotels.md");
+    // Linked from: the plan points at the hotels.
+    let back = app.vault.as_ref().unwrap().linked_from(&hotels);
+    assert_eq!(
+        back.iter().map(|n| n.title.as_str()).collect::<Vec<_>>(),
+        ["Plan"]
+    );
+    let _ = app.update(Message::Opened(Some(hotels.clone())));
+    assert!(app.linked_from().is_some());
+    let _ = app.view();
+    // Typing `[[` in the plan offers the hotels, as a link from there.
+    let plan = root.join("sub/plan.md");
+    let _ = app.update(Message::Opened(Some(plan.clone())));
+    let end = app.editor.text().len();
+    app.editor.select(end, end);
+    app.editor.insert_text("[[lis");
+    app.offer_choices();
+    assert_eq!(
+        app.completing.as_ref().map(|c| c.query.as_str()),
+        Some("lis")
+    );
+    let choices = crate::links::link_choices(app.vault.as_ref().unwrap(), &plan, "lis");
+    assert_eq!(
+        choices[0].insert,
+        "[Lisbon \\[hotels\\]](../2026-10-01-lisbon-hotels.md)"
+    );
+    // A click on a link to a note opens it here; web links do not.
+    assert_eq!(
+        app.note_link("../2026-10-01-lisbon-hotels.md"),
+        Some(hotels.clone())
+    );
+    assert_eq!(app.note_link("https://x.org/a.md"), None);
+    assert_eq!(app.note_link("missing.md"), None);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

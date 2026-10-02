@@ -127,14 +127,34 @@ pub fn tags(text: &str) -> Vec<Range<usize>> {
     found
 }
 
+/// The destinations of the links in `text`, as written: inline and
+/// reference links, not images, bare URLs or `<...>` autolinks.
+pub fn links(text: &str) -> Vec<String> {
+    events(text)
+        .filter_map(|(event, _)| match event {
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            }) if !matches!(link_type, LinkType::Autolink | LinkType::Email) => {
+                Some(dest_url.into_string())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// The tag whose `#` is at `start`, by [`tags`]' rule, when the text
 /// there is one (code, links and front matter are the caller's to rule
 /// out). The name may run on past a text event: pulldown-cmark splits
 /// text at `_` and the like.
 pub fn tag_at(text: &str, start: usize) -> Option<Range<usize>> {
     let name = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '/');
+    if !text.is_char_boundary(start) || !text[start..].starts_with('#') {
+        return None;
+    }
     let before = text[..start].chars().next_back();
-    if before.is_some_and(|c| !c.is_whitespace()) || !text[start..].starts_with('#') {
+    if before.is_some_and(|c| !c.is_whitespace()) {
         return None;
     }
     let rest = &text[start + 1..];
@@ -395,6 +415,9 @@ mod tests {
         assert_eq!(names, ["#travel", "#work/2026", "#my_tag_name"]);
         assert_eq!(super::front_matter_text(text), Some("tags: [a]\n#meta\n"));
         assert_eq!(super::front_matter_text("no front matter"), None);
+        let links =
+            super::links("[a](x.md) ![i](p.png) <https://u.v> www.w.x [r][ref]\n\n[ref]: y.md\n");
+        assert_eq!(links, ["x.md", "y.md"]);
     }
 
     #[test]
