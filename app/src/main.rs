@@ -29,6 +29,8 @@ mod quick;
 mod search;
 mod settings;
 mod sidebar;
+mod tag_actions;
+mod tags;
 mod vault;
 mod view;
 
@@ -134,6 +136,15 @@ struct App {
     shown: sidebar::Shown,
     /// Whether the sidebar lists every tag, not only the top eight.
     all_tags: bool,
+    /// The last tag edit across the vault, while it can be undone.
+    undo: Option<tags::Undo>,
+    /// What the Undo note says, while it shows.
+    toast: Option<String>,
+    /// The sidebar's tag under the pointer, its tag with the menu open,
+    /// and the question open under one.
+    hovered_tag: Option<String>,
+    tag_menu: Option<String>,
+    tag_action: Option<tag_actions::TagAction>,
     /// The title being typed for a new note in the vault.
     naming: Option<String>,
     /// Quick open (Ctrl+P), while it is open.
@@ -191,6 +202,8 @@ enum Message {
     Vault(sidebar::VaultMessage),
     /// Quick open.
     Quick(quick::QuickMessage),
+    /// A tag's menu and what it does.
+    Tag(tag_actions::TagMessage),
     /// Search across the vault.
     Search(search::SearchMessage),
 }
@@ -226,6 +239,11 @@ impl App {
             vault: None,
             shown: sidebar::Shown::All,
             all_tags: false,
+            undo: None,
+            toast: None,
+            hovered_tag: None,
+            tag_menu: None,
+            tag_action: None,
             naming: None,
             quick: None,
             search: None,
@@ -318,6 +336,7 @@ impl App {
             Message::Dropped(file) => return self.dropped(file),
             Message::Vault(message) => return self.vault_update(message),
             Message::Quick(message) => return self.quick_update(message),
+            Message::Tag(message) => return self.tag_update(message),
             Message::Search(message) => return self.search_update(message),
             Message::Editor(message) => {
                 if let Some(tag) = message.tag() {

@@ -188,10 +188,12 @@ impl App {
         } else {
             all.len().min(TOP)
         };
-        let rows =
-            column(all[..listed].iter().map(|(tag, count)| {
-                item("#", tag.clone(), *count, Shown::Tag(tag.clone())).into()
-            }));
+        let rows = column(
+            all[..listed]
+                .iter()
+                .map(|(tag, count)| self.tag_row(tag, *count)),
+        )
+        .spacing(2);
         // All of them past the top eight scroll in eight rows' room.
         let rows = scrollable(rows).height(if listed > TOP {
             Length::Fixed(TOP as f32 * ROW)

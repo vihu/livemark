@@ -71,7 +71,11 @@ note with its matching lines, a click opening it with the match selected
 normal markdown link to the one chosen (`[Lisbon hotels](2026-10-02-lisbon-hotels.md)`,
 so links work in the git web UI too); typing `#` and a letter lists the
 vault's tags. Ctrl+click on a link to a note opens it here, and the
-sidebar lists the notes linking to the open one. Its foot says how many
+sidebar lists the notes linking to the open one. Each tag in the sidebar has a
+menu: Rename or merge (F2; typing a tag that exists merges the two, and
+says so first) and Delete from every note (an inline `#tag` keeps its
+word). Both rewrite only the tag's own bytes, in front matter and in the
+text, and end with an Undo. Its foot says how many
 notes changed since your last commit (going by file times; the app never
 runs git, so committing, signing and pushing stay yours).
 The toolbar's File menu has New, Open, Save, Save as, the recent notes and

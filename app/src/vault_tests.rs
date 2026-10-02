@@ -362,3 +362,128 @@ fn vault_notes(app: &App) -> Vec<String> {
         .map(|note| note.title.clone())
         .collect()
 }
+
+#[test]
+fn a_tag_edit_rewrites_the_vault_reloads_the_note_and_undoes() {
+    use crate::sidebar::{Shown, VaultMessage};
+    use crate::tags::Edit;
+    let dir = std::env::temp_dir().join(format!("livemark-tag-edit-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    write(&a, "---\ntags: [trips, work]\n---\nPack for #trips.\n", 0);
+    write(&b, "---\ntags:\n  - travel\n  - trips\n---\n", 0);
+    write(&dir.join("c.md"), "nothing to do with it\n", 0);
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let a = std::fs::canonicalize(&a).unwrap();
+    let _ = app.update(Message::Opened(Some(a.clone())));
+    let _ = app.update(Message::Vault(VaultMessage::Show(Shown::Tag(
+        "trips".into(),
+    ))));
+    let merge = Edit::Rename {
+        from: "trips".into(),
+        to: "travel".into(),
+    };
+    assert_eq!(app.edit_tags(merge.clone()), Ok(2));
+    assert_eq!(
+        std::fs::read_to_string(&a).unwrap(),
+        "---\ntags: [travel, work]\n---\nPack for #travel.\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&b).unwrap(),
+        "---\ntags:\n  - travel\n---\n"
+    );
+    assert_eq!(
+        app.editor.text(),
+        "---\ntags: [travel, work]\n---\nPack for #travel.\n",
+        "reloaded"
+    );
+    assert_eq!(app.shown, Shown::Tag("travel".into()), "the filter follows");
+    assert!(
+        app.vault
+            .as_ref()
+            .unwrap()
+            .tags()
+            .iter()
+            .all(|(t, _)| t != "trips")
+    );
+    // Undo writes both back.
+    assert_eq!(app.undo_tags(), Ok(0));
+    assert_eq!(
+        std::fs::read_to_string(&a).unwrap(),
+        "---\ntags: [trips, work]\n---\nPack for #trips.\n"
+    );
+    assert_eq!(
+        app.editor.text(),
+        "---\ntags: [trips, work]\n---\nPack for #trips.\n"
+    );
+    // Unsaved typing in a note the edit touches: refused, nothing written.
+    app.saved = u64::MAX;
+    assert!(
+        app.edit_tags(merge)
+            .unwrap_err()
+            .contains("Save the open note")
+    );
+    assert_eq!(
+        std::fs::read_to_string(&a).unwrap(),
+        "---\ntags: [trips, work]\n---\nPack for #trips.\n"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_tag_menu_renames_merges_deletes_and_undoes() {
+    use crate::sidebar::{Shown, VaultMessage};
+    use crate::tag_actions::{TagAction, TagMessage};
+    let dir = std::env::temp_dir().join(format!("livemark-tag-menu-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    write(&a, "---\ntags: [trips]\n---\nGo. #old\n", 0);
+    write(&dir.join("b.md"), "#travel notes\n", 0);
+    let mut app = App::open(None, None);
+    let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
+    let tag = |app: &mut App, m| {
+        let _ = app.update(Message::Tag(m));
+    };
+    tag(&mut app, TagMessage::Menu("trips".into()));
+    assert_eq!(app.tag_menu.as_deref(), Some("trips"));
+    let _ = app.view();
+    tag(&mut app, TagMessage::StartRename("trips".into()));
+    tag(&mut app, TagMessage::RenameText("Travel".into()));
+    let _ = app.view();
+    tag(&mut app, TagMessage::Confirm);
+    assert_eq!(
+        std::fs::read_to_string(&a).unwrap(),
+        "---\ntags: [travel]\n---\nGo. #old\n"
+    );
+    assert_eq!(
+        app.toast.as_deref(),
+        Some("Merged #trips into #travel: 1 note changed")
+    );
+    assert!(app.undo_toast().is_some());
+    tag(&mut app, TagMessage::Undo);
+    assert_eq!(
+        std::fs::read_to_string(&a).unwrap(),
+        "---\ntags: [trips]\n---\nGo. #old\n"
+    );
+    assert!(app.toast.is_none());
+    // Delete: the word stays in the text.
+    tag(&mut app, TagMessage::StartDelete("old".into()));
+    assert_eq!(app.tag_action, Some(TagAction::Delete("old".into())));
+    let _ = app.view();
+    tag(&mut app, TagMessage::Confirm);
+    assert_eq!(
+        std::fs::read_to_string(&a).unwrap(),
+        "---\ntags: [trips]\n---\nGo. old\n"
+    );
+    // F2 on the filtered tag, then Escape.
+    let _ = app.update(Message::Vault(VaultMessage::Show(Shown::Tag(
+        "travel".into(),
+    ))));
+    tag(&mut app, TagMessage::RenameShown);
+    assert!(matches!(app.tag_action, Some(TagAction::Rename { ref tag, .. }) if tag == "travel"));
+    tag(&mut app, TagMessage::Cancel);
+    assert_eq!(app.tag_action, None);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

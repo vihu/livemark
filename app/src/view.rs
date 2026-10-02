@@ -146,9 +146,24 @@ impl App {
             .sidebar()
             .unwrap_or_else(|| Space::new().width(0).into());
         let quick = self.quick_view();
+        // The Undo after a tag edit, low over the note.
+        let toast = self.undo_toast().map(|toast| {
+            container(toast)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_y(iced::Bottom)
+                .padding(iced::Padding {
+                    left: 340.0,
+                    bottom: 24.0,
+                    ..iced::Padding::ZERO
+                })
+        });
         column![
             toolbar,
-            stack![row![sidebar, editor]].push(menu).push(quick)
+            stack![row![sidebar, editor]]
+                .push(menu)
+                .push(quick)
+                .push(toast)
         ]
         .push(bar.map(|bar| container(bar).padding(12)))
         .into()
@@ -319,7 +334,34 @@ impl App {
                 _ => None,
             })
         });
-        Subscription::batch([keys, close, focus].into_iter().chain(quick).chain(search))
+        // F2 renames the tag the notes are filtered by; Escape takes back
+        // a question open under a tag.
+        let rename = keyboard::listen().filter_map(|event| match event {
+            keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::F2),
+                modifiers,
+                ..
+            } if modifiers.is_empty() => {
+                Some(Message::Tag(super::tag_actions::TagMessage::RenameShown))
+            }
+            _ => None,
+        });
+        let asking = (self.tag_action.is_some() || self.tag_menu.is_some()).then(|| {
+            keyboard::listen().filter_map(|event| match event {
+                keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                    ..
+                } => Some(Message::Tag(super::tag_actions::TagMessage::Cancel)),
+                _ => None,
+            })
+        });
+        Subscription::batch(
+            [keys, close, focus, rename]
+                .into_iter()
+                .chain(quick)
+                .chain(search)
+                .chain(asking),
+        )
     }
 }
 
