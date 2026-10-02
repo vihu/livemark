@@ -54,7 +54,7 @@ paths); the app makes no network requests, so web images stay as markdown.
 A picture pasted with Ctrl+V is saved as `assets/<note>-<n>.png` next to the
 note and linked at the caret (a new note is saved first); a picture file
 dropped on the window is linked by its path, a dropped `.md` file opens.
-File > Open vault picks a folder of notes (a vault, kept in your own git
+The vault menu (the name at the sidebar's top) > Open vault picks a folder of notes (a vault, kept in your own git
 repository; the app never runs git): a sidebar lists its notes, most
 recently changed first, and their tags (front matter `tags: [work,
 travel]` and inline `#tags`) with counts, a click on one showing only its
@@ -86,8 +86,14 @@ suggestion to merge. All of these rewrite only the tag's own bytes, in
 front matter and in the text, and end with one Undo. Its foot says how many
 notes changed since your last commit (going by file times; the app never
 runs git, so committing, signing and pushing stay yours).
-The toolbar's File menu has New, Open, Save, Save as, the recent notes and
-the theme (System, Light, Dark). The zoom, the window's size, the theme,
+The sidebar runs to the window's top: its head is the vault menu (New,
+Open, Open vault, the recent files, Save, Save as, the theme, Quit with
+Ctrl+Q), "+" for a new note, and the button that hides the sidebar
+(Ctrl+\; then the menu sits in the note's bar). The note's bar has the
+formatting buttons, the search field, whether the note is saved (Saved,
+Unsaved with a dot, or Not in the vault for a file from elsewhere) and the
+mode. Without a vault the sidebar offers to open one and lists the recent
+files. The zoom, the window's size, the theme,
 where the divider between the side by side panes was (drag it; a double click
 puts it back in the middle) and the ten most recent files are kept in `~/.config/livemark/settings` (macOS:
 `~/Library/Application Support/livemark/settings`), a `key = value` file.

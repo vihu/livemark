@@ -30,7 +30,8 @@ pub(super) enum Glyph {
     Split,
 }
 
-/// An icon in the text's color, or on the accent when `on`.
+/// An icon in a quieter shade of the text's color, or in the text's own
+/// when `on`.
 pub(super) fn icon<'a>(glyph: Glyph, on: bool) -> Element<'a, Message> {
     canvas::Canvas::new(Icon { glyph, on })
         .width(Length::Fixed(SIZE))
@@ -55,10 +56,11 @@ impl canvas::Program<Message> for Icon {
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let palette = theme.palette();
+        // The mode shown in the text's color, the rest quieter.
         let color = if self.on {
-            palette.primary.base.text
-        } else {
             palette.background.base.text
+        } else {
+            palette.background.base.text.scale_alpha(0.62)
         };
         let mut frame = Frame::new(renderer, bounds.size());
         let stroke = |width: f32| {

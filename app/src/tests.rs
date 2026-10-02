@@ -289,3 +289,38 @@ fn another_note_keeps_the_zoom_the_mode_and_the_divider() {
     std::fs::remove_file(&other).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn the_bar_says_whether_the_note_is_saved_and_the_sidebar_hides() {
+    use crate::shell::SaveState;
+    let dir = std::env::temp_dir().join(format!("livemark-shell-{}", std::process::id()));
+    let vault = dir.join("vault");
+    std::fs::create_dir_all(&vault).unwrap();
+    let inside = vault.join("a.md");
+    let outside = dir.join("b.md");
+    write(&inside, "# A\n", 0);
+    write(&outside, "# B\n", 0);
+    let mut app = App::open(None, None);
+    assert_eq!(app.save_state(), SaveState::New);
+    app.editor.insert_text("typed");
+    assert_eq!(app.save_state(), SaveState::Unsaved);
+    let mut app = App::open(Some(outside.clone()), None);
+    assert_eq!(app.save_state(), SaveState::Saved, "no vault: just saved");
+    let _ = app.update(Message::Vault(crate::sidebar::VaultMessage::Picked(Some(
+        vault.clone(),
+    ))));
+    assert_eq!(app.save_state(), SaveState::Outside);
+    let _ = app.update(Message::Opened(Some(inside.clone())));
+    assert_eq!(app.save_state(), SaveState::Saved);
+    // Ctrl+\ hides the sidebar and shows it again; the menu opens over it.
+    assert!(app.settings.sidebar);
+    let _ = app.update(Message::Sidebar);
+    assert!(!app.settings.sidebar);
+    let _ = app.view();
+    let _ = app.update(Message::Menu(true));
+    let _ = app.view();
+    let _ = app.update(Message::Sidebar);
+    assert!(app.settings.sidebar);
+    let _ = app.view();
+    std::fs::remove_dir_all(&dir).unwrap();
+}

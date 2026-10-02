@@ -1,5 +1,6 @@
-//! The toolbar (PLAN-003): formatting and line prefixes as icons in two
-//! groups, and the modes as a switch at the right edge, named and
+//! The toolbar (PLAN-003, PLAN-006): formatting and line prefixes as icons
+//! in two groups with a hairline between them, no outlines, and the mode
+//! as three icons in one soft switch at the right edge, named and
 //! explained in their tooltips. Each button runs its key's command and
 //! gives the keyboard back to the text. A host shows it where it likes,
 //! with its own items around it, or its two halves with its own between.
@@ -27,7 +28,8 @@ impl Editor {
         .into()
     }
 
-    /// The toolbar's left half: the formatting and line prefix groups.
+    /// The toolbar's left half: the formatting and line prefix groups, a
+    /// hairline between them.
     pub fn toolbar_tools(&self) -> Element<'_, Message> {
         let tool = |glyph: Glyph, hint: &'static str, key: Key| {
             tip(
@@ -38,7 +40,7 @@ impl Editor {
                 hint,
             )
         };
-        let format = group(vec![
+        let format = row![
             tool(Glyph::Bold, "Bold (Ctrl+B)", Key::Format(Format::Bold)),
             tool(
                 Glyph::Italic,
@@ -51,8 +53,9 @@ impl Editor {
                 Key::Format(Format::Code),
             ),
             tool(Glyph::Link, "Link (Ctrl+K)", Key::Link),
-        ]);
-        let blocks = group(vec![
+        ]
+        .spacing(2);
+        let blocks = row![
             tool(
                 Glyph::Heading,
                 "Heading: #, ##, ###, then none",
@@ -61,46 +64,58 @@ impl Editor {
             tool(Glyph::List, "Bullet list", Key::Block(Block::Bullet)),
             tool(Glyph::Task, "Task list", Key::Block(Block::Task)),
             tool(Glyph::Quote, "Quote", Key::Block(Block::Quote)),
-        ]);
-        row![format, blocks].spacing(8).align_y(iced::Center).into()
+        ]
+        .spacing(2);
+        let hairline =
+            container(Space::new().width(1).height(18)).style(|theme: &Theme| container::Style {
+                background: Some(theme.palette().background.strong.color.into()),
+                ..container::Style::default()
+            });
+        row![format, hairline, blocks]
+            .spacing(6)
+            .align_y(iced::Center)
+            .into()
     }
 
-    /// The toolbar's right half: the mode switch.
+    /// The toolbar's right half: the mode as three icons in one switch,
+    /// named in their tooltips.
     pub fn toolbar_modes(&self) -> Element<'_, Message> {
-        let mode = |glyph: Glyph, label: &'static str, hint: &'static str, mode: Mode| {
+        let mode = |glyph: Glyph, hint: &'static str, mode: Mode| {
             let on = self.mode == mode;
             tip(
-                button(
-                    row![icon(glyph, on), text(label).size(13)]
-                        .spacing(6)
-                        .align_y(iced::Center),
-                )
-                .padding([5, 10])
-                .style(move |theme, status| style(theme, status, on))
-                .on_press(Message(Input::Tool(Key::SetMode(mode)))),
+                button(icon(glyph, on))
+                    .padding([4, 5])
+                    .style(move |theme, status| style(theme, status, on))
+                    .on_press(Message(Input::Tool(Key::SetMode(mode)))),
                 hint,
             )
         };
-        group(vec![
+        let modes = row![
             mode(
                 Glyph::Live,
-                "Live preview",
-                "Markdown renders as you type; markers show where the caret is (Ctrl+Shift+E)",
+                "Live preview: markdown renders as you type; markers show where the caret is (Ctrl+Shift+E)",
                 Mode::Live,
             ),
             mode(
                 Glyph::Markdown,
-                "Markdown",
-                "The text exactly as saved, nothing hidden (Ctrl+Shift+E)",
+                "Markdown: the text exactly as saved, nothing hidden (Ctrl+Shift+E)",
                 Mode::Source,
             ),
             mode(
                 Glyph::Split,
-                "Side by side",
-                "Markdown on the left, the rendered note on the right, scrolled together (Ctrl+Shift+E)",
+                "Side by side: markdown on the left, the rendered note on the right, scrolled together (Ctrl+Shift+E)",
                 Mode::Split,
             ),
-        ])
+        ]
+        .spacing(2);
+        container(modes)
+            .padding(2)
+            .style(|theme: &Theme| container::Style {
+                background: Some(theme.palette().background.weak.color.into()),
+                border: Border::default().rounded(9),
+                ..container::Style::default()
+            })
+            .into()
     }
 }
 
@@ -121,41 +136,30 @@ fn tip<'a>(content: impl Into<Element<'a, Message>>, hint: &'static str) -> Elem
     .into()
 }
 
-/// Buttons side by side in one rounded outline.
-fn group(buttons: Vec<Element<'_, Message>>) -> Element<'_, Message> {
-    container(row(buttons).spacing(2))
-        .padding(2)
-        .style(|theme: &Theme| container::Style {
-            border: Border {
-                color: theme.palette().background.strong.color,
-                width: 1.0,
-                radius: 7.0.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
-}
-
-/// A toolbar button: plain, shaded under the pointer, filled when it is
-/// the mode shown.
+/// A toolbar button: plain, shaded under the pointer; the mode shown is
+/// raised out of its switch, on the page's color with an edge.
 fn style(theme: &Theme, status: button::Status, on: bool) -> button::Style {
     let palette = theme.palette();
-    let (background, text_color) = if on {
-        (Some(palette.primary.base.color), palette.primary.base.text)
+    let background = if on {
+        Some(palette.background.base.color)
     } else {
-        let shade = match status {
+        match status {
             button::Status::Hovered => Some(palette.background.weak.color),
             button::Status::Pressed => Some(palette.background.strong.color),
             _ => None,
-        };
-        (shade, palette.background.base.text)
+        }
     };
     button::Style {
         background: background.map(Background::Color),
-        text_color,
+        text_color: palette.background.base.text,
         border: Border {
-            radius: 5.0.into(),
-            ..Border::default()
+            color: if on {
+                palette.background.strong.color
+            } else {
+                iced::Color::TRANSPARENT
+            },
+            width: 1.0,
+            radius: 7.0.into(),
         },
         ..button::Style::default()
     }

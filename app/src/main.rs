@@ -21,6 +21,7 @@
 //! opens.
 mod cli;
 mod file;
+mod icons;
 mod links;
 mod manager;
 mod manager_view;
@@ -30,6 +31,7 @@ mod pictures;
 mod search;
 mod search_view;
 mod settings;
+mod shell;
 mod sidebar;
 mod tag_actions;
 mod tags;
@@ -198,8 +200,10 @@ enum Message {
     Resized(iced::Size),
     /// A file dropped on the window.
     Dropped(PathBuf),
-    /// Opens (true) or closes the File menu.
+    /// Opens (true) or closes the vault menu.
     Menu(bool),
+    /// Ctrl+\: the sidebar hidden, or shown again.
+    Sidebar,
     /// A recent note picked in the File menu.
     Recent(PathBuf),
     /// The theme picked in the File menu, remembered.
@@ -468,6 +472,10 @@ impl App {
                 self.remember();
             }
             Message::Recent(path) => return self.update(Message::Opened(Some(path))),
+            Message::Sidebar => {
+                self.settings.sidebar = !self.settings.sidebar;
+                self.remember();
+            }
             Message::Theme(theme) => {
                 self.theme = iced_theme(theme);
                 self.settings.theme = theme;

@@ -1,6 +1,6 @@
 //! What the app remembers between starts (PLAN-002): the zoom, the theme,
-//! the window's size, the most recent files and where the side by side
-//! divider was (PLAN-003). One `key = value` a line,
+//! the window's size, the most recent files, where the side by side
+//! divider was (PLAN-003), the vault and whether the sidebar shows. One `key = value` a line,
 //! parsed by hand (no crate for it); unknown, misspelled or broken lines are
 //! ignored, so a hand edit never stops the app from starting.
 use std::path::{Path, PathBuf};
@@ -29,6 +29,8 @@ pub struct Settings {
     pub split: f32,
     /// The vault last opened (PLAN-004).
     pub vault: Option<PathBuf>,
+    /// Whether the sidebar shows (Ctrl+\ hides it, PLAN-006).
+    pub sidebar: bool,
 }
 
 impl Default for Settings {
@@ -40,6 +42,7 @@ impl Default for Settings {
             recent: Vec::new(),
             split: 0.5,
             vault: None,
+            sidebar: true,
         }
     }
 }
@@ -113,6 +116,7 @@ impl Settings {
                     settings.window = size.filter(|&(w, h)| w >= 200.0 && h >= 150.0);
                 }
                 "vault" if !value.is_empty() => settings.vault = Some(PathBuf::from(value)),
+                "sidebar" => settings.sidebar = value != "hidden",
                 "recent" if !value.is_empty() && settings.recent.len() < RECENT => {
                     settings.recent.push(PathBuf::from(value));
                 }
@@ -139,6 +143,9 @@ impl Settings {
         }
         if let Some(vault) = &self.vault {
             text += &format!("vault = {}\n", vault.display());
+        }
+        if !self.sidebar {
+            text += "sidebar = hidden\n";
         }
         for path in &self.recent {
             text += &format!("recent = {}\n", path.display());
@@ -168,6 +175,7 @@ mod tests {
             recent: Vec::new(),
             split: 0.35,
             vault: Some("/notes".into()),
+            sidebar: false,
         };
         settings.opened(std::path::Path::new("/notes/a.md"));
         settings.opened(std::path::Path::new("/notes/b.md"));

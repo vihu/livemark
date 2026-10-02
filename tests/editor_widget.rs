@@ -591,9 +591,10 @@ fn toolbar_buttons_run_their_keys_commands() {
             let _ = editor.update(message);
         }
     };
-    // The icon buttons, 30 wide and 2 apart in two groups (2 padding each
-    // side, 8 between): button `i` is centred at this x, 17 down.
-    let icon_x = |i: usize| 2.0 + (i / 4) as f32 * 138.0 + (i % 4) as f32 * 32.0 + 15.0;
+    // The icon buttons, 30 wide and 2 apart in two groups with a hairline
+    // between (6, 1, 6): button `i` is centred at this x, 16 down in the
+    // bar the mode switch makes 32 tall.
+    let icon_x = |i: usize| (i / 4) as f32 * 139.0 + (i % 4) as f32 * 32.0 + 15.0;
     for (i, before, after) in [
         (0, "word", "**word**"),
         (1, "word", "*word*"),
@@ -605,26 +606,25 @@ fn toolbar_buttons_run_their_keys_commands() {
     ] {
         let mut editor = Editor::new(before.into());
         editor.select(0, before.len());
-        press_at(&mut editor, &|ui| click(ui, Point::new(icon_x(i), 17.0)));
+        press_at(&mut editor, &|ui| click(ui, Point::new(icon_x(i), 16.0)));
         assert_eq!(editor.text(), after, "button {i}");
     }
     // The link button: `[text]()` around the selection.
     let mut editor = Editor::new("word".into());
     editor.select(0, 4);
-    press_at(&mut editor, &|ui| click(ui, Point::new(icon_x(3), 17.0)));
+    press_at(&mut editor, &|ui| click(ui, Point::new(icon_x(3), 16.0)));
     assert_eq!(editor.text(), "[word]()");
-    // The mode switch, by its names.
+    // The mode switch at the right edge: three icons, 30 wide and 2
+    // apart, in 2 of padding; their names are in their tooltips.
+    let mode_x = |j: usize| SIZE.0 - 98.0 + 2.0 + j as f32 * 32.0 + 15.0;
     let mut editor = Editor::new("text".into());
-    for (label, mode) in [
-        ("Markdown", livemark::widget::Mode::Source),
-        ("Side by side", livemark::widget::Mode::Split),
-        ("Live preview", livemark::widget::Mode::Live),
+    for (j, mode) in [
+        (1, livemark::widget::Mode::Source),
+        (2, livemark::widget::Mode::Split),
+        (0, livemark::widget::Mode::Live),
     ] {
-        press_at(&mut editor, &|ui| {
-            ui.click(label)
-                .unwrap_or_else(|_| panic!("a {label} button"));
-        });
-        assert_eq!(editor.mode(), mode, "{label}");
+        press_at(&mut editor, &|ui| click(ui, Point::new(mode_x(j), 16.0)));
+        assert_eq!(editor.mode(), mode, "mode {j}");
     }
 }
 

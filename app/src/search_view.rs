@@ -2,65 +2,56 @@
 //! of every match (`search.rs` finds them).
 use iced::widget::text::{Ellipsis, Wrapping};
 use iced::widget::{
-    Space, button, column, container, lazy, mouse_area, opaque, responsive, row, rule, stack, text,
-    text_input,
+    Space, button, column, container, lazy, mouse_area, opaque, row, rule, stack, text, text_input,
 };
 use iced::{Element, Length, Theme};
 
+use super::icons::{Icon, Tone, icon};
 use super::search::{FIELD, Found, Hit, Listing, NOTES, SearchMessage};
+use super::shell::COMMAND;
 use super::tag_actions::notes;
 use super::{App, Message};
 
-/// The field's width at most, and the drop-down's.
-const FIELD_WIDTH: f32 = 440.0;
+/// The drop-down's width.
 const PANEL_WIDTH: f32 = 580.0;
 
-/// The command key as the platform names it.
-const COMMAND: &str = if cfg!(target_os = "macos") {
-    "Cmd"
-} else {
-    "Ctrl"
-};
-
 impl App {
-    /// The field, centred in the room the toolbar leaves it, at most 440
-    /// wide, with its key at its right end.
-    pub(crate) fn search_field(&self) -> Element<'_, Message> {
-        let field = responsive(move |size| -> Element<'_, Message> {
-            let query = self.search.as_ref().map_or("", |s| s.query.as_str());
-            let placeholder = if self.vault.is_some() {
-                "Search notes, text and #tags"
-            } else {
-                "Open a recent file by name"
-            };
-            let hint = if self.search.is_some() {
-                "Esc".to_owned()
-            } else {
-                format!("{COMMAND}+P")
-            };
-            let input = text_input(placeholder, query)
-                .id(FIELD)
-                .on_input(|query| Message::Search(SearchMessage::Query(query)))
-                .on_submit(Message::Search(SearchMessage::Choose(None)))
-                .size(13)
-                .padding(iced::Padding {
-                    top: 7.0,
-                    right: 60.0,
-                    bottom: 7.0,
-                    left: 12.0,
-                })
-                .style(field_style);
-            let hint = container(text(hint).size(11).style(text::secondary))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(iced::alignment::Horizontal::Right)
-                .align_y(iced::Center)
-                .padding([0, 12]);
-            container(stack![input, hint].width(size.width.min(FIELD_WIDTH)))
-                .center_x(Length::Fill)
-                .into()
-        });
-        container(field).height(34).into()
+    /// The field, `width` wide, with its key at its right end.
+    pub(crate) fn search_field(&self, width: f32) -> Element<'_, Message> {
+        let query = self.search.as_ref().map_or("", |s| s.query.as_str());
+        let placeholder = if self.vault.is_some() {
+            "Search notes, text and #tags"
+        } else {
+            "Open a recent file by name"
+        };
+        let hint = if self.search.is_some() {
+            "Esc".to_owned()
+        } else {
+            format!("{COMMAND}+P")
+        };
+        let input = text_input(placeholder, query)
+            .id(FIELD)
+            .on_input(|query| Message::Search(SearchMessage::Query(query)))
+            .on_submit(Message::Search(SearchMessage::Choose(None)))
+            .size(13)
+            .padding(iced::Padding {
+                top: 7.0,
+                right: 60.0,
+                bottom: 7.0,
+                left: 34.0,
+            })
+            .style(field_style);
+        let glass = container(icon(Icon::Search, 16.0, Tone::Quiet))
+            .height(Length::Fill)
+            .align_y(iced::Center)
+            .padding([0, 11]);
+        let hint = container(text(hint).size(11).style(text::secondary))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right)
+            .align_y(iced::Center)
+            .padding([0, 12]);
+        container(stack![input, glass, hint]).width(width).into()
     }
 
     /// The drop-down under the field while it is open; a press outside it

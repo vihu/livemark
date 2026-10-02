@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-- Vaults: File > Open vault makes a folder of notes a vault, kept in your
+- A calmer window: the sidebar runs to the top with the vault menu in
+  File's place; the note's bar has the formatting buttons without boxes,
+  the search, whether the note is saved, and the mode as three icons.
+  Ctrl+\ hides the sidebar; Ctrl+Q quits.
+- Vaults: Open vault (in the vault menu) makes a folder of notes a vault, kept in your
   own git repository (the app never runs git). A sidebar lists the notes
   and their tags (front matter and inline `#tags`), a click on a tag
   showing only its notes, and how many notes changed since your last

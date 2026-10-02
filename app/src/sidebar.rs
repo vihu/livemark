@@ -12,7 +12,7 @@ use super::vault::Vault;
 use super::{App, Message, file};
 
 /// The sidebar's width.
-const WIDTH: f32 = 260.0;
+pub(crate) const WIDTH: f32 = 260.0;
 
 /// The most notes listed; the search (Ctrl+P) reaches the rest.
 const SHOWN: usize = 500;
@@ -161,8 +161,9 @@ impl App {
         self.refresh_footer();
     }
 
-    /// The sidebar, when a vault is open.
-    pub(crate) fn sidebar(&self) -> Option<Element<'_, Message>> {
+    /// The sidebar's tags, notes and commit status, when a vault is open
+    /// (`shell.rs` puts its head over them).
+    pub(crate) fn vault_body(&self) -> Option<Element<'_, Message>> {
         let vault = self.vault.as_ref()?;
         let item = |mark: &'static str, name: String, count: usize, shown: Shown| {
             let on = self.shown == shown;
@@ -283,17 +284,6 @@ impl App {
                 .on_press(clear)
         }))
         .align_y(iced::Center);
-        let header = row![
-            text(vault.name()).size(15).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..iced::Font::new(livemark::fonts::PROSE)
-            }),
-            text(format!("{} notes", vault.notes.len()))
-                .size(12)
-                .style(text::secondary),
-        ]
-        .spacing(8)
-        .align_y(iced::Center);
         let body = column![
             tags,
             rule::horizontal(1),
@@ -310,17 +300,7 @@ impl App {
             };
             text(line).size(11).style(text::secondary)
         });
-        Some(
-            container(column![header, body].push(status).spacing(8))
-                .width(WIDTH)
-                .height(Length::Fill)
-                .padding([8, 8])
-                .style(|theme: &Theme| container::Style {
-                    background: Some(theme.palette().background.weakest.color.into()),
-                    ..container::Style::default()
-                })
-                .into(),
-        )
+        Some(column![body].push(status).spacing(8).into())
     }
 }
 

@@ -22,7 +22,7 @@ fn a_vault_opens_lists_its_notes_and_filters_by_tag() {
         app.settings.vault,
         Some(std::fs::canonicalize(&dir).unwrap())
     );
-    assert!(app.sidebar().is_some());
+    assert!(app.vault_body().is_some());
     let _ = app.view();
     // A tag filters; the same tag again shows all.
     let travel = crate::sidebar::Shown::Tag("travel".into());

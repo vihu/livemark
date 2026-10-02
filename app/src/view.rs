@@ -1,24 +1,12 @@
-//! The window (PLAN-002): the toolbar, with the File menu before the
-//! editor's own buttons; the editor; a bar for questions and errors under
-//! it. And the keys and window events the app listens to.
-use std::path::Path;
-
+//! The window (PLAN-002, PLAN-006): the sidebar column and the note's
+//! column (`shell.rs`), the vault menu over them, a bar for questions and
+//! errors under the note. And the keys and window events the app listens
+//! to.
 use iced::keyboard;
-use iced::widget::text::{Ellipsis, Wrapping};
-use iced::widget::{Space, button, column, container, mouse_area, opaque, row, rule, stack, text};
-use iced::{Element, Length, Subscription, Theme, window};
+use iced::widget::{Space, button, column, container, mouse_area, opaque, row, stack, text};
+use iced::{Element, Length, Subscription, window};
 
-use super::{App, Message, settings};
-
-/// Width of the open File menu.
-const MENU_WIDTH: f32 = 300.0;
-
-/// The command key as the platform names it, for the menu's hints.
-const COMMAND: &str = if cfg!(target_os = "macos") {
-    "Cmd"
-} else {
-    "Ctrl"
-};
+use super::{App, Message};
 
 impl App {
     pub(crate) fn view(&self) -> Element<'_, Message> {
@@ -83,77 +71,20 @@ impl App {
                 .as_ref()
                 .map(|error| text(error).style(text::danger).into())
         };
-        // As the editor's toolbar buttons: an outline, shaded under the
-        // pointer, filled while open.
-        let open = self.menu;
-        let file = button(
-            container(text("File").size(13))
-                .height(20)
-                .align_y(iced::Center),
-        )
-        .padding([5, 10])
-        .style(move |theme: &Theme, status| {
-            let palette = theme.palette();
-            let (background, text_color) = match status {
-                _ if open => (Some(palette.primary.base.color), palette.primary.base.text),
-                button::Status::Hovered => (
-                    Some(palette.background.weak.color),
-                    palette.background.base.text,
-                ),
-                button::Status::Pressed => (
-                    Some(palette.background.strong.color),
-                    palette.background.base.text,
-                ),
-                _ => (None, palette.background.base.text),
-            };
-            button::Style {
-                background: background.map(iced::Background::Color),
-                text_color,
-                border: iced::Border::default().rounded(5),
-                ..button::Style::default()
-            }
-        })
-        .on_press(Message::Menu(!self.menu));
-        let file = container(file)
-            .padding(2)
-            .style(|theme: &Theme| container::Style {
-                border: iced::Border {
-                    color: theme.palette().background.strong.color,
-                    width: 1.0,
-                    radius: 7.0.into(),
-                },
-                ..container::Style::default()
-            });
-        // The toolbar always on top (PLAN-002).
-        let toolbar = container(
-            row![
-                file,
-                self.editor.toolbar_tools().map(Message::Editor),
-                // The search field centred between the halves.
-                self.search_field(),
-                self.editor.toolbar_modes().map(Message::Editor),
-            ]
-            .spacing(8)
-            .align_y(iced::Center),
-        )
-        .padding([6, 12]);
-        // The open menu floats over the text; a press anywhere else closes
-        // it. Always a column and a stack, so the editor keeps its place in
-        // the widget tree (and its focus) when a bar or the menu comes or
-        // goes.
+        // The vault menu floats over everything from the sidebar's head (or
+        // the note's bar while the sidebar is hidden); a press elsewhere
+        // closes it.
         let menu = self.menu.then(|| {
             stack![
                 mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
                     .on_press(Message::Menu(false)),
-                container(opaque(self.menu())).padding([0, 12]),
+                container(opaque(self.vault_menu())).padding(iced::Padding {
+                    top: super::shell::BAR - 4.0,
+                    left: 8.0,
+                    ..iced::Padding::ZERO
+                }),
             ]
         });
-        // The vault's sidebar left of the text; a zero-width space without
-        // one, so the editor keeps its place in the row.
-        let sidebar = self
-            .sidebar()
-            .unwrap_or_else(|| Space::new().width(0).into());
-        let search = self.search_panel();
         // The Undo after a tag edit, low over the note.
         let toast = self.undo_toast().map(|toast| {
             container(toast)
@@ -161,117 +92,21 @@ impl App {
                 .height(Length::Fill)
                 .align_y(iced::Bottom)
                 .padding(iced::Padding {
-                    left: 340.0,
+                    left: 64.0,
                     bottom: 24.0,
                     ..iced::Padding::ZERO
                 })
         });
-        column![
-            toolbar,
-            stack![row![sidebar, editor]]
-                .push(menu)
-                .push(search)
-                .push(toast)
+        // The note's column: its bar, the note with the search's drop-down
+        // and the Undo note over it, a question under it. Always a column
+        // and stacks, so the editor keeps its place in the widget tree (and
+        // its focus) when a bar or the menu comes or goes.
+        let note = column![
+            self.note_bar(),
+            stack![editor].push(self.search_panel()).push(toast)
         ]
-        .push(bar.map(|bar| container(bar).padding(12)))
-        .into()
-    }
-
-    /// The File menu: new, open and save; the recent notes; the theme.
-    fn menu(&self) -> Element<'_, Message> {
-        let item = |label: &'static str, key: &str, message: Message| {
-            button(
-                row![
-                    text(label).size(14).width(Length::Fill),
-                    text(if key.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{COMMAND}+{key}")
-                    })
-                    .size(12)
-                    .style(text::secondary),
-                ]
-                .spacing(12)
-                .align_y(iced::Center),
-            )
-            .width(Length::Fill)
-            .padding([6, 10])
-            .style(button::text)
-            .on_press(message)
-        };
-        let mut items = column![
-            item("New", "N", Message::New),
-            item("Open...", "O", Message::Open),
-            item("Save", "S", Message::Save { choose: false }),
-            item("Save as...", "Shift+S", Message::Save { choose: true }),
-            item(
-                "Open vault...",
-                "",
-                Message::Vault(super::sidebar::VaultMessage::Open)
-            ),
-        ];
-        if !self.settings.recent.is_empty() {
-            items = items.push(rule::horizontal(1));
-            items = items
-                .push(container(text("Recent").size(12).style(text::secondary)).padding([4, 10]));
-            for path in &self.settings.recent {
-                let name = path.file_name().map_or_else(
-                    || path.display().to_string(),
-                    |name| name.to_string_lossy().into_owned(),
-                );
-                let note = column![
-                    text(name)
-                        .size(14)
-                        .wrapping(Wrapping::None)
-                        .ellipsis(Ellipsis::End),
-                    text(folder(path))
-                        .size(11)
-                        .style(text::secondary)
-                        .wrapping(Wrapping::None)
-                        .ellipsis(Ellipsis::Start),
-                ];
-                items = items.push(
-                    button(note)
-                        .width(Length::Fill)
-                        .padding([4, 10])
-                        .style(button::text)
-                        .on_press(Message::Recent(path.clone())),
-                );
-            }
-        }
-        // As shown: a `--dark` or `--light` flag wins over the settings.
-        let shown = match &self.theme {
-            None => settings::Theme::System,
-            Some(Theme::Dark) => settings::Theme::Dark,
-            Some(_) => settings::Theme::Light,
-        };
-        let theme = |label: &'static str, theme: settings::Theme| {
-            button(text(label).size(13))
-                .padding([4, 10])
-                .style(if theme == shown {
-                    button::primary
-                } else {
-                    button::text
-                })
-                .on_press(Message::Theme(theme))
-        };
-        items = items.push(rule::horizontal(1));
-        items = items.push(
-            row![
-                text("Theme").size(14).width(Length::Fill),
-                theme("System", settings::Theme::System),
-                theme("Light", settings::Theme::Light),
-                theme("Dark", settings::Theme::Dark),
-            ]
-            .spacing(2)
-            .padding([4, 10])
-            .align_y(iced::Center),
-        );
-        container(items.spacing(2))
-            .width(MENU_WIDTH)
-            .padding(4)
-            .style(container::bordered_box)
-            .into()
+        .push(bar.map(|bar| container(bar).padding(12)));
+        stack![row![self.sidebar_column(), note]].push(menu).into()
     }
 
     pub(crate) fn subscription(&self) -> Subscription<Message> {
@@ -292,6 +127,8 @@ impl App {
             }
             match key.to_latin(physical_key)? {
                 'n' => Some(Message::New),
+                'q' => Some(Message::CloseRequested),
+                '\\' => Some(Message::Sidebar),
                 'o' => Some(Message::Open),
                 // Ctrl+Shift+F as well, as the sidebar's search had it.
                 'p' | 'f' => Some(Message::Search(super::search::SearchMessage::Open)),
@@ -360,19 +197,5 @@ impl App {
                 .chain(search)
                 .chain(asking),
         )
-    }
-}
-
-/// The folder a recent note is in, the home folder as `~`.
-fn folder(path: &Path) -> String {
-    let folder = path.parent().unwrap_or(path);
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    match home
-        .as_deref()
-        .and_then(|home| folder.strip_prefix(home).ok())
-    {
-        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
-        Some(rest) => format!("~/{}", rest.display()),
-        None => folder.display().to_string(),
     }
 }
