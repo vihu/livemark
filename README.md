@@ -7,6 +7,10 @@ A live-preview markdown editor for [iced]: you type markdown and it renders
 in place, like Obsidian's Live Preview. The markdown text is the document,
 so git, other editors and agents edit the same file.
 
+## Demo
+
+https://github.com/user-attachments/assets/5ac52e1a-7ad4-4bd3-b630-93f37a956b45
+
 ## Design
 
 - Source-first: nothing but the text is stored. A file loaded and saved
@@ -15,7 +19,7 @@ so git, other editors and agents edit the same file.
   autolinks, parsed by pulldown-cmark. The view never disagrees with the
   parser.
 - Behaviour after Obsidian's Live Preview, with CodeMirror 6 and
-  SilverBullet as references (`.ai-docs/REFERENCE-001-live-preview-spec.md`).
+  SilverBullet as references.
 - An iced-free core (`doc`, `parse`, `style`, `layout`, `edit`), so editing
   is tested without a window.
 
@@ -53,46 +57,6 @@ Or run it from source:
 ```text
 cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 ```
-
-What the app adds to the editor:
-
-- Vaults: open a folder of notes (kept in your own git repository; the app
-  never runs git). The sidebar lists its notes and tags.
-- Ctrl+N makes `2026-10-02-lisbon-hotels.md` with front matter for the
-  title, tags and date.
-- Ctrl+P searches titles (words in any order, a typo forgiven), the text of
-  notes and `#tags`, and marks what matched.
-- `[[` inserts a normal markdown link to a note; "Linked from" at a note's
-  end lists the notes linking to it.
-- Right-click a note to rename it (links follow), duplicate, copy a link,
-  show it in the file manager or delete it. Rename, merge or delete a tag
-  across the vault, or use the tag manager. Every change has Undo.
-- Autosave two seconds after typing stops; a file changed on disk is
-  reloaded when the window comes back.
-- A pasted picture is saved as `assets/<note>-<n>.png`. Pictures are read
-  only from files: the app makes no network requests.
-- Ten themes, or one by day and one by night as the system switches.
-  Settings live in `~/.config/livemark/settings.toml`
-  (macOS: `~/Library/Application Support/livemark/settings.toml`).
-
-Keys (Cmd instead of Ctrl on macOS):
-
-| Keys                   | Does                                                      |
-| ---------------------- | --------------------------------------------------------- |
-| Ctrl+B, Ctrl+I, Ctrl+E | Bold, italic, inline code                                 |
-| Ctrl+K                 | A link around the selection                               |
-| Ctrl+T                 | A new tag in the front matter                             |
-| Ctrl+Shift+E           | The next mode                                             |
-| Ctrl+F, Ctrl+H         | Find, find and replace                                    |
-| Tab, Shift+Tab         | Nest a list item, or move it back out                     |
-| Alt+Up, Alt+Down       | Move the selected lines; with Shift, copy them            |
-| Ctrl+Shift+K           | Delete the selected lines                                 |
-| Ctrl+click, Alt+Enter  | Open a link, or show a `#tag`'s notes                     |
-| Ctrl+P                 | Search; Ctrl+Enter there lists every match in the sidebar |
-| Ctrl+N, Ctrl+O, Ctrl+S | New note, open, save                                      |
-| F2                     | Rename the open note                                      |
-| Ctrl+=, Ctrl+-, Ctrl+0 | Scale the whole window, reset it                          |
-| Ctrl+\                 | Hide or show the sidebar                                  |
 
 ## Notes from scripts and agents
 
@@ -181,7 +145,7 @@ pull request.
 - `cargo run --release --example bench` measures frame times at 1,000 to
   20,000 lines.
 
-## Licence
+## License
 
 MIT, see `LICENSE`. Code ported from CodeMirror 6, SilverBullet and
 ink-mde, and the spec examples in the tests, keep their notices in
