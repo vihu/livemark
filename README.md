@@ -9,6 +9,8 @@ so git, other editors and agents edit the same file.
 
 ## Demo
 
+https://github.com/user-attachments/assets/5ac52e1a-7ad4-4bd3-b630-93f37a956b45
+
 ## Design
 
 - Source-first: nothing but the text is stored. A file loaded and saved
