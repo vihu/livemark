@@ -99,19 +99,9 @@ pub(crate) fn link_choices(vault: &Vault, from: &Path, query: &str) -> Vec<Choic
 /// The path to `to` from the folder of the note at `from`, `../` where
 /// needed, spaces as `%20`: a link that still works in the git web UI.
 pub(crate) fn relative(from: &Path, to: &Path) -> String {
-    let base: Vec<_> = from
-        .parent()
-        .unwrap_or(Path::new(""))
-        .components()
-        .collect();
-    let target: Vec<_> = to.components().collect();
-    let shared = base.iter().zip(&target).take_while(|(a, b)| a == b).count();
-    let mut parts: Vec<String> = vec!["..".into(); base.len() - shared];
-    parts.extend(
-        target[shared..]
-            .iter()
-            .map(|part| part.as_os_str().to_string_lossy().into_owned()),
-    );
+    let folder = from.parent().unwrap_or(Path::new(""));
+    let path = pathdiff::diff_paths(to, folder).unwrap_or_else(|| to.to_path_buf());
+    let parts: Vec<_> = path.iter().map(|part| part.to_string_lossy()).collect();
     parts.join("/").replace(' ', "%20")
 }
 

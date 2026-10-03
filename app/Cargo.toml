@@ -20,6 +20,8 @@ iced             = { workspace = true }
 # Today's date in the system's time zone, for new notes.
 jiff             = "0.2"
 livemark         = { path = ".." }
+# Links from one note to another, `../` where needed.
+pathdiff         = "0.2"
 # `%20` and the like in link and picture paths (already in the tree).
 percent-encoding = "2"
 # Open and save dialogs (XDG portal on Linux).
