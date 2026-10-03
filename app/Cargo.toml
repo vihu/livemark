@@ -31,3 +31,5 @@ toml             = "1"
 slug             = "0.1"
 # Typo distances in title search and tag look-alikes.
 strsim           = "0.11"
+# The vault's folders, symbolic links followed (already in the tree).
+walkdir          = "2"

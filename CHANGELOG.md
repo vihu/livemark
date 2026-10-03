@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Folders linked into a vault are read too, and a linked note's edits
+  show up like any other's.
 - Settings are kept in `settings.toml`. The old `settings` file is not
   read, so the theme, sizes, recent files and vaults start fresh once.
 - A calmer window: the sidebar runs to the top with the vault menu in

@@ -65,8 +65,7 @@ impl Vault {
     /// Reads again the notes whose files changed, came or went; returns
     /// whether anything did.
     pub fn refresh(&mut self) -> bool {
-        let mut files = Vec::new();
-        walk(&self.root, &mut files);
+        let files = walk(&self.root);
         let mut changed = files.len() != self.notes.len();
         let mut old: BTreeMap<PathBuf, Note> = std::mem::take(&mut self.notes)
             .into_iter()
@@ -170,30 +169,31 @@ fn last_commit(root: &Path) -> Option<SystemTime> {
 }
 
 /// The markdown files under `dir` with their modification times and
-/// sizes; folders whose names start with a dot (`.git`, `.obsidian`) are
-/// left out.
-fn walk(dir: &Path, files: &mut Vec<(PathBuf, SystemTime, u64)>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+/// sizes; names starting with a dot (`.git`, `.obsidian`) are left out.
+/// Symbolic links are followed (a loop is skipped), so a linked note's own
+/// time is the one compared.
+fn walk(dir: &Path) -> Vec<(PathBuf, SystemTime, u64)> {
+    let hidden = |entry: &walkdir::DirEntry| {
+        entry.depth() > 0 && entry.file_name().to_string_lossy().starts_with('.')
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if entry.file_name().to_string_lossy().starts_with('.') {
-            continue;
-        }
-        let Ok(metadata) = entry.metadata() else {
-            continue;
-        };
-        if metadata.is_dir() {
-            walk(&path, files);
-        } else if path
-            .extension()
-            .is_some_and(|e| e == "md" || e == "markdown")
-        {
+    walkdir::WalkDir::new(dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(|entry| !hidden(entry))
+        .flatten()
+        .filter(|entry| {
+            entry.file_type().is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .is_some_and(|e| e == "md" || e == "markdown")
+        })
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
             let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-            files.push((path, modified, metadata.len()));
-        }
-    }
+            Some((entry.into_path(), modified, metadata.len()))
+        })
+        .collect()
 }
 
 /// A note from its file's text.
@@ -365,6 +365,24 @@ mod tests {
         // Broken lines are skipped, and a date must be one.
         assert_eq!(read("tags\ncreated: soon\n:::\n"), (None, vec![], None));
         assert_eq!(read("created: 2026-13-45\n").2, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_folders_are_read_and_a_link_loop_is_skipped() {
+        let dir = std::env::temp_dir().join(format!("livemark-linked-{}", std::process::id()));
+        let (vault, elsewhere) = (dir.join("vault"), dir.join("elsewhere"));
+        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(vault.join("near.md"), "# Near\n").unwrap();
+        std::fs::write(elsewhere.join("far.md"), "# Far\n").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, vault.join("linked")).unwrap();
+        std::os::unix::fs::symlink(&vault, vault.join("loop")).unwrap();
+        let read = Vault::open(&vault).unwrap();
+        let mut titles: Vec<&str> = read.notes.iter().map(|n| n.title.as_str()).collect();
+        titles.sort_unstable();
+        assert_eq!(titles, ["Far", "Near"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
