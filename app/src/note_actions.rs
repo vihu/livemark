@@ -31,6 +31,8 @@ pub enum NoteMessage {
     Duplicate(PathBuf),
     CopyLink(PathBuf),
     ShowInFolder(PathBuf),
+    /// The file manager asked, or why it could not be.
+    Shown(Result<(), String>),
 }
 
 /// The question open under a note.
@@ -112,8 +114,17 @@ impl App {
                 self.toast_undo = false;
                 return iced::clipboard::write(link).discard();
             }
+            // Selected in the system's file manager (its D-Bus interface or
+            // the portal on Linux, `open -R` on macOS), off the window's
+            // thread: the file manager may have to start first.
             NoteMessage::ShowInFolder(path) => {
-                if let Err(error) = show_in_folder(&path) {
+                let reveal = async move {
+                    opener::reveal(&path).map_err(|error| format!("Show in folder: {error}"))
+                };
+                return Task::perform(reveal, |shown| Message::Note(NoteMessage::Shown(shown)));
+            }
+            NoteMessage::Shown(shown) => {
+                if let Err(error) = shown {
                     self.error = Some(error);
                 }
             }
@@ -336,24 +347,4 @@ pub(crate) fn delete_view(vault: &Vault, path: &Path, title: &str) -> Element<'s
         Message::Note(NoteMessage::Confirm),
         Message::Note(NoteMessage::Cancel),
     )
-}
-
-/// Shows the file in the system's file manager: selected on macOS, its
-/// folder opened elsewhere.
-fn show_in_folder(path: &Path) -> Result<(), String> {
-    let mut command = if cfg!(target_os = "macos") {
-        let mut command = std::process::Command::new("open");
-        command.arg("-R").arg(path);
-        command
-    } else {
-        let mut command = std::process::Command::new("xdg-open");
-        command.arg(path.parent().unwrap_or(path));
-        command
-    };
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Show in folder: {e}"))?;
-    // Reaped in the background, so no zombie is left behind.
-    std::thread::spawn(move || child.wait());
-    Ok(())
 }

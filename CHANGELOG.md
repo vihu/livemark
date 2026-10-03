@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show in folder selects the note in the file manager on Linux too, also
+  from the Flatpak.
 - Folders linked into a vault are read too, and a linked note's edits
   show up like any other's.
 - Settings are kept in `settings.toml`. The old `settings` file is not

@@ -20,6 +20,8 @@ iced             = { workspace = true }
 # Today's date in the system's time zone, for new notes.
 jiff             = "0.2"
 livemark         = { path = ".." }
+# Show in folder: the file selected in the file manager.
+opener           = { version = "0.9", features = ["reveal"] }
 # Links from one note to another, `../` where needed.
 pathdiff         = "0.2"
 # `%20` and the like in link and picture paths (already in the tree).
