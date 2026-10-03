@@ -47,9 +47,11 @@ and never more than the user asked for: one note per thing to keep.
    ```
 
    It prints the new note's path. Tell the user that path.
-5. Exit 1 means nothing was written; read the message on stderr:
+5. A non-zero exit means nothing was written (2 when the arguments did
+   not parse, 1 otherwise); read the message on stderr:
    - `no vault`: ask the user which folder holds their notes (or to open
-     it once in the livemark app with File > Open vault), then pass
+     it once in the livemark app: vault menu, Switch vault, Open vault),
+     then pass
      `--vault <dir>`.
    - Anything else: fix the arguments as the message says and run it
      again. A second note with the same title on the same day is fine: it

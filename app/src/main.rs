@@ -56,15 +56,12 @@ use livemark::widget::{self, Editor};
 use settings::Settings;
 
 pub fn main() -> iced::Result {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = <cli::Args as clap::Parser>::parse();
     // `livemark note ...`, `livemark tags`: no window (`cli.rs`).
-    if let Some(code) = cli::run(&args) {
-        std::process::exit(code);
+    if let Some(command) = args.command {
+        std::process::exit(cli::run(command));
     }
-    let path = args
-        .iter()
-        .find(|a| !a.starts_with("--"))
-        .map(PathBuf::from);
+    let path = args.file;
     let settings_file = Settings::path();
     let (settings, settings_error) = match settings_file.as_deref().map(Settings::load) {
         Some(Ok(settings)) => (settings, None),
@@ -78,9 +75,9 @@ pub fn main() -> iced::Result {
         (last.starts_with(vault) && last.exists()).then(|| last.clone())
     });
     // A flag wins over the settings' theme until one is picked.
-    let theme = if args.iter().any(|a| a == "--dark") {
+    let theme = if args.dark {
         Some(Theme::Dark)
-    } else if args.iter().any(|a| a == "--light") {
+    } else if args.light {
         Some(Theme::Light)
     } else {
         None

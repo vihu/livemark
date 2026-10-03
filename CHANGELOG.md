@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `livemark --help` lists every option, `--version` says the version,
+  and a mistyped option is named with a hint.
 - Show in folder selects the note in the file manager on Linux too, also
   from the Flatpak.
 - Folders linked into a vault are read too, and a linked note's edits
