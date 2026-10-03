@@ -306,6 +306,9 @@ fn the_bar_says_whether_the_note_is_saved_and_the_sidebar_hides() {
     let _ = app.update(Message::Vault(crate::sidebar::VaultMessage::Picked(Some(
         vault.clone(),
     ))));
+    // By its resolved path, as vaults are opened (`/var` is `/private/var`
+    // on macOS).
+    let inside = std::fs::canonicalize(&inside).unwrap();
     assert_eq!(app.path.as_ref(), Some(&inside), "the vault's note opens");
     let _ = app.update(Message::Opened(Some(outside.clone())));
     assert_eq!(app.save_state(), SaveState::Outside);
