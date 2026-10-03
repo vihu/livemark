@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-03)
+
+Vaults: a folder of notes with search, tags, links between notes and
+note management, plus a calmer window, themes and autosave.
 
 - `livemark --help` lists every option, `--version` says the version,
   and a mistyped option is named with a hint.
