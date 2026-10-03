@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use livemark::parse::properties::{properties, unquoted};
+
 /// A note as the vault knows it.
 #[derive(Debug, Clone)]
 pub struct Note {
@@ -196,8 +198,7 @@ fn walk(dir: &Path, files: &mut Vec<(PathBuf, SystemTime, u64)>) {
 
 /// A note from its file's text.
 pub fn read(path: PathBuf, modified: SystemTime, text: String) -> Note {
-    let front = livemark::parse::front_matter_text(&text).map(properties);
-    let (title, mut tags, created) = front.unwrap_or_default();
+    let (title, mut tags, created) = front_matter(&text);
     for range in livemark::parse::tags(&text) {
         let tag = text[range.start + 1..range.end].to_lowercase();
         if !tags.contains(&tag) {
@@ -261,42 +262,24 @@ pub fn resolve(from: &Path, dest: &str) -> Option<PathBuf> {
     Some(clean)
 }
 
-/// `title`, `tags` and `created` from front matter: a hand-read subset of
-/// YAML (`key: value`; tags as `[a, b]`, `a, b` or a `- a` list), so a
-/// note never fails to load over it.
-fn properties(yaml: &str) -> (Option<String>, Vec<String>, Option<String>) {
-    let unquote = |v: &str| v.trim().trim_matches(['"', '\'']).trim().to_owned();
-    let (mut title, mut tags, mut created) = (None, Vec::new(), None);
-    let mut in_tags = false;
-    for line in yaml.lines() {
-        if in_tags && let Some(item) = line.trim_start().strip_prefix("- ") {
-            tags.push(unquote(item));
-            continue;
-        }
-        in_tags = false;
-        let Some((key, value)) = line.split_once(':') else {
-            continue;
-        };
-        match key.trim() {
-            "title" => title = Some(unquote(value)).filter(|t| !t.is_empty()),
-            "created" => created = date_prefix(&unquote(value)),
-            "tags" | "tag" => {
-                let value = value.trim();
-                in_tags = value.is_empty();
-                let list = value.trim_start_matches('[').trim_end_matches(']');
-                tags.extend(list.split(',').map(unquote));
-            }
-            _ => {}
+/// `title`, `tags` and `created` from the front matter, read as the
+/// editor reads them (`livemark::parse::properties`), so a note never
+/// fails to load over it.
+fn front_matter(text: &str) -> (Option<String>, Vec<String>, Option<String>) {
+    let Some(front) = properties(text) else {
+        return Default::default();
+    };
+    let value = |range: Option<std::ops::Range<usize>>| range.map(|r| unquoted(&text[r]));
+    let title = value(front.title).filter(|title| !title.is_empty());
+    let created = value(front.created).and_then(|created| date_prefix(&created));
+    let mut tags: Vec<String> = Vec::new();
+    for item in front.tags.iter().flat_map(|list| &list.items) {
+        let tag = item.name.to_lowercase();
+        if !tag.is_empty() && !tags.contains(&tag) {
+            tags.push(tag);
         }
     }
-    let mut clean: Vec<String> = Vec::new();
-    for tag in tags {
-        let tag = tag.trim_start_matches('#').to_lowercase();
-        if !tag.is_empty() && !clean.contains(&tag) {
-            clean.push(tag);
-        }
-    }
-    (title, clean, created)
+    (title, tags, created)
 }
 
 /// The text of the first ATX heading, without its markers.
@@ -317,18 +300,15 @@ fn first_heading(text: &str) -> Option<String> {
     })
 }
 
-/// `YYYY-MM-DD` at the start of `s`.
+/// The date `s` starts with, `YYYY-MM-DD`, when it is a real one.
 fn date_prefix(s: &str) -> Option<String> {
-    let date = s.get(..10)?;
-    let b = date.as_bytes();
-    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
-    (digits(0..4) && b[4] == b'-' && digits(5..7) && b[7] == b'-' && digits(8..10))
-        .then(|| date.to_owned())
+    let date: jiff::civil::Date = s.get(..10)?.parse().ok()?;
+    Some(date.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Vault, properties, resolve};
+    use super::{Vault, front_matter, resolve};
     use std::path::Path;
 
     #[test]
@@ -374,18 +354,17 @@ mod tests {
 
     #[test]
     fn front_matter_tags_titles_and_dates_are_read_leniently() {
+        let read = |yaml: &str| front_matter(&format!("---\n{yaml}---\nText.\n"));
         let (title, tags, created) =
-            properties("title: \"Lisbon\"\ntags: [Work, travel, '#work']\ncreated: 2026-10-02\n");
+            read("title: \"Lisbon\"\ntags: [Work, travel, '#work']\ncreated: 2026-10-02\n");
         assert_eq!(title.as_deref(), Some("Lisbon"));
         assert_eq!(tags, ["work", "travel"]);
         assert_eq!(created.as_deref(), Some("2026-10-02"));
-        assert_eq!(properties("tags:\n  - a\n  - b\nx: y\n").1, ["a", "b"]);
-        assert_eq!(properties("tags: a, b\n").1, ["a", "b"]);
-        // Broken lines are skipped.
-        assert_eq!(
-            properties("tags\ncreated: soon\n:::\n"),
-            (None, vec![], None)
-        );
+        assert_eq!(read("tags:\n  - a\n  - b\nx: y\n").1, ["a", "b"]);
+        assert_eq!(read("tags: a, b\n").1, ["a", "b"]);
+        // Broken lines are skipped, and a date must be one.
+        assert_eq!(read("tags\ncreated: soon\n:::\n"), (None, vec![], None));
+        assert_eq!(read("created: 2026-13-45\n").2, None);
     }
 
     #[test]
