@@ -14,6 +14,8 @@ name = "livemark"
 path = "src/main.rs"
 
 [dependencies]
+# The autosave wait, without holding a thread (already in the tree).
+async-io         = "2"
 # The command line: the file to open, `note` and `tags`.
 clap             = { version = "4", features = ["derive"] }
 # Where the settings file lives on each platform.

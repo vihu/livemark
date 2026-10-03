@@ -3,8 +3,8 @@
 //! focus, and before another note opens, the window closes or a change
 //! across the vault needs it saved, as Ctrl+S writes it. Never over a file
 //! changed on disk (that asks, as before); a new note without a file still
-//! asks where. iced has no timer without an async runtime here: one
-//! background sleep at a time waits for the quiet.
+//! asks where. One `async_io` timer at a time waits for the quiet, so no
+//! thread is held while it does.
 use std::time::{Duration, Instant};
 
 use iced::Task;
@@ -74,9 +74,20 @@ impl App {
     }
 }
 
-/// A message after `duration`, from a background thread of iced's pool.
+/// A message after `duration`.
 fn wait(duration: Duration) -> Task<Message> {
-    Task::perform(async move { std::thread::sleep(duration) }, |()| {
-        Message::AutosaveTick
-    })
+    Task::perform(async_io::Timer::after(duration), |_| Message::AutosaveTick)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn the_wait_ends_on_an_executor_that_is_not_async_ios() {
+        // iced's thread pool polls the timer; async-io's own thread wakes it.
+        let start = Instant::now();
+        iced::futures::executor::block_on(async_io::Timer::after(Duration::from_millis(30)));
+        assert!(start.elapsed() >= Duration::from_millis(30));
+    }
 }
