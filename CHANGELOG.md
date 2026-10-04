@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 (2026-10-04)
+
+- The vault menu shows the version at its foot, so a Flatpak or macOS
+  build says which it is.
+
 ## 0.2.0 (2026-10-03)
 
 Vaults: a folder of notes with search, tags, links between notes and
