@@ -1,7 +1,7 @@
 //! The vault menu (PLAN-006), in File's place at the sidebar's head: new,
 //! open, Open recent and Switch vault (each a list flying out beside its
 //! row, on hover or a click), save, save as, Appearance, the interface's
-//! zoom, quit.
+//! zoom, quit; the version under them.
 use std::path::Path;
 
 use iced::widget::text::{Ellipsis, Wrapping};
@@ -132,6 +132,15 @@ impl App {
             zoom,
             line(),
             item(Icon::Quit, "Quit", "Q", Message::CloseRequested),
+            line(),
+            // As roughdraft's menu footer: which build is running, where a
+            // Flatpak or a macOS bundle shows no version anywhere else.
+            container(
+                text(concat!("livemark ", env!("CARGO_PKG_VERSION")))
+                    .size(12)
+                    .style(text::secondary)
+            )
+            .padding([6, 10]),
         ]
         .spacing(GAP);
         let menu = container(items)
