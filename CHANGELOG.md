@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 (2026-10-06)
 
 - `livemark picture <note> <file>...` copies pictures into `assets/`
   next to a note, never over a file, and prints the markdown line for

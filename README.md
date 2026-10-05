@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/5ac52e1a-7ad4-4bd3-b630-93f37a956b45
 - An iced-free core (`doc`, `parse`, `style`, `layout`, `edit`), so editing
   is tested without a window.
 
-Status: 0.3.0, not on crates.io (changes in `CHANGELOG.md`). Targets Linux
+Status: 0.3.1, not on crates.io (changes in `CHANGELOG.md`). Targets Linux
 (Wayland) and macOS. It is both a library for iced apps and a standalone
 editor (the `livemark` app).
 
