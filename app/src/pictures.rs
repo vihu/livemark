@@ -14,7 +14,7 @@ impl App {
             self.waiting_picture = Some(png);
             return self.update(Message::Save { choose: true });
         };
-        match file::save_picture(&note, &png) {
+        match file::save_picture(&note, &png, "png") {
             Ok(dest) => {
                 self.editor.insert_text(&format!("![]({dest})"));
                 self.editor.set_image(&dest, &png);

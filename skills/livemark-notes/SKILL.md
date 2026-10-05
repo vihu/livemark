@@ -1,8 +1,8 @@
 ---
 name: livemark-notes
-description: Finds and writes notes in the user's livemark vault (a folder of plain markdown notes kept in their own git repository) with the livemark CLI, which lists the newest notes, searches them by words and tags, and writes new ones named by date and title with front matter for the title, tags and the agent that wrote it. Use when the user asks to look something up in their notes or vault, asks what they noted about something, or asks to note something down, keep a finding, decision, link or to-do for later, or put something in their notes.
+description: Finds, writes and edits notes in the user's livemark vault (a folder of plain markdown notes kept in their own git repository) with the livemark CLI, which lists the newest notes, searches them by words and tags, writes new ones named by date and title with front matter for the title, tags and the agent that wrote it, and copies pictures in next to a note. Use when the user asks to look something up in their notes or vault, asks what they noted about something, asks to note something down, keep a finding, decision, link, picture or to-do for later, or asks to change, add to or tick off something in a note.
 license: MIT
-compatibility: Requires the livemark CLI with the note, tags, list and search commands on PATH, and a vault (one the user opened in the livemark app, or a folder passed with --vault). Works offline.
+compatibility: Requires the livemark CLI with the note, tags, list, search and picture commands on PATH, and a vault (one the user opened in the livemark app, or a folder passed with --vault). Works offline.
 ---
 
 # livemark notes
@@ -10,11 +10,12 @@ compatibility: Requires the livemark CLI with the note, tags, list and search co
 The user keeps notes as markdown files in a folder (a vault) that they
 sync with their own git. The livemark CLI finds notes there and writes new
 ones in the vault's convention: `YYYY-MM-DD-title-in-lowercase.md`, front
-matter with the title, tags, date and who wrote it. Never write note files
-by hand.
+matter with the title, tags, date and who wrote it. Never create note files
+by hand. Existing notes are plain markdown: edit them with your own file
+editing tool.
 
-Run `livemark --help` first. If it is not found, or it has no `list` and
-`search` commands, stop and ask the user to install or update livemark
+Run `livemark --help` first. If it is not found, or it has no `list`,
+`search` and `picture` commands, stop and ask the user to install or update livemark
 (https://github.com/vihu/livemark).
 
 ## When
@@ -25,6 +26,8 @@ Run `livemark --help` first. If it is not found, or it has no `list` and
 - Writing: only when the user asks for a note: "note this down", "keep
   this for later", "save it to my notes". Never more than the user asked
   for: one note per thing to keep.
+- Editing: only when the user asks to change a note ("add this to my
+  deploy note", "tick off the runner task"), and only that note.
 
 ## Finding notes
 
@@ -81,6 +84,44 @@ Run `livemark --help` first. If it is not found, or it has no `list` and
 
    It prints the new note's path. Tell the user that path.
 
+## Editing a note
+
+1. Find the note (`livemark search` or `list`) and read all of it.
+2. Change only what the user asked, with your own file editing tool.
+   Leave everything else as it is: other lines, spacing, line endings.
+3. In the front matter, `title:` and `tags:` may change; keep the tags
+   list in the form it has (`[work, ops]`). Leave `created:` and `by:`
+   as they are.
+4. Tell the user the path of the note you changed.
+
+The file name stays when the title changes. Never rename, move or delete
+a note file: other notes link to it by its path. Ask the user to rename
+or delete it in the livemark app, which updates the links.
+
+## Adding a picture
+
+1. Have the picture as a file: a screenshot, a chart you rendered. PNG,
+   JPEG, GIF or WebP, at most 32 MB.
+2. Write the note first (or find it): the command needs its path.
+3. Copy the picture in next to the note:
+
+   ```bash
+   livemark picture /home/me/notes/2026-10-06-flame-graph-after-the-fix.md /tmp/flame.png
+   ```
+
+   It prints one markdown line per picture, its path from the note:
+
+   ```text
+   ![](assets/2026-10-06-flame-graph-after-the-fix-1.png)
+   ```
+
+4. Put that line in the note where the picture belongs, with your file
+   editing tool, and describe the picture in the brackets:
+   `![Flame graph after the fix](assets/...)`.
+
+Never link a picture where it was (`/tmp/flame.png`): the note must work
+from the vault alone. Never add a picture that shows a secret.
+
 ## Errors
 
 A non-zero exit means nothing was written (2 when the arguments did not
@@ -98,7 +139,8 @@ parse, 1 otherwise); read the message on stderr:
 - Put secrets in a note: passwords, tokens, API keys, private keys, the
   contents of `.env` files or anything that looks like a credential. Say
   where the secret lives instead. Notes end up in a git repository.
-- Edit, rename or delete the user's existing notes. The CLI only adds.
+- Rename, move or delete the user's notes, or edit a note the user did
+  not ask about.
 - Run git in the vault. The user commits, signs and pushes; the app shows
   them what changed.
 
