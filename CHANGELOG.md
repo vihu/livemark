@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-05)
 
 - `livemark list` and `livemark search` let scripts and agents find
   notes: the newest first, by tag, or by their words, with `--sort` and
