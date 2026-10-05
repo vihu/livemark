@@ -9,15 +9,17 @@
 //! livemark tags [--vault <dir>]
 //! livemark list [--tag t]... [--sort modified|created] [--limit 20] [--vault <dir>]
 //! livemark search <words>... [--tag t]... [--sort ...] [--limit 20] [--vault <dir>]
+//! livemark picture <note.md> <file>...
 //! ```
 //!
 //! The vault is `--vault`, else the one the app last opened (settings).
 use std::io::{IsTerminal, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
+use super::file;
 use super::note::{self, Header};
 use super::search::{search, tagged};
 use super::settings::Settings;
@@ -82,6 +84,14 @@ pub enum Command {
         #[command(flatten)]
         filter: Filter,
     },
+    /// Copies pictures into the `assets` folder next to a note; prints a markdown image line each.
+    Picture {
+        /// The note the pictures are for.
+        note: PathBuf,
+        /// PNG, JPEG, GIF or WebP files, at most 32 MB each.
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
 }
 
 /// Which notes `list` and `search` print, and in what order.
@@ -134,6 +144,7 @@ pub fn run(command: Command) -> i32 {
         Command::Tags { vault } => list_tags(vault.or_else(saved_vault)),
         Command::List { filter } => list_notes(&filter),
         Command::Search { words, filter } => search_notes(&words, &filter),
+        Command::Picture { note, files } => add_pictures(&note, &files),
     };
     match outcome {
         Ok(out) => {
@@ -272,6 +283,43 @@ fn search_notes(words: &[String], filter: &Filter) -> Result<String, String> {
     Ok(out.join("\n"))
 }
 
+/// `picture`: each file kept in `assets` next to `note` (never over a
+/// file), one `![](assets/...)` line each. Every file is read before any
+/// is kept, so a wrong one keeps none.
+fn add_pictures(note: &Path, files: &[PathBuf]) -> Result<String, String> {
+    if !note.is_file() {
+        return Err(format!("{}: no such note", note.display()));
+    }
+    let mut read = Vec::new();
+    for path in files {
+        let extension = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase());
+        let (Some(extension), true) = (extension, file::is_picture(path)) else {
+            return Err(format!(
+                "{}: not a PNG, JPEG, GIF or WebP picture",
+                path.display()
+            ));
+        };
+        let size = std::fs::metadata(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .len();
+        if size > file::PICTURE_MAX {
+            return Err(format!("{}: larger than 32 MB", path.display()));
+        }
+        let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        read.push((bytes, extension));
+    }
+    let mut out = Vec::new();
+    for (bytes, extension) in &read {
+        out.push(format!(
+            "![]({})",
+            file::save_picture(note, bytes, extension)?
+        ));
+    }
+    Ok(out.join("\n"))
+}
+
 /// Says on stderr when `limit` left some of `count` notes out.
 fn left_out(limit: usize, count: usize) {
     if count > limit {
@@ -291,7 +339,7 @@ fn day(time: SystemTime) -> String {
 mod tests {
     use clap::Parser;
 
-    use super::{Args, Command, list_notes, list_tags, search_notes, write_note};
+    use super::{Args, Command, add_pictures, list_notes, list_tags, search_notes, write_note};
 
     fn parse(list: &[&str]) -> Result<Args, String> {
         Args::try_parse_from(std::iter::once("livemark").chain(list.iter().copied()))
@@ -453,6 +501,58 @@ mod tests {
         assert_eq!(call(&["search", "nowhere"]).unwrap(), "");
         assert!(parse(&["search"]).is_err());
         assert!(parse(&["list", "--sort", "title"]).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn pictures_are_copied_next_to_the_note_and_never_over_a_file() {
+        let dir = std::env::temp_dir().join(format!("livemark-cli-pic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let note = dir.join("2026-10-06-flame-graph.md");
+        std::fs::write(&note, "# Flame graph\n").unwrap();
+        let [png, jpg, text] = ["shot.png", "Photo.JPG", "notes.txt"].map(|name| dir.join(name));
+        std::fs::write(&png, b"png").unwrap();
+        std::fs::write(&jpg, b"jpg").unwrap();
+        std::fs::write(&text, b"text").unwrap();
+        let call = |list: &[&std::path::Path]| {
+            let mut all = vec!["picture".to_owned()];
+            all.extend(list.iter().map(|p| p.display().to_string()));
+            match Args::try_parse_from(std::iter::once("livemark".to_owned()).chain(all)) {
+                Ok(Args {
+                    command: Some(Command::Picture { note, files }),
+                    ..
+                }) => add_pictures(&note, &files),
+                other => panic!("{other:?}"),
+            }
+        };
+        assert_eq!(
+            call(&[&note, &png, &jpg]).unwrap(),
+            "![](assets/2026-10-06-flame-graph-1.png)\n![](assets/2026-10-06-flame-graph-1.jpg)"
+        );
+        // Again: new names, the first copies untouched.
+        assert_eq!(
+            call(&[&note, &png]).unwrap(),
+            "![](assets/2026-10-06-flame-graph-2.png)"
+        );
+        let assets = dir.join("assets");
+        assert_eq!(
+            std::fs::read(assets.join("2026-10-06-flame-graph-1.jpg")).unwrap(),
+            b"jpg"
+        );
+        // A wrong file keeps none, even the right ones before it.
+        assert!(
+            call(&[&note, &png, &text])
+                .unwrap_err()
+                .contains("notes.txt")
+        );
+        assert!(call(&[&note, &dir.join("gone.png")]).is_err());
+        assert!(
+            call(&[&dir.join("gone.md"), &png])
+                .unwrap_err()
+                .contains("no such note")
+        );
+        assert_eq!(std::fs::read_dir(&assets).unwrap().count(), 3);
+        assert!(parse(&["picture", "note.md"]).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

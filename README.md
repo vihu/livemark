@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/5ac52e1a-7ad4-4bd3-b630-93f37a956b45
 - An iced-free core (`doc`, `parse`, `style`, `layout`, `edit`), so editing
   is tested without a window.
 
-Status: 0.3.0, not on crates.io (changes in `CHANGELOG.md`). Targets Linux
+Status: 0.3.1, not on crates.io (changes in `CHANGELOG.md`). Targets Linux
 (Wayland) and macOS. It is both a library for iced apps and a standalone
 editor (the `livemark` app).
 
@@ -60,13 +60,14 @@ cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 
 ## Notes from scripts and agents
 
-Four commands that never open a window:
+Five commands that never open a window:
 
 ```text
 livemark note "Flaky test cause" --tags work,ci --by claude-code < body.md
 livemark tags
 livemark list --tag work --sort created
 livemark search flaky test
+livemark picture 2026-10-06-flaky-test-cause.md /tmp/ci.png
 ```
 
 `note` writes a new note into the vault (the one the app last opened, or
@@ -74,11 +75,14 @@ livemark search flaky test
 the tags in use, `tag count` a line. `list` prints the newest notes, a
 tab-separated date, path, title and tags a line; `search` finds the notes
 with every word, as `path:line:text` lines. Both take `--tag`, `--sort`
-and `--limit`. `livemark --help` has the rest.
+and `--limit`. `picture` copies pictures into `assets/` next to a note,
+never over a file, and prints a `![](assets/...)` line for each.
+`livemark --help` has the rest.
 
 `skills/livemark-notes/` is an [Agent Skill] that teaches a coding agent
-when and how to find and write notes: only when asked, search before
-writing, existing tags first, no secrets. Link it where your agent looks
+when and how to find, write and edit notes: only when asked, search before
+writing, existing tags first, pictures through `livemark picture`, never
+renaming or deleting a note, no secrets. Link it where your agent looks
 for skills:
 
 ```text

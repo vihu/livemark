@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 (2026-10-06)
+
+- `livemark picture <note> <file>...` copies pictures into `assets/`
+  next to a note, never over a file, and prints the markdown line for
+  each, so agents can put pictures in notes.
+- The agent skill lets agents edit a note's text when asked, with their
+  own editing tool (never renaming, moving or deleting a note), and add
+  pictures with `livemark picture`: link or copy it again.
+
 ## 0.3.0 (2026-10-05)
 
 - `livemark list` and `livemark search` let scripts and agents find

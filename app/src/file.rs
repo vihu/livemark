@@ -58,15 +58,19 @@ pub fn image_bytes(note: &Path, url: &str) -> Option<Vec<u8>> {
             .as_ref(),
     );
     let size = std::fs::metadata(&path).ok()?.len();
-    (size <= 32 << 20)
+    (size <= PICTURE_MAX)
         .then(|| std::fs::read(&path).ok())
         .flatten()
 }
 
-/// Keeps a pasted picture (PNG bytes) for the note at `note`, in the
-/// `assets` folder next to it as `<note>-<n>.png` (the first free `n`, the
-/// user's pick in PLAN-002), and gives where its markdown points.
-pub fn save_picture(note: &Path, png: &[u8]) -> Result<String, String> {
+/// The largest picture read, in bytes.
+pub const PICTURE_MAX: u64 = 32 << 20;
+
+/// Keeps a picture (its bytes, a file `extension` such as `png`) for the
+/// note at `note`, in the `assets` folder next to it as `<note>-<n>.<ext>`
+/// (the first free `n`, the user's pick in PLAN-002; never over a file),
+/// and gives where its markdown points.
+pub fn save_picture(note: &Path, bytes: &[u8], extension: &str) -> Result<String, String> {
     let folder = note
         .parent()
         .ok_or("the note has no folder")?
@@ -75,13 +79,20 @@ pub fn save_picture(note: &Path, png: &[u8]) -> Result<String, String> {
     let stem = note
         .file_stem()
         .map_or("note".into(), |s| s.to_string_lossy());
-    let name = (1..)
-        .map(|n| format!("{stem}-{n}.png"))
-        .find(|name| !folder.join(name).exists())
-        .ok_or("no free name")?;
-    let path = folder.join(&name);
-    std::fs::write(&path, png).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(format!("assets/{}", name.replace(' ', "%20")))
+    for n in 1.. {
+        let name = format!("{stem}-{n}.{extension}");
+        let path = folder.join(&name);
+        match std::fs::File::create_new(&path) {
+            Ok(mut file) => {
+                file.write_all(bytes)
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                return Ok(format!("assets/{}", name.replace(' ', "%20")));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        }
+    }
+    unreachable!("some name is free")
 }
 
 /// Where an image's markdown in the note at `note` points to `file`: its
@@ -228,11 +239,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let note = dir.join("my note.md");
         assert_eq!(
-            super::save_picture(&note, b"one").unwrap(),
+            super::save_picture(&note, b"one", "png").unwrap(),
             "assets/my%20note-1.png"
         );
         assert_eq!(
-            super::save_picture(&note, b"two").unwrap(),
+            super::save_picture(&note, b"two", "png").unwrap(),
             "assets/my%20note-2.png"
         );
         assert_eq!(
