@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- `livemark list` and `livemark search` let scripts and agents find
+  notes: the newest first, by tag, or by their words, with `--sort` and
+  `--limit`.
+- The agent skill is now `skills/livemark-notes/` (was
+  `writing-livemark-notes`) and covers finding notes too: link it again.
+
 ## 0.2.1 (2026-10-04)
 
 - The vault menu shows the version at its foot, so a Flatpak or macOS

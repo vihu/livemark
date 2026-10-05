@@ -60,24 +60,30 @@ cargo run --release -p livemark-app -- [file.md] [--dark|--light]
 
 ## Notes from scripts and agents
 
-Two commands that never open a window:
+Four commands that never open a window:
 
 ```text
 livemark note "Flaky test cause" --tags work,ci --by claude-code < body.md
 livemark tags
+livemark list --tag work --sort created
+livemark search flaky test
 ```
 
 `note` writes a new note into the vault (the one the app last opened, or
 `--vault <dir>`), prints its path, and never overwrites one. `tags` lists
-the tags in use, `tag count` a line. `livemark --help` has the rest.
+the tags in use, `tag count` a line. `list` prints the newest notes, a
+tab-separated date, path, title and tags a line; `search` finds the notes
+with every word, as `path:line:text` lines. Both take `--tag`, `--sort`
+and `--limit`. `livemark --help` has the rest.
 
-`skills/writing-livemark-notes/` is an [Agent Skill] that teaches a coding
-agent when and how to write a note: only when asked, existing tags first,
-no secrets. Link it where your agent looks for skills:
+`skills/livemark-notes/` is an [Agent Skill] that teaches a coding agent
+when and how to find and write notes: only when asked, search before
+writing, existing tags first, no secrets. Link it where your agent looks
+for skills:
 
 ```text
-ln -s "$PWD/skills/writing-livemark-notes" ~/.claude/skills/   # Claude Code
-ln -s "$PWD/skills/writing-livemark-notes" ~/.agents/skills/   # pi, and others
+ln -s "$PWD/skills/livemark-notes" ~/.claude/skills/   # Claude Code
+ln -s "$PWD/skills/livemark-notes" ~/.agents/skills/   # pi, and others
 ```
 
 The agent needs `livemark` on its `PATH`: the AppImage renamed to

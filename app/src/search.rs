@@ -115,7 +115,7 @@ pub(crate) fn split(query: &str) -> (Vec<String>, Vec<String>) {
 }
 
 /// Whether `note` has a tag starting with each of `tags`.
-fn tagged(note: &Note, tags: &[String]) -> bool {
+pub(crate) fn tagged(note: &Note, tags: &[String]) -> bool {
     tags.iter()
         .all(|tag| note.tags.iter().any(|t| t.starts_with(tag.as_str())))
 }
