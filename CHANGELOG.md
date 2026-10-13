@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 (2026-10-13)
+
+- The note's text is at most 120 columns of code wide, centred, so long
+  code lines wrap where they can be read; Appearance steps it from 60 to
+  240 or to the whole width (`line-width` in the settings).
+  `Editor::set_line_width` for hosts.
+
 ## 0.3.1 (2026-10-06)
 
 - `livemark picture <note> <file>...` copies pictures into `assets/`

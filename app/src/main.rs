@@ -338,13 +338,14 @@ impl App {
         .with_images()
     }
 
-    /// The remembered settings applied (the zoom), kept in `file`, with
+    /// The remembered settings applied (the zoom, the line width), kept in `file`, with
     /// the note opened first among the recent files.
     fn with_settings(mut self, settings: Settings, file: Option<PathBuf>) -> Self {
         self.settings = settings;
         self.settings_file = file;
         self.editor.set_zoom(self.settings.zoom);
         self.editor.set_split_ratio(self.settings.split);
+        self.editor.set_line_width(self.settings.line_width());
         if let Some(root) = self.settings.vault.clone() {
             match vault::Vault::open(&root) {
                 Ok(vault) => {
@@ -375,13 +376,14 @@ impl App {
         }
     }
 
-    /// A new editor for `text`, drawn as the current one: its zoom, mode
-    /// and split ratio carried over.
+    /// A new editor for `text`, drawn as the current one: its zoom, mode,
+    /// split ratio and line width carried over.
     fn editor_for(&self, text: String) -> Editor {
         let mut editor = Editor::new(text);
         editor.set_zoom(self.editor.zoom());
         editor.set_mode(self.editor.mode());
         editor.set_split_ratio(self.editor.split_ratio());
+        editor.set_line_width(self.editor.line_width());
         editor
     }
 

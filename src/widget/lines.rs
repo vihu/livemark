@@ -179,6 +179,9 @@ pub struct Lines {
     pub source: bool,
     /// Every text size times this (`Editor::set_zoom`).
     pub zoom: f32,
+    /// The text at most this many code columns wide, centred
+    /// (`Editor::set_line_width`).
+    pub line_width: Option<u16>,
     /// How far left of the text a revealed heading's `#` run may hang:
     /// the gutter and the padding.
     pub room: f32,
@@ -213,6 +216,7 @@ impl Lines {
             pending_reveal: None,
             source: false,
             zoom: 1.0,
+            line_width: None,
             room: 0.0,
             outer: iced::Size::ZERO,
             highlights: Highlights::default(),
@@ -255,7 +259,7 @@ impl Lines {
     /// the zoom.
     pub fn fit(&mut self) {
         let bounds = Rectangle::new(iced::Point::ORIGIN, self.outer);
-        let area = super::surface::text_area(bounds, self.zoom);
+        let area = super::surface::text_area(bounds, self.zoom, self.line_width);
         self.width = area.width;
         self.height = area.height;
         self.room = area.x - super::surface::EDGE;
