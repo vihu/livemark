@@ -31,16 +31,23 @@ const GUTTER: f32 = 2.25 * TEXT_SIZE;
 /// What a hanging `#` run keeps clear of the widget's left edge.
 pub(super) const EDGE: f32 = 4.0;
 
+/// A column of the code font, at 100%: JetBrains Mono's advance is 0.6 em.
+pub(super) const COLUMN: f32 = 0.6 * TEXT_SIZE;
+
 /// Where the text goes in a widget's `bounds` at `zoom`: inside the
-/// padding, right of the gutter (which grows with the zoom).
-pub(super) fn text_area(bounds: Rectangle, zoom: f32) -> Rectangle {
+/// padding, right of the gutter (which grows with the zoom); with a line
+/// width, at most that many code columns wide and centred once there is
+/// room for the gutter on both sides.
+pub(super) fn text_area(bounds: Rectangle, zoom: f32, line_width: Option<u16>) -> Rectangle {
     let gutter = GUTTER * zoom;
+    let width = (bounds.width - 2.0 * PADDING - gutter).max(1.0);
+    let width = line_width.map_or(width, |columns| {
+        width.min(f32::from(columns) * COLUMN * zoom)
+    });
+    let left = (PADDING + gutter).max((bounds.width - width) / 2.0);
     Rectangle::new(
-        Point::new(bounds.x + PADDING + gutter, bounds.y + PADDING),
-        Size::new(
-            (bounds.width - 2.0 * PADDING - gutter).max(1.0),
-            (bounds.height - 2.0 * PADDING).max(1.0),
-        ),
+        Point::new(bounds.x + left, bounds.y + PADDING),
+        Size::new(width, (bounds.height - 2.0 * PADDING).max(1.0)),
     )
 }
 
@@ -546,7 +553,7 @@ impl Surface<'_> {
 
     /// Where the text goes in the widget's `bounds`.
     fn text_area(&self, bounds: Rectangle) -> Rectangle {
-        text_area(bounds, self.editor.zoom())
+        text_area(bounds, self.editor.zoom(), self.editor.line_width())
     }
 
     /// The scroll bar's track and thumb when the pointer is over the track

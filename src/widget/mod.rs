@@ -456,6 +456,27 @@ impl Editor {
         }
     }
 
+    /// How many code columns wide the text may be, `None` for the whole
+    /// width.
+    pub fn line_width(&self) -> Option<u16> {
+        self.lines.borrow().line_width
+    }
+
+    /// Caps the text at `columns` of the code font (times the zoom), centred
+    /// in the widget, as Obsidian's readable line length; `None` (the
+    /// default) fills the width. Keeps the caret's row where it was.
+    pub fn set_line_width(&mut self, columns: Option<u16>) {
+        if columns != self.line_width() {
+            self.keep_caret_row(|lines| lines.line_width = columns);
+            let mut preview = self.preview.lines.borrow_mut();
+            preview.line_width = columns;
+            if preview.sized {
+                preview.fit();
+            }
+            self.preview.leader.set(Pane::Text);
+        }
+    }
+
     /// Applies `change` to the layout, keeping the caret's row where it
     /// was on screen when it was in view.
     fn keep_caret_row(&mut self, change: impl FnOnce(&mut Lines)) {

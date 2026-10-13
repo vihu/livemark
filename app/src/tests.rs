@@ -367,6 +367,21 @@ fn appearance_picks_themes_follows_the_system_and_scales_the_interface() {
     assert_eq!(app.settings.scale, 2.0);
     send(&mut app, A::Scale(0));
     assert_eq!(app.settings.scale, 1.0);
+    // The line width by ten columns, past 240 the whole width and back.
+    assert_eq!(app.settings.line_width, 120);
+    send(&mut app, A::LineWidth(-1));
+    assert_eq!(app.editor.line_width(), Some(110));
+    for _ in 0..13 {
+        send(&mut app, A::LineWidth(1));
+    }
+    assert_eq!(app.editor.line_width(), Some(240));
+    send(&mut app, A::LineWidth(1));
+    assert_eq!(
+        (app.settings.line_width, app.editor.line_width()),
+        (0, None)
+    );
+    send(&mut app, A::LineWidth(-1));
+    assert_eq!(app.editor.line_width(), Some(240));
     // The note's text is left alone meanwhile; closing goes back to it.
     app.editor.insert_text("x");
     let before = app.editor.text().to_owned();

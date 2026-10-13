@@ -248,11 +248,10 @@ impl Editor {
             if !lines.sized {
                 return None;
             }
-            (lines.outer.width - lines.width, lines.height)
+            (lines.room, lines.height)
         };
-        // Where the text area starts in the widget: the padding and
-        // gutter left of it (all of `room` but the right padding).
-        let left = room - super::surface::PADDING;
+        // Where the text area starts in the widget (`Lines::fit`).
+        let left = room + super::surface::EDGE;
         let top = super::surface::PADDING;
         let rows = self.completion.choices.len() as f32;
         let tall = rows * 44.0 + 8.0;

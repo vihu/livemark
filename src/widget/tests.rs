@@ -697,3 +697,34 @@ fn a_wrap_inside_two_spaces_keeps_the_caret_on_a_row_by_them() {
         assert!(row.end < 100, "a row, not the whole line: {row:?}");
     });
 }
+
+#[test]
+fn a_line_width_caps_the_text_at_its_code_columns_and_centres_it() {
+    let line = |columns: usize| format!("```\n{}\n```\n", "x".repeat(columns));
+    let rows = |text: String, zoom: f32| {
+        let mut editor = Editor::new(text);
+        editor.set_zoom(zoom);
+        editor.set_line_width(Some(120));
+        let mut lines = editor.lines.borrow_mut();
+        lines.outer = iced::Size::new(3000.0, 600.0);
+        lines.fit();
+        let area = super::surface::text_area(
+            iced::Rectangle::new(iced::Point::ORIGIN, lines.outer),
+            zoom,
+            Some(120),
+        );
+        assert!((area.center_x() - 1500.0).abs() < 0.5, "centred: {area:?}");
+        drop(lines);
+        editor.with_lines(|lines, source| lines.shaped(source, 1).buffer.layout_runs().count())
+    };
+    for zoom in [1.0, 1.7] {
+        assert_eq!(rows(line(120), zoom), 1, "120 columns fit at {zoom}");
+        assert_eq!(rows(line(121), zoom), 2, "121 wrap at {zoom}");
+    }
+    // Narrower than the cap, the text fills the width as before.
+    let bounds = iced::Rectangle::new(iced::Point::ORIGIN, iced::Size::new(600.0, 400.0));
+    assert_eq!(
+        super::surface::text_area(bounds, 1.0, Some(120)),
+        super::surface::text_area(bounds, 1.0, None)
+    );
+}

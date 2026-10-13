@@ -1,7 +1,7 @@
 //! A markdown file drawn headlessly by the editor, for typography reviews.
 //!
 //! ```text
-//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--source|--split] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]
+//! cargo run --release --example snapshot -- <file.md> <out.png> [--dark] [--source|--split] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--line-width <columns>] [--toolbar]
 //! ```
 //!
 //! Writes `<out>-<renderer>.png` at 2x, 900 by 1100 points (or `--size`), with the caret
@@ -13,7 +13,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [file, out, ..] = args.as_slice() else {
         eprintln!(
-            "usage: snapshot <file.md> <out.png> [--dark] [--source|--split] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--toolbar]"
+            "usage: snapshot <file.md> <out.png> [--dark] [--source|--split] [--caret <offset>|<anchor>..<head>] [--size <w>x<h>] [--zoom <factor>] [--line-width <columns>] [--toolbar]"
         );
         std::process::exit(2);
     };
@@ -53,6 +53,13 @@ fn main() {
         .and_then(|i| args.get(i + 1)?.parse().ok())
     {
         editor.set_zoom(zoom);
+    }
+    if let Some(columns) = args
+        .iter()
+        .position(|a| a == "--line-width")
+        .and_then(|i| args.get(i + 1)?.parse().ok())
+    {
+        editor.set_line_width(Some(columns));
     }
     let size = args
         .iter()

@@ -1,14 +1,14 @@
 //! Appearance (PLAN-006), in the note's place as the tag manager is: the
 //! theme, every one drawn as a little window in its own colours, System
 //! following the system between a light and a dark one picked; the whole
-//! interface's scale (Ctrl+=, Ctrl+- and Ctrl+0) and the note's text size
-//! on top of it.
+//! interface's scale (Ctrl+=, Ctrl+- and Ctrl+0), the note's text size
+//! on top of it and how wide its lines run.
 use iced::theme::Mode;
 use iced::widget::{Space, button, column, container, pick_list, row, scrollable, text, toggler};
 use iced::{Color, Element, Length, Task, Theme};
 
 use super::icons::{Icon, Tone, icon};
-use super::settings::Theme as Named;
+use super::settings::{LINE_WIDTHS, Theme as Named};
 use super::shell::COMMAND;
 use super::{App, Message};
 
@@ -24,6 +24,9 @@ pub enum AppearanceMessage {
     },
     /// The interface a tenth bigger (1), smaller (-1), or back to 100% (0).
     Scale(i8),
+    /// The text's line width ten columns wider (1) or narrower (-1); past
+    /// the widest, the whole width.
+    LineWidth(i8),
     /// The system went light or dark.
     System(Mode),
     /// Autosave on or off.
@@ -100,6 +103,19 @@ impl App {
                 };
                 self.remember();
             }
+            AppearanceMessage::LineWidth(step) => {
+                let (least, most) = (*LINE_WIDTHS.start(), *LINE_WIDTHS.end());
+                self.settings.line_width = match self.settings.line_width {
+                    0 if step < 0 => most,
+                    0 => 0,
+                    columns if step > 0 && columns >= most => 0,
+                    columns => (i32::from(columns) + 10 * i32::from(step))
+                        .clamp(i32::from(least), i32::from(most))
+                        as u16,
+                };
+                self.editor.set_line_width(self.settings.line_width());
+                self.remember();
+            }
             AppearanceMessage::System(mode) => self.system_mode = mode,
             AppearanceMessage::Autosave(on) => {
                 self.settings.autosave = on;
@@ -156,19 +172,29 @@ impl App {
                 format!(
                     "Everything: the sidebar, menus, bars and the text. {COMMAND}+= and {COMMAND}+-, {COMMAND}+0 back."
                 ),
-                self.settings.scale,
+                percent(self.settings.scale),
                 send(AppearanceMessage::Scale(-1)),
                 send(AppearanceMessage::Scale(1)),
             ),
             size_box(
                 "Text",
                 "The note's text, on top of the interface's size.".into(),
-                self.editor.zoom(),
+                percent(self.editor.zoom()),
                 Message::Zoom(-1),
                 Message::Zoom(1),
             ),
         ]
         .spacing(12);
+        let line_width = size_box(
+            "Line width",
+            "How wide the note's text runs, in columns of code, centred in the window. Past 240, the whole width.".into(),
+            match self.settings.line_width() {
+                Some(columns) => format!("{columns}"),
+                None => "Full".into(),
+            },
+            send(AppearanceMessage::LineWidth(-1)),
+            send(AppearanceMessage::LineWidth(1)),
+        );
         let heading = |said: &'static str| text(said).size(13).style(text::secondary);
         scrollable(
             column![
@@ -179,6 +205,7 @@ impl App {
                 Space::new().height(8),
                 heading("Size"),
                 sizes,
+                line_width,
                 Space::new().height(8),
                 heading("Saving"),
                 container(
@@ -383,11 +410,16 @@ fn card_style(palette: &iced::theme::palette::Palette, on: bool) -> button::Styl
     }
 }
 
+/// A size as a percentage.
+fn percent(value: f32) -> String {
+    format!("{:.0}%", value * 100.0)
+}
+
 /// A size with what it covers, and its steps.
 fn size_box<'a>(
     name: &'static str,
     covers: String,
-    value: f32,
+    value: String,
     smaller: Message,
     bigger: Message,
 ) -> Element<'a, Message> {
@@ -406,10 +438,7 @@ fn size_box<'a>(
             .spacing(2)
             .width(Length::Fill),
             step(Icon::Minus, smaller),
-            text(format!("{:.0}%", value * 100.0))
-                .size(13)
-                .width(52)
-                .center(),
+            text(value).size(13).width(52).center(),
             step(Icon::Plus, bigger),
         ]
         .spacing(8)

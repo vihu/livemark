@@ -15,6 +15,11 @@ const RECENT: usize = 10;
 pub const SIDEBAR_WIDTH: f32 = 260.0;
 pub const SIDEBAR_WIDTHS: std::ops::RangeInclusive<f32> = 200.0..=480.0;
 
+/// How many code columns the note's text may run to, and how far the
+/// Appearance panel steps it (past its end: the whole width, kept as 0).
+pub const LINE_WIDTH: u16 = 120;
+pub const LINE_WIDTHS: std::ops::RangeInclusive<u16> = 60..=240;
+
 /// The theme: as the system is (between a light and a dark one picked),
 /// or one of iced's (PLAN-006); kept as `kanagawa-wave` and the like.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +112,9 @@ pub struct Settings {
     pub sidebar_width: f32,
     /// Whether notes are written as they are typed (PLAN-006).
     pub autosave: bool,
+    /// The note's text at most this many code columns wide, centred; 0
+    /// for the whole width (`Editor::set_line_width`).
+    pub line_width: u16,
 }
 
 impl Default for Settings {
@@ -125,6 +133,7 @@ impl Default for Settings {
             sidebar: true,
             sidebar_width: SIDEBAR_WIDTH,
             autosave: true,
+            line_width: LINE_WIDTH,
         }
     }
 }
@@ -183,6 +192,9 @@ impl Settings {
         if !SIDEBAR_WIDTHS.contains(&self.sidebar_width) {
             self.sidebar_width = default.sidebar_width;
         }
+        if self.line_width != 0 && !LINE_WIDTHS.contains(&self.line_width) {
+            self.line_width = default.line_width;
+        }
         if self.light.is_dark() {
             self.light = default.light;
         }
@@ -192,6 +204,11 @@ impl Settings {
         self.window = self.window.filter(|&(w, h)| w >= 200.0 && h >= 150.0);
         self.recent.truncate(RECENT);
         self
+    }
+
+    /// The line width as the editor takes it: `None` for the whole width.
+    pub fn line_width(&self) -> Option<u16> {
+        (self.line_width > 0).then_some(self.line_width)
     }
 
     /// `file` opened or saved: first among the recent files.
@@ -227,6 +244,7 @@ mod tests {
             sidebar: false,
             sidebar_width: 320.0,
             autosave: false,
+            line_width: 0,
         };
         settings.opened(std::path::Path::new("/notes/a.md"));
         settings.opened(std::path::Path::new("/notes/b.md"));
@@ -242,7 +260,7 @@ mod tests {
         // Missing keys and values out of range take the defaults.
         assert_eq!(read(""), Settings::default());
         assert_eq!(
-            read("zoom = 9\nsplit = 0.9\nwindow = [10, 10]\n"),
+            read("zoom = 9\nsplit = 0.9\nwindow = [10, 10]\nline-width = 5\n"),
             Settings::default()
         );
         assert_eq!(read("zoom = 2\n").zoom, 2.0, "a whole number");
