@@ -25,7 +25,8 @@ fn a_long_cell_wraps_and_a_short_column_stays_whole() {
         let top = lines.top_of(source, 2).expect("on screen");
         (top, lines.shaped(source, 2).height, grid)
     });
-    assert!(grid.width() <= 400.0, "fits: {}", grid.width());
+    // Within float rounding: the shares' sum can land a hair over.
+    assert!(grid.width() <= 400.01, "fits: {}", grid.width());
     let repo = &grid.cells[1][0];
     assert_eq!(repo.buffer.layout_runs().count(), 1, "one row");
     assert!(repo.size.width < grid.columns[0].1, "not clipped");
