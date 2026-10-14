@@ -282,7 +282,7 @@ impl Editor {
                     let at = origin + Vector::new(x, 0.0);
                     if let MarkKind::TableRow(_, row) = mark.kind {
                         let colors = (text, quote_bar, code_background);
-                        grid.draw_row(renderer, row, at, shaped.height, area, colors);
+                        grid.draw_row(renderer, row, at, area, colors);
                     } else {
                         quad(
                             renderer,

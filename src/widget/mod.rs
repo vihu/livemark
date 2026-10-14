@@ -636,6 +636,8 @@ mod properties_tests;
 #[cfg(test)]
 mod split_tests;
 #[cfg(test)]
+mod table_tests;
+#[cfg(test)]
 mod tag_tests;
 #[cfg(test)]
 mod tests;
