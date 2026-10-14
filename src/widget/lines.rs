@@ -233,6 +233,11 @@ impl Lines {
     pub fn shaped(&mut self, source: &Source, index: usize) -> Shaped {
         let mut shaped = self.shaped_text(source, index);
         if !self.source {
+            // A table's row drawn as a grid row: as tall as its tallest
+            // cell, not its source.
+            if let Some((table, row)) = table_row(source, index) {
+                shaped.height = self.grid(source, table).heights[row];
+            }
             self.place_pictures(source, index, &mut shaped);
             // Concealed front matter: its first line as the properties, the
             // rest folded away.
@@ -725,6 +730,14 @@ fn side_cursor(display: usize, side: Affinity) -> cosmic_text::Cursor {
     cosmic_text::Cursor::new_with_affinity(0, display, affinity)
 }
 
+/// The table and row line `index` is drawn as, when it is a grid row.
+fn table_row(source: &Source, index: usize) -> Option<(usize, usize)> {
+    marks_in(source.concealed, source.doc.line_range(index)).find_map(|m| match m.kind {
+        MarkKind::TableRow(table, row) => Some((table, row)),
+        _ => None,
+    })
+}
+
 /// The marks of the sorted `marks` on the line at `range`.
 pub fn marks_in(marks: &[Mark], range: Range<usize>) -> impl Iterator<Item = &Mark> {
     let first = marks.partition_point(|m| m.range.end < range.start);
@@ -787,19 +800,20 @@ impl Lines {
     /// table drawn as a grid: in the cell there (a click on the rule
     /// under the header goes to the header's first cell).
     pub fn table_hit(&mut self, source: &Source, x: f32, y: f32) -> Option<usize> {
-        let (index, _) = self.line_at_y(source, y);
+        let (index, top) = self.line_at_y(source, y);
         let range = source.doc.line_range(index);
         let mark = marks_in(source.concealed, range)
             .find(|m| matches!(m.kind, MarkKind::TableRow(..) | MarkKind::TableRule(_)))?
             .clone();
-        let (table, row) = match mark.kind {
-            MarkKind::TableRow(table, row) => (table, row),
-            MarkKind::TableRule(table) => (table, 0),
+        // The rule is under the header's last row.
+        let (table, row, y) = match mark.kind {
+            MarkKind::TableRow(table, row) => (table, row, y - top),
+            MarkKind::TableRule(table) => (table, 0, f32::MAX),
             _ => return None,
         };
         let start = self.grid_x(source, table);
         let grid = self.grid(source, table);
-        Some(grid.hit(&source.styled.tables()[table], row, x - start))
+        Some(grid.hit(&source.styled.tables()[table], row, x - start, y))
     }
 
     /// Where table `table`'s grid starts, from the text area's left edge:
@@ -807,7 +821,8 @@ impl Lines {
     /// can have other prefixes, and the delimiter row's line is thin).
     pub fn grid_x(&mut self, source: &Source, table: usize) -> f32 {
         let header = source.styled.tables()[table].rows[0].0.start;
-        let shaped = self.shaped(source, source.doc.line_at(header));
+        // Its text, not its height, which is the grid's.
+        let shaped = self.shaped_text(source, source.doc.line_at(header));
         super::marks::start_x(&shaped, header)
     }
 
@@ -816,13 +831,9 @@ impl Lines {
     pub fn covers(&mut self, source: &Source, range: Range<usize>, x: f32, y: f32) -> bool {
         let (index, top) = self.line_at_y(source, y);
         let line = source.doc.line_range(index);
-        let row = marks_in(source.concealed, line.clone()).find_map(|m| match m.kind {
-            MarkKind::TableRow(table, row) => Some((table, row)),
-            _ => None,
-        });
-        if let Some((table, row)) = row {
+        if let Some((table, row)) = table_row(source, index) {
             let start = self.grid_x(source, table);
-            return self.grid(source, table).covers(row, x - start);
+            return self.grid(source, table).covers(row, x - start, y - top);
         }
         let (start, end) = (range.start.max(line.start), range.end.min(line.end));
         if start > end {

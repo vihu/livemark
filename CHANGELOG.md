@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 (2026-10-15)
+
+- Tables wrap long cells instead of cutting them off: a column of short
+  words keeps them whole, long text wraps, and each row is as tall as
+  its tallest cell.
+
 ## 0.3.2 (2026-10-13)
 
 - The note's text is at most 120 columns of code wide, centred, so long
