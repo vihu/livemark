@@ -8,7 +8,7 @@ use super::links::relative;
 use super::vault::resolve;
 
 /// `text` with its title set to `new`: the front matter's `title`, or a
-/// line for it, or the first `#` heading when that was the title (`old`);
+/// line for it, or the first heading when that was the title (`old`);
 /// `None` when the title is the file's name.
 pub(crate) fn retitled(text: &str, old: &str, new: &str) -> Option<String> {
     let value = super::note::yaml_title(new);
@@ -25,19 +25,10 @@ pub(crate) fn retitled(text: &str, old: &str, new: &str) -> Option<String> {
         };
         return Some(splice(text, &[(at..at, format!("title: {value}{nl}"))]));
     }
-    let mut start = 0;
-    for line in text.split_inclusive('\n') {
-        let content = line.trim_end_matches(['\n', '\r']);
-        if let Some(heading) = content.strip_prefix("# ")
-            && heading.trim() == old
-        {
-            let from = start + 2 + (heading.len() - heading.trim_start().len());
-            let to = from + heading.trim().len();
-            return Some(splice(text, &[(from..to, new.to_owned())]));
-        }
-        start += line.len();
-    }
-    None
+    // The heading the vault took the title from (`livemark::parse::heading`).
+    livemark::parse::heading(text)
+        .filter(|range| text[range.clone()] == *old)
+        .map(|range| splice(text, &[(range, new.to_owned())]))
 }
 
 /// The file the note at `path` gets when titled `title`: its date kept,
@@ -158,6 +149,16 @@ mod tests {
             "# New\nbody\n"
         );
         assert_eq!(retitled("just text\n", "file-name", "New"), None);
+        // The heading the vault reads the title from, at any level, not a
+        // comment in code before it.
+        assert_eq!(
+            retitled("## Old ##\nbody\n", "Old", "New").unwrap(),
+            "## New ##\nbody\n"
+        );
+        assert_eq!(
+            retitled("```sh\n# Old\n```\n# Old\n", "Old", "New").unwrap(),
+            "```sh\n# Old\n```\n# New\n"
+        );
     }
 
     #[test]

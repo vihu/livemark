@@ -134,6 +134,34 @@ pub fn links(text: &str) -> Vec<String> {
     link_spans(text).into_iter().map(|(_, dest)| dest).collect()
 }
 
+/// Where the text of the note's first ATX heading is (`#` to `######`,
+/// at the start of a line, not in a quote or list), its markers and any
+/// closing `#` run left out: the note's title when its front matter has
+/// none. Headings that are empty, setext or in code are passed over.
+pub fn heading(text: &str) -> Option<Range<usize>> {
+    let mut events = events(text);
+    while let Some((event, range)) = events.next() {
+        let Event::Start(Tag::Heading { .. }) = event else {
+            continue;
+        };
+        let line = text[..range.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+        let atx = text[line..range.start].trim().is_empty() && text[range.start..].starts_with('#');
+        let mut inside: Option<Range<usize>> = None;
+        for (event, at) in events.by_ref() {
+            if matches!(event, Event::End(TagEnd::Heading(_))) {
+                break;
+            }
+            inside = Some(inside.map_or(at.clone(), |was| {
+                was.start.min(at.start)..was.end.max(at.end)
+            }));
+        }
+        if let Some(inside) = inside.filter(|r| atx && !r.is_empty()) {
+            return Some(inside);
+        }
+    }
+    None
+}
+
 /// The links of [`links`] with their source, brackets included.
 pub fn link_spans(text: &str) -> Vec<(Range<usize>, String)> {
     events(text)
@@ -341,7 +369,24 @@ fn is_source(parsed: &str, source: &str) -> bool {
 mod tests {
     use serde::Deserialize;
 
-    use super::events;
+    use super::{events, heading};
+
+    #[test]
+    fn the_first_atx_heading_outside_code_and_quotes_is_the_title() {
+        fn title(text: &str) -> Option<&str> {
+            heading(text).map(|r| &text[r])
+        }
+        assert_eq!(title("# Plan\n"), Some("Plan"));
+        assert_eq!(title("intro\n\n## Plan ##\n"), Some("Plan"));
+        assert_eq!(title("#\tTabbed\n"), Some("Tabbed"));
+        assert_eq!(title("# Learning C#\n"), Some("Learning C#"));
+        assert_eq!(title("# *Big* plan\n"), Some("*Big* plan"));
+        assert_eq!(title("```sh\n# install\n```\n# Real\n"), Some("Real"));
+        assert_eq!(title("> # Quoted\n- # Listed\n#\n# Last\n"), Some("Last"));
+        assert_eq!(title("Setext\n===\n"), None);
+        assert_eq!(title("---\ntitle: x\n---\n# After\n"), Some("After"));
+        assert_eq!(title("#hashtag only\n"), None);
+    }
 
     #[derive(Deserialize)]
     struct Example {

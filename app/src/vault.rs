@@ -235,7 +235,7 @@ pub fn read(path: PathBuf, modified: SystemTime, text: String) -> Note {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
     let title = title
-        .or_else(|| first_heading(&text))
+        .or_else(|| livemark::parse::heading(&text).map(|r| text[r].to_owned()))
         .unwrap_or_else(|| stem.clone());
     let created = created.or_else(|| date_prefix(&stem));
     let links = livemark::parse::links(&text)
@@ -305,24 +305,6 @@ fn front_matter(text: &str) -> (Option<String>, Vec<String>, Option<String>) {
         }
     }
     (title, tags, created)
-}
-
-/// The text of the first ATX heading, without its markers.
-fn first_heading(text: &str) -> Option<String> {
-    let body = match livemark::parse::front_matter_text(text) {
-        Some(front) => text.split_once(front).map_or(text, |(_, rest)| rest),
-        None => text,
-    };
-    body.lines().find_map(|line| {
-        let rest = line.trim_start().strip_prefix('#')?;
-        let rest = rest.trim_start_matches('#');
-        let title = rest
-            .strip_prefix([' ', '\t'])?
-            .trim()
-            .trim_end_matches('#')
-            .trim();
-        (!title.is_empty()).then(|| title.to_owned())
-    })
 }
 
 /// The date `s` starts with, `YYYY-MM-DD`, when it is a real one.
