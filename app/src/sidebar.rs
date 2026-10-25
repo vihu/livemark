@@ -104,18 +104,18 @@ impl App {
             }
             VaultMessage::Picked(None) => {}
             VaultMessage::Show(shown) => {
-                self.listing = None;
-                let again = matches!(shown, Shown::Tag(_)) && shown == self.shown;
-                self.shown = if again { Shown::All } else { shown };
+                self.vault_view.listing = None;
+                let again = matches!(shown, Shown::Tag(_)) && shown == self.vault_view.shown;
+                self.vault_view.shown = if again { Shown::All } else { shown };
             }
-            VaultMessage::AllTags => self.all_tags = !self.all_tags,
+            VaultMessage::AllTags => self.vault_view.all_tags = !self.vault_view.all_tags,
             VaultMessage::NewNote => {
                 self.menu = false;
-                self.naming = Some(String::new());
+                self.vault_view.naming = Some(String::new());
                 return iced::widget::operation::focus(TITLE);
             }
-            VaultMessage::Title(title) => self.naming = Some(title),
-            VaultMessage::CancelNew => self.naming = None,
+            VaultMessage::Title(title) => self.vault_view.naming = Some(title),
+            VaultMessage::CancelNew => self.vault_view.naming = None,
             VaultMessage::Create => return self.create_note(),
         }
         Task::none()
@@ -124,7 +124,7 @@ impl App {
     /// The note named in the title field, made in the vault's folder and
     /// opened with the caret after its front matter.
     fn create_note(&mut self) -> Task<Message> {
-        let (Some(vault), Some(title)) = (&self.vault, self.naming.take()) else {
+        let (Some(vault), Some(title)) = (&self.vault, self.vault_view.naming.take()) else {
             return Task::none();
         };
         let title = title.trim();
@@ -155,8 +155,8 @@ impl App {
     /// A `#tag` clicked in a note: the sidebar shows the notes with it.
     pub(crate) fn show_tag(&mut self, tag: &str) {
         if self.vault.is_some() {
-            self.listing = None;
-            self.shown = Shown::Tag(tag.to_lowercase());
+            self.vault_view.listing = None;
+            self.vault_view.shown = Shown::Tag(tag.to_lowercase());
         }
     }
 
@@ -184,7 +184,7 @@ impl App {
     pub(crate) fn vault_body(&self) -> Option<Element<'_, Message>> {
         let vault = self.vault.as_ref()?;
         let item = |mark: &'static str, name: String, count: usize, shown: Shown| {
-            let on = self.shown == shown;
+            let on = self.vault_view.shown == shown;
             button(
                 row![
                     text(mark).size(14).width(16).style(text::secondary),
@@ -205,7 +205,7 @@ impl App {
         };
         let untagged = vault.notes.iter().filter(|n| n.tags.is_empty()).count();
         let all = vault.tags();
-        let listed = if self.all_tags {
+        let listed = if self.vault_view.all_tags {
             all.len()
         } else {
             all.len().min(TOP)
@@ -223,7 +223,7 @@ impl App {
             Length::Shrink
         });
         let fold = (all.len() > TOP).then(|| {
-            let label = if self.all_tags {
+            let label = if self.vault_view.all_tags {
                 "Fewer tags".to_owned()
             } else {
                 format!("All {} tags", all.len())
@@ -233,7 +233,7 @@ impl App {
                 .style(button::text)
                 .on_press(Message::Vault(VaultMessage::AllTags))
         });
-        let open = self.manager.is_some();
+        let open = self.vault_view.manager.is_some();
         let manage = button(
             row![
                 text("Manage tags").size(13).width(Length::Fill),
@@ -266,7 +266,7 @@ impl App {
         .spacing(2);
         // The notes shown, or every match the search listed (Ctrl+Enter).
         let (said, clear, notes): (String, Option<Message>, Element<'_, Message>) =
-            match &self.listing {
+            match &self.vault_view.listing {
                 Some(listing) => (
                     super::search_view::listing_heading(listing),
                     Some(Message::Search(super::search::SearchMessage::Clear)),
@@ -275,19 +275,21 @@ impl App {
                 None => {
                     let current = self.path.clone();
                     (
-                        self.shown.heading(),
-                        (self.shown != Shown::All)
+                        self.vault_view.shown.heading(),
+                        (self.vault_view.shown != Shown::All)
                             .then_some(Message::Vault(VaultMessage::Show(Shown::All))),
                         lazy(
                             (
                                 vault.generation,
-                                self.shown.clone(),
+                                self.vault_view.shown.clone(),
                                 current,
-                                self.context.as_ref().and_then(|menu| match &menu.target {
-                                    super::context::Target::Note(path) => Some(path.clone()),
-                                    _ => None,
+                                self.vault_view.context.as_ref().and_then(|menu| {
+                                    match &menu.target {
+                                        super::context::Target::Note(path) => Some(path.clone()),
+                                        _ => None,
+                                    }
                                 }),
-                                self.note_action.clone(),
+                                self.vault_view.note_action.clone(),
                             ),
                             |(_, shown, current, menu, action)| {
                                 notes(vault, shown, current.as_deref(), (menu, action))

@@ -37,7 +37,7 @@ impl App {
         match message {
             // The note is out of sight behind the tag manager: its toolbar
             // does nothing meanwhile.
-            Message::Editor(_) if self.manager.is_some() || self.appearance => {}
+            Message::Editor(_) if self.vault_view.manager.is_some() || self.appearance => {}
             Message::Dropped(file) => return self.dropped(file),
             Message::Vault(message) => return self.vault_update(message),
             Message::Tag(message) => return self.tag_update(message),
@@ -199,7 +199,7 @@ impl App {
             Message::Recent(path) => return self.update(Message::Opened(Some(path))),
             Message::Resize(resize) => self.resize_update(resize),
             Message::Undo => {
-                self.toast = None;
+                self.vault_view.toast = None;
                 match self.undo_last() {
                     Ok(0) => {}
                     Ok(kept) => {
@@ -211,27 +211,29 @@ impl App {
                     Err(error) => self.error = Some(error),
                 }
             }
-            Message::DismissToast => self.toast = None,
+            Message::DismissToast => self.vault_view.toast = None,
             Message::IntoVault(message) => return self.bring_in_update(message),
             Message::Pressed { at, right } => {
                 self.pointer = at;
                 // A right press elsewhere closes the menu; one on something
                 // with a menu opens that next.
                 if right {
-                    self.context = None;
+                    self.vault_view.context = None;
                 }
             }
             Message::Context(message) => return self.context_update(message),
             Message::Paste(text) => {
-                if let Some(text) = text.filter(|_| self.manager.is_none() && !self.appearance) {
+                if let Some(text) =
+                    text.filter(|_| self.vault_view.manager.is_none() && !self.appearance)
+                {
                     self.editor.insert_text(&text);
                     return self.typed();
                 }
             }
             Message::Escape => {
-                self.context = None;
-                self.tag_action = None;
-                self.note_action = None;
+                self.vault_view.context = None;
+                self.vault_view.tag_action = None;
+                self.vault_view.note_action = None;
             }
             Message::Sidebar => {
                 self.settings.sidebar = !self.settings.sidebar;

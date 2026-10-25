@@ -12,7 +12,7 @@ impl App {
     pub(crate) fn view(&self) -> Element<'_, Message> {
         // The tag manager in the note's place; the editor is made again
         // when it closes (its text, scroll and caret are the `Editor`'s).
-        let editor = match &self.manager {
+        let editor = match &self.vault_view.manager {
             _ if self.appearance => self.appearance_view(),
             Some(manager) => self.manager_view(manager),
             // A right press on the text: its menu (Cut, Copy, Paste...).
@@ -37,7 +37,7 @@ impl App {
                 .align_y(iced::Center)
                 .into(),
             )
-        } else if let Some(title) = &self.naming {
+        } else if let Some(title) = &self.vault_view.naming {
             use super::sidebar::{TITLE, VaultMessage};
             Some(
                 row![
@@ -169,7 +169,7 @@ impl App {
         });
         // The search's keys: its field leaves Up, Down and Escape alone,
         // and the modifiers say whether Enter lists.
-        let search = self.search.is_some().then(|| {
+        let search = self.vault_view.search.is_some().then(|| {
             use super::search::SearchMessage;
             keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
@@ -201,17 +201,18 @@ impl App {
             )),
             _ => None,
         });
-        let asking =
-            (self.tag_action.is_some() || self.note_action.is_some() || self.context.is_some())
-                .then(|| {
-                    keyboard::listen().filter_map(|event| match event {
-                        keyboard::Event::KeyPressed {
-                            key: keyboard::Key::Named(keyboard::key::Named::Escape),
-                            ..
-                        } => Some(Message::Escape),
-                        _ => None,
-                    })
-                });
+        let asking = (self.vault_view.tag_action.is_some()
+            || self.vault_view.note_action.is_some()
+            || self.vault_view.context.is_some())
+        .then(|| {
+            keyboard::listen().filter_map(|event| match event {
+                keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                    ..
+                } => Some(Message::Escape),
+                _ => None,
+            })
+        });
         Subscription::batch(
             [keys, close, focus, rename, system]
                 .into_iter()

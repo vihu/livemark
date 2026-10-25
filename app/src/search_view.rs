@@ -20,13 +20,17 @@ const PANEL_WIDTH: f32 = 580.0;
 impl App {
     /// The field, `width` wide, with its key at its right end.
     pub(crate) fn search_field(&self, width: f32) -> Element<'_, Message> {
-        let query = self.search.as_ref().map_or("", |s| s.query.as_str());
+        let query = self
+            .vault_view
+            .search
+            .as_ref()
+            .map_or("", |s| s.query.as_str());
         let placeholder = if self.vault.is_some() {
             "Search notes, text and #tags"
         } else {
             "Open a recent file by name"
         };
-        let hint = if self.search.is_some() {
+        let hint = if self.vault_view.search.is_some() {
             "Esc".to_owned()
         } else {
             format!("{COMMAND}+P")
@@ -59,7 +63,7 @@ impl App {
     /// The drop-down under the field while it is open; a press outside it
     /// closes it.
     pub(crate) fn search_panel(&self) -> Option<Element<'_, Message>> {
-        let search = self.search.as_ref()?;
+        let search = self.vault_view.search.as_ref()?;
         // What to mark: the words in lines, `#tag`s in tag lines.
         let (words, tags) = split(&search.query);
         let hashes: Vec<String> = tags

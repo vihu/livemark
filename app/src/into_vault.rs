@@ -27,7 +27,7 @@ impl App {
             return Task::none();
         };
         if let IntoVault::Dismiss = message {
-            self.outside_dismissed = Some(path);
+            self.vault_view.outside_dismissed = Some(path);
             return Task::none();
         }
         if self.unsaved() {
@@ -37,12 +37,12 @@ impl App {
         let moving = matches!(message, IntoVault::Move);
         match self.bring_in(&path, moving) {
             Ok(target) => {
-                self.toast = Some(format!(
+                let said = format!(
                     "{} into the vault as {}",
                     if moving { "Moved" } else { "Copied" },
                     file_name(&target)
-                ));
-                self.toast_undo = true;
+                );
+                self.show_toast(said, true);
                 self.error = None;
                 if moving {
                     self.path = Some(target);
@@ -95,14 +95,14 @@ impl App {
                 ..Undo::default()
             }
         };
-        self.undo = Some(undo);
+        self.vault_view.undo = Some(undo);
         Ok(target)
     }
 
     /// The bar over a note outside the vault, unless dismissed for it.
     pub(crate) fn outside_bar(&self) -> Option<Element<'_, Message>> {
         let path = self.path.as_deref()?;
-        if !self.outside_vault(path) || self.outside_dismissed.as_deref() == Some(path) {
+        if !self.outside_vault(path) || self.vault_view.outside_dismissed.as_deref() == Some(path) {
             return None;
         }
         let said = format!(

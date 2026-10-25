@@ -166,8 +166,8 @@ impl super::App {
         let count = undo.count();
         use super::sidebar::Shown;
         for edit in &edits {
-            if self.shown == Shown::Tag(edit.from().to_owned()) {
-                self.shown = match edit {
+            if self.vault_view.shown == Shown::Tag(edit.from().to_owned()) {
+                self.vault_view.shown = match edit {
                     Edit::Rename { to, .. } => Shown::Tag(to.clone()),
                     Edit::Delete(_) => Shown::All,
                 };
@@ -177,7 +177,7 @@ impl super::App {
         if touches_open {
             self.reload();
         }
-        self.undo = Some(undo);
+        self.vault_view.undo = Some(undo);
         Ok(count)
     }
 }

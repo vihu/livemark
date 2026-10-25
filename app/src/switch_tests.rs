@@ -39,22 +39,22 @@ fn a_menu_opens_where_the_pointer_pressed_and_closes_on_any_other_press() {
     // A right press on a note: its menu, at the pointer.
     press(&mut app, 120.0, 300.0, true);
     context(&mut app, ContextMessage::Open(Target::Note(one.clone())));
-    let menu = app.context.clone().unwrap();
+    let menu = app.vault_view.context.clone().unwrap();
     assert_eq!((menu.at.x, menu.at.y), (120.0, 300.0));
     // A right press elsewhere closes it; on a tag, that tag's opens.
     press(&mut app, 60.0, 200.0, true);
-    assert!(app.context.is_none());
+    assert!(app.vault_view.context.is_none());
     context(&mut app, ContextMessage::Open(Target::Tag("work".into())));
     assert_eq!(
-        app.context.as_ref().unwrap().target,
+        app.vault_view.context.as_ref().unwrap().target,
         Target::Tag("work".into())
     );
     // A left press elsewhere (the catcher) closes it; so does Escape.
     context(&mut app, ContextMessage::Close);
-    assert!(app.context.is_none());
+    assert!(app.vault_view.context.is_none());
     context(&mut app, ContextMessage::Open(Target::Note(one.clone())));
     let _ = app.update(Message::Escape);
-    assert!(app.context.is_none());
+    assert!(app.vault_view.context.is_none());
     // An item picked: the menu closes and the item acts.
     context(&mut app, ContextMessage::Open(Target::Note(one.clone())));
     context(
@@ -63,18 +63,23 @@ fn a_menu_opens_where_the_pointer_pressed_and_closes_on_any_other_press() {
             one.clone(),
         ))))),
     );
-    assert!(app.context.is_none());
-    assert!(matches!(&app.note_action, Some(NoteAction::Rename { path, .. }) if *path == one));
+    assert!(app.vault_view.context.is_none());
+    assert!(
+        matches!(&app.vault_view.note_action, Some(NoteAction::Rename { path, .. }) if *path == one)
+    );
     // Opening another menu takes back a question left open.
     context(&mut app, ContextMessage::Open(Target::Tag("work".into())));
-    assert!(app.note_action.is_none());
+    assert!(app.vault_view.note_action.is_none());
     context(
         &mut app,
         ContextMessage::Pick(Box::new(Message::Tag(TagMessage::StartDelete(
             "work".into(),
         )))),
     );
-    assert_eq!(app.tag_action, Some(TagAction::Delete("work".into())));
+    assert_eq!(
+        app.vault_view.tag_action,
+        Some(TagAction::Delete("work".into()))
+    );
     std::fs::remove_dir_all(&base).unwrap();
 }
 
@@ -86,7 +91,7 @@ fn the_texts_menu_cuts_and_selects_all() {
     context(&mut app, ContextMessage::Open(Target::Text));
     context(&mut app, ContextMessage::Cut);
     assert_eq!(app.editor.text(), "keep");
-    assert!(app.context.is_none());
+    assert!(app.vault_view.context.is_none());
     context(&mut app, ContextMessage::Open(Target::Text));
     context(&mut app, ContextMessage::SelectAll);
     assert_eq!(app.editor.selection().range(), 0..4);
@@ -112,12 +117,12 @@ fn a_vault_comes_in_fresh_with_its_note_and_is_one_press_away_after() {
         "work".into(),
     ))));
     let _ = app.update(Message::Manager(crate::manager::ManagerMessage::Open(None)));
-    app.undo = Some(crate::undo::Undo::default());
+    app.vault_view.undo = Some(crate::undo::Undo::default());
     let _ = app.update(Message::Vault(VaultMessage::Picked(Some(b.clone()))));
     let root_b = app.vault.as_ref().unwrap().root.clone();
     assert_eq!(app.path.as_ref(), Some(&root_b.join("three.md")));
-    assert_eq!(app.shown, Shown::All);
-    assert!(app.manager.is_none() && app.undo.is_none());
+    assert_eq!(app.vault_view.shown, Shown::All);
+    assert!(app.vault_view.manager.is_none() && app.vault_view.undo.is_none());
     assert_eq!(app.settings.vaults, [root_b.clone(), root_a.clone()]);
     let _ = app.view();
     // Back to A from the menu: the note last open there.

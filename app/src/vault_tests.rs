@@ -27,10 +27,10 @@ fn a_vault_opens_lists_its_notes_and_filters_by_tag() {
     // A tag filters; the same tag again shows all.
     let travel = crate::sidebar::Shown::Tag("travel".into());
     let _ = app.update(Message::Vault(VaultMessage::Show(travel.clone())));
-    assert_eq!(app.shown, travel);
+    assert_eq!(app.vault_view.shown, travel);
     let _ = app.view();
     let _ = app.update(Message::Vault(VaultMessage::Show(travel)));
-    assert_eq!(app.shown, crate::sidebar::Shown::All);
+    assert_eq!(app.vault_view.shown, crate::sidebar::Shown::All);
     // A note made elsewhere shows up when the window comes back.
     write(&dir.join("2026-10-03-agent.md"), "# From an agent\n", 20);
     let _ = app.update(Message::Focused);
@@ -103,7 +103,11 @@ fn ctrl_n_in_a_vault_names_a_note_and_opens_it_ready_to_type() {
     let mut app = App::open(None, None);
     let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
     let _ = app.update(Message::New);
-    assert_eq!(app.naming.as_deref(), Some(""), "asks for a title");
+    assert_eq!(
+        app.vault_view.naming.as_deref(),
+        Some(""),
+        "asks for a title"
+    );
     let _ = app.view();
     let _ = app.update(Message::Vault(VaultMessage::Title("Lisbon hotels".into())));
     let _ = app.update(Message::Vault(VaultMessage::Create));
@@ -126,7 +130,7 @@ fn ctrl_n_in_a_vault_names_a_note_and_opens_it_ready_to_type() {
     // Cancelling makes nothing; outside a vault Ctrl+N is still a blank note.
     let _ = app.update(Message::New);
     let _ = app.update(Message::Vault(VaultMessage::CancelNew));
-    assert_eq!(app.naming, None);
+    assert_eq!(app.vault_view.naming, None);
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -141,7 +145,7 @@ fn a_tag_clicked_in_a_note_filters_the_sidebar() {
     let mut app = App::open(None, None);
     // Outside a vault, nothing to show.
     app.show_tag("travel");
-    assert_eq!(app.shown, crate::sidebar::Shown::All);
+    assert_eq!(app.vault_view.shown, crate::sidebar::Shown::All);
     let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
     // Matches listed in the sidebar (Ctrl+Enter) give way to the tag's notes.
     for message in [
@@ -151,10 +155,13 @@ fn a_tag_clicked_in_a_note_filters_the_sidebar() {
     ] {
         let _ = app.update(Message::Search(message));
     }
-    assert!(app.listing.is_some());
+    assert!(app.vault_view.listing.is_some());
     app.show_tag("Travel");
-    assert_eq!(app.shown, crate::sidebar::Shown::Tag("travel".into()));
-    assert!(app.listing.is_none(), "back to the notes");
+    assert_eq!(
+        app.vault_view.shown,
+        crate::sidebar::Shown::Tag("travel".into())
+    );
+    assert!(app.vault_view.listing.is_none(), "back to the notes");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -243,15 +250,15 @@ fn the_sidebar_lists_tags_flat_and_filters_untagged_notes() {
     );
     let _ = app.view();
     let _ = app.update(Message::Vault(VaultMessage::AllTags));
-    assert!(app.all_tags);
+    assert!(app.vault_view.all_tags);
     let _ = app.view();
     let _ = app.update(Message::Vault(VaultMessage::Show(Shown::Untagged)));
-    assert_eq!(app.shown, Shown::Untagged);
+    assert_eq!(app.vault_view.shown, Shown::Untagged);
     let untagged: Vec<_> = vault_notes(&app);
     assert_eq!(untagged, ["plain"], "titled by its file name");
     // Clear: all again.
     let _ = app.update(Message::Vault(VaultMessage::Show(Shown::All)));
-    assert_eq!(app.shown, Shown::All);
+    assert_eq!(app.vault_view.shown, Shown::All);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -261,7 +268,7 @@ fn vault_notes(app: &App) -> Vec<String> {
     vault
         .notes
         .iter()
-        .filter(|note| match &app.shown {
+        .filter(|note| match &app.vault_view.shown {
             crate::sidebar::Shown::All => true,
             crate::sidebar::Shown::Tag(tag) => note.tags.contains(tag),
             crate::sidebar::Shown::Untagged => note.tags.is_empty(),
@@ -306,7 +313,11 @@ fn a_tag_edit_rewrites_the_vault_reloads_the_note_and_undoes() {
         "---\ntags: [travel, work]\n---\nPack for #travel.\n",
         "reloaded"
     );
-    assert_eq!(app.shown, Shown::Tag("travel".into()), "the filter follows");
+    assert_eq!(
+        app.vault_view.shown,
+        Shown::Tag("travel".into()),
+        "the filter follows"
+    );
     assert!(
         app.vault
             .as_ref()
@@ -363,7 +374,7 @@ fn the_tag_menu_renames_merges_deletes_and_undoes() {
         "---\ntags: [travel]\n---\nGo. #old\n"
     );
     assert_eq!(
-        app.toast.as_deref(),
+        app.toast(),
         Some("Merged #trips into #travel: 1 note changed")
     );
     assert!(app.undo_toast().is_some());
@@ -372,10 +383,13 @@ fn the_tag_menu_renames_merges_deletes_and_undoes() {
         std::fs::read_to_string(&a).unwrap(),
         "---\ntags: [trips]\n---\nGo. #old\n"
     );
-    assert!(app.toast.is_none());
+    assert!(app.vault_view.toast.is_none());
     // Delete: the word stays in the text.
     tag(&mut app, TagMessage::StartDelete("old".into()));
-    assert_eq!(app.tag_action, Some(TagAction::Delete("old".into())));
+    assert_eq!(
+        app.vault_view.tag_action,
+        Some(TagAction::Delete("old".into()))
+    );
     let _ = app.view();
     tag(&mut app, TagMessage::Confirm);
     assert_eq!(
@@ -384,9 +398,11 @@ fn the_tag_menu_renames_merges_deletes_and_undoes() {
     );
     // A rename asked, then Escape.
     tag(&mut app, TagMessage::StartRename("travel".into()));
-    assert!(matches!(app.tag_action, Some(TagAction::Rename { ref tag, .. }) if tag == "travel"));
+    assert!(
+        matches!(app.vault_view.tag_action, Some(TagAction::Rename { ref tag, .. }) if tag == "travel")
+    );
     let _ = app.update(Message::Escape);
-    assert_eq!(app.tag_action, None);
+    assert_eq!(app.vault_view.tag_action, None);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

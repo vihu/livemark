@@ -63,25 +63,25 @@ pub(crate) fn listed(tags: &[String]) -> String {
 impl App {
     pub(crate) fn tag_update(&mut self, message: TagMessage) -> Task<Message> {
         match message {
-            TagMessage::Hover(tag) => self.hovered_tag = tag,
+            TagMessage::Hover(tag) => self.vault_view.hovered_tag = tag,
             TagMessage::StartRename(tag) => {
-                self.tag_action = Some(TagAction::Rename {
+                self.vault_view.tag_action = Some(TagAction::Rename {
                     value: tag.clone(),
                     tag,
                 });
                 return iced::widget::operation::focus(RENAME);
             }
             TagMessage::RenameText(value) => {
-                if let Some(TagAction::Rename { value: v, .. }) = &mut self.tag_action {
+                if let Some(TagAction::Rename { value: v, .. }) = &mut self.vault_view.tag_action {
                     *v = value;
                 }
             }
             TagMessage::StartDelete(tag) => {
-                self.tag_action = Some(TagAction::Delete(tag));
+                self.vault_view.tag_action = Some(TagAction::Delete(tag));
             }
-            TagMessage::Cancel => self.tag_action = None,
+            TagMessage::Cancel => self.vault_view.tag_action = None,
             TagMessage::Confirm => {
-                let Some(action) = self.tag_action.take() else {
+                let Some(action) = self.vault_view.tag_action.take() else {
                     return Task::none();
                 };
                 let (edit, said) = match action {
@@ -116,8 +116,7 @@ impl App {
     pub(crate) fn run_edits(&mut self, edits: Vec<Edit>, said: String) -> bool {
         match self.edit_tags(edits) {
             Ok(n) => {
-                self.toast = Some(format!("{said}: {} changed", notes(n)));
-                self.toast_undo = true;
+                self.show_toast(format!("{said}: {} changed", notes(n)), true);
                 self.error = None;
                 true
             }
@@ -142,22 +141,23 @@ impl App {
     /// One tag's row in the sidebar, with its menu, rename field or delete
     /// question under it when open.
     pub(crate) fn tag_row(&self, tag: &str, count: usize) -> Element<'_, Message> {
-        let asking = self.manager.is_none();
+        let asking = self.vault_view.manager.is_none();
         if let Some(TagAction::Rename {
             tag: renaming,
             value,
-        }) = &self.tag_action
+        }) = &self.vault_view.tag_action
             && renaming == tag
             && asking
         {
             return self.rename_field(tag, value, count);
         }
-        let on = self.shown == Shown::Tag(tag.to_owned());
+        let on = self.vault_view.shown == Shown::Tag(tag.to_owned());
         let open = self
+            .vault_view
             .context
             .as_ref()
             .is_some_and(|menu| menu.target == super::context::Target::Tag(tag.to_owned()));
-        let hovered = self.hovered_tag.as_deref() == Some(tag);
+        let hovered = self.vault_view.hovered_tag.as_deref() == Some(tag);
         let name = button(
             row![
                 text("#").size(14).width(16).style(text::secondary),
@@ -218,7 +218,7 @@ impl App {
             .on_exit(Message::Tag(TagMessage::Hover(None)))
             .on_right_press(open_menu(tag));
         let below: Option<Element<'_, Message>> = if asking
-            && self.tag_action == Some(TagAction::Delete(tag.to_owned()))
+            && self.vault_view.tag_action == Some(TagAction::Delete(tag.to_owned()))
         {
             Some(card(
                 format!(

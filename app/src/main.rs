@@ -171,8 +171,6 @@ struct App {
     appearance: bool,
     /// The sidebar's edge is being dragged.
     resizing: bool,
-    /// The file whose "outside the vault" bar was closed.
-    outside_dismissed: Option<PathBuf>,
     /// When the note was last edited, for autosave, and whether a wait
     /// for the quiet after it is under way.
     last_edit: Option<std::time::Instant>,
@@ -201,37 +199,55 @@ struct App {
     submenu: Option<menu::Submenu>,
     /// The vault open, if any (PLAN-004).
     vault: Option<vault::Vault>,
+    /// What the window shows for it, and what passes with it.
+    vault_view: VaultView,
+    /// Where the pointer last pressed (a right-click menu opens there).
+    pointer: iced::Point,
+    /// What the editor was completing when choices were last offered.
+    completing: Option<livemark::widget::Completing>,
+}
+
+/// What the window shows for the open vault, and what passes with it:
+/// filters, lists, the search field, questions and menus, the tag manager,
+/// the last change's Undo. Back to its default when the vault is left or
+/// another is opened (`vaults.rs`), so nothing of one shows in another.
+#[derive(Default)]
+struct VaultView {
     /// Which notes the sidebar lists.
     shown: sidebar::Shown,
     /// Whether the sidebar lists every tag, not only the top eight.
     all_tags: bool,
-    /// The last change to the vault's files, while it can be undone.
-    undo: Option<undo::Undo>,
-    /// What the note over the text says, while it shows.
-    toast: Option<String>,
-    /// Whether it offers Undo (a change), or only says something done.
-    toast_undo: bool,
-    /// The question open under a note in the sidebar.
-    note_action: Option<note_actions::NoteAction>,
-    /// The right-click menu open, and where the pointer last pressed.
-    context: Option<context::Menu>,
-    pointer: iced::Point,
-    /// The sidebar's tag under the pointer, its tag with the menu open,
-    /// and the question open under one.
-    hovered_tag: Option<String>,
-    tag_action: Option<tag_actions::TagAction>,
+    /// Every match listed in the sidebar (Ctrl+Enter), until cleared.
+    listing: Option<search::Listing>,
+    /// The search field's results (Ctrl+P), while they show.
+    search: Option<search::Search>,
+    /// The title being typed for a new note in the vault.
+    naming: Option<String>,
     /// The tag manager, in place of the note while it is open.
     manager: Option<manager::Manager>,
     /// Look-alike tags the user chose to keep apart.
     kept_apart: Vec<(String, String)>,
-    /// The title being typed for a new note in the vault.
-    naming: Option<String>,
-    /// The search field's results (Ctrl+P), while they show.
-    search: Option<search::Search>,
-    /// Every match listed in the sidebar (Ctrl+Enter), until cleared.
-    listing: Option<search::Listing>,
-    /// What the editor was completing when choices were last offered.
-    completing: Option<livemark::widget::Completing>,
+    /// The sidebar tag with its menu or question open.
+    tag_action: Option<tag_actions::TagAction>,
+    /// The sidebar's tag under the pointer.
+    hovered_tag: Option<String>,
+    /// The question open under a note in the sidebar.
+    note_action: Option<note_actions::NoteAction>,
+    /// The right-click menu open.
+    context: Option<context::Menu>,
+    /// The last change to the vault's files, while it can be undone.
+    undo: Option<undo::Undo>,
+    /// What the note over the text says, while it shows.
+    toast: Option<Toast>,
+    /// The file whose "outside the vault" bar was closed.
+    outside_dismissed: Option<PathBuf>,
+}
+
+/// The note over the text: what it says, and whether it offers Undo (a
+/// change across the vault) or only says something done.
+struct Toast {
+    said: String,
+    undo: bool,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -339,7 +355,6 @@ impl App {
             system_mode: iced::theme::Mode::None,
             appearance: false,
             resizing: false,
-            outside_dismissed: None,
             last_edit: None,
             autosave_waiting: false,
             pending: None,
@@ -353,21 +368,8 @@ impl App {
             menu: false,
             submenu: None,
             vault: None,
-            shown: sidebar::Shown::All,
-            all_tags: false,
-            undo: None,
-            toast: None,
-            toast_undo: false,
-            context: None,
+            vault_view: VaultView::default(),
             pointer: iced::Point::ORIGIN,
-            note_action: None,
-            hovered_tag: None,
-            tag_action: None,
-            manager: None,
-            kept_apart: Vec::new(),
-            naming: None,
-            search: None,
-            listing: None,
             completing: None,
         }
         .with_images()

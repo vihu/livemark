@@ -83,7 +83,7 @@ impl App {
                 self.stamp = file::modified(&path);
                 self.changed = false;
                 // A note picked goes back from the tag manager to it.
-                self.manager = None;
+                self.vault_view.manager = None;
                 self.appearance = false;
                 self.settings.opened(&path);
                 self.remember();

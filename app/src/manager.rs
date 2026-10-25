@@ -59,8 +59,8 @@ impl App {
         match message {
             ManagerMessage::Open(tag) => {
                 self.appearance = false;
-                self.tag_action = None;
-                self.manager = Some(Manager {
+                self.vault_view.tag_action = None;
+                self.vault_view.manager = Some(Manager {
                     sort: Column::Notes,
                     descending: true,
                     selected: tag.into_iter().collect(),
@@ -69,15 +69,15 @@ impl App {
                 });
             }
             ManagerMessage::Close => {
-                self.manager = None;
-                self.tag_action = None;
+                self.vault_view.manager = None;
+                self.vault_view.tag_action = None;
                 return livemark::widget::Editor::focus();
             }
             ManagerMessage::Accept(from, into) => {
                 let said = format!("Merged #{from} into #{into}");
                 self.run_edits(vec![Edit::Rename { from, to: into }], said);
             }
-            ManagerMessage::KeepBoth(a, b) => self.kept_apart.push((a, b)),
+            ManagerMessage::KeepBoth(a, b) => self.vault_view.kept_apart.push((a, b)),
             ManagerMessage::MergeInto(into) => {
                 let into = clean(&into);
                 let from: Vec<String> = self.chosen().into_iter().filter(|t| *t != into).collect();
@@ -104,7 +104,7 @@ impl App {
                 }
             }
             message => {
-                let Some(manager) = &mut self.manager else {
+                let Some(manager) = &mut self.vault_view.manager else {
                     return Task::none();
                 };
                 match message {
@@ -151,7 +151,7 @@ impl App {
 
     /// The selected tags the vault still has.
     pub(super) fn chosen(&self) -> Vec<String> {
-        let (Some(manager), Some(vault)) = (&self.manager, &self.vault) else {
+        let (Some(manager), Some(vault)) = (&self.vault_view.manager, &self.vault) else {
             return Vec::new();
         };
         let tags: BTreeSet<String> = vault.tags().iter().map(|(tag, _)| tag.clone()).collect();
@@ -160,7 +160,10 @@ impl App {
 
     /// The pair of tags the manager suggests merging, the smaller first.
     pub(crate) fn suggestion(&self) -> Option<(String, String)> {
-        look_alike(self.vault.as_ref()?.look_alikes(), &self.kept_apart)
+        look_alike(
+            self.vault.as_ref()?.look_alikes(),
+            &self.vault_view.kept_apart,
+        )
     }
 }
 

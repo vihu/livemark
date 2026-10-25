@@ -248,7 +248,7 @@ impl App {
             background: on.then(|| theme.palette().primary.base.color.scale_alpha(0.08).into()),
             ..container::Style::default()
         });
-        let below = match &self.tag_action {
+        let below = match &self.vault_view.tag_action {
             Some(TagAction::Rename {
                 tag: renaming,
                 value,

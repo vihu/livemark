@@ -56,27 +56,30 @@ impl App {
                 };
                 // Its row in sight: the sidebar shown, the note listed.
                 self.settings.sidebar = true;
-                self.listing = None;
+                self.vault_view.listing = None;
                 if !self.shown_keeps(&path) {
-                    self.shown = Shown::All;
+                    self.vault_view.shown = Shown::All;
                 }
                 let scroll = if scrolls {
                     self.bring_into_view(&path)
                 } else {
                     Task::none()
                 };
-                self.note_action = Some(NoteAction::Rename { path, value: title });
+                self.vault_view.note_action = Some(NoteAction::Rename { path, value: title });
                 return Task::batch([scroll, iced::widget::operation::focus(RENAME)]);
             }
             NoteMessage::RenameText(value) => {
-                if let Some(NoteAction::Rename { value: v, .. }) = &mut self.note_action {
+                if let Some(NoteAction::Rename { value: v, .. }) = &mut self.vault_view.note_action
+                {
                     *v = value;
                 }
             }
-            NoteMessage::StartDelete(path) => self.note_action = Some(NoteAction::Delete(path)),
-            NoteMessage::Cancel => self.note_action = None,
+            NoteMessage::StartDelete(path) => {
+                self.vault_view.note_action = Some(NoteAction::Delete(path))
+            }
+            NoteMessage::Cancel => self.vault_view.note_action = None,
             NoteMessage::Confirm => {
-                let result = match self.note_action.take() {
+                let result = match self.vault_view.note_action.take() {
                     Some(NoteAction::Rename { path, value }) => {
                         let title = value.trim().to_owned();
                         if title.is_empty() || Some(&title) == self.title_of(&path).as_ref() {
@@ -110,8 +113,7 @@ impl App {
                 let from = self.path.clone().unwrap_or_else(|| vault.root.join("_"));
                 let label = title.replace('[', "\\[").replace(']', "\\]");
                 let link = format!("[{label}]({})", relative(&from, &path));
-                self.toast = Some(format!("Copied a link to {title}"));
-                self.toast_undo = false;
+                self.show_toast(format!("Copied a link to {title}"), false);
                 return iced::clipboard::write(link).discard();
             }
             // Selected in the system's file manager (its D-Bus interface or
@@ -136,8 +138,7 @@ impl App {
     fn said(&mut self, result: Result<String, String>) {
         match result {
             Ok(said) => {
-                self.toast = Some(said);
-                self.toast_undo = true;
+                self.show_toast(said, true);
                 self.error = None;
             }
             Err(error) => self.error = Some(error),
@@ -159,7 +160,7 @@ impl App {
         let Some(index) = vault
             .notes
             .iter()
-            .filter(|note| self.shown.keeps(note))
+            .filter(|note| self.vault_view.shown.keeps(note))
             .position(|note| note.path == path)
         else {
             return Task::none();
@@ -179,7 +180,7 @@ impl App {
             vault
                 .notes
                 .iter()
-                .any(|note| note.path == path && self.shown.keeps(note))
+                .any(|note| note.path == path && self.vault_view.shown.keeps(note))
         })
     }
 
@@ -231,7 +232,7 @@ impl App {
         if self.path.as_deref() == Some(path) {
             self.path = Some(new_path.clone());
         }
-        self.undo = Some(undo);
+        self.vault_view.undo = Some(undo);
         for recent in &mut self.settings.recent {
             if recent == path {
                 *recent = new_path.clone();
@@ -251,7 +252,7 @@ impl App {
         self.guard(&[path])?;
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         std::fs::remove_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        self.undo = Some(Undo {
+        self.vault_view.undo = Some(Undo {
             deleted: Some((path.to_path_buf(), text)),
             ..Undo::default()
         });
@@ -284,7 +285,7 @@ impl App {
             std::fs::File::create_new(&copy)?.write_all(text.as_bytes())
         };
         write().map_err(|e| format!("{}: {e}", copy.display()))?;
-        self.undo = Some(Undo {
+        self.vault_view.undo = Some(Undo {
             created: Some(copy.clone()),
             back: Some(path.to_path_buf()),
             ..Undo::default()

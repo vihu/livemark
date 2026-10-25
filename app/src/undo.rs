@@ -110,13 +110,13 @@ impl App {
     /// Takes the last change back; says how many notes were changed since
     /// and kept as they are.
     pub(crate) fn undo_last(&mut self) -> Result<usize, String> {
-        let Some(undo) = self.undo.take() else {
+        let Some(undo) = self.vault_view.undo.take() else {
             return Ok(0);
         };
         let open = self.path.clone();
         let touched_open = open.as_deref().is_some_and(|open| undo.touches(open));
         if touched_open && self.unsaved() {
-            self.undo = Some(undo);
+            self.vault_view.undo = Some(undo);
             return Err("Save the open note first, then undo".into());
         }
         // A restore that fails part way can be tried again: each step
@@ -124,7 +124,7 @@ impl App {
         let kept = match undo.restore() {
             Ok(kept) => kept,
             Err(error) => {
-                self.undo = Some(undo);
+                self.vault_view.undo = Some(undo);
                 self.refresh_vault();
                 return Err(error);
             }
@@ -174,28 +174,42 @@ impl App {
         })
     }
 
+    /// Shows `said` in the note over the text, with Undo when `undo`.
+    pub(crate) fn show_toast(&mut self, said: String, undo: bool) {
+        self.vault_view.toast = Some(super::Toast { said, undo });
+    }
+
+    /// What the note over the text says, while it shows (for the tests).
+    #[cfg(test)]
+    pub(crate) fn toast(&self) -> Option<&str> {
+        self.vault_view
+            .toast
+            .as_ref()
+            .map(|toast| toast.said.as_str())
+    }
+
     /// The Undo of what a failed change wrote, when it wrote anything.
     pub(crate) fn keep_partial(&mut self, partial: Undo) {
         if partial.count() == 0 && partial.moved.is_none() {
             return;
         }
-        self.toast = Some(format!(
+        let said = format!(
             "Stopped part way: {} written",
             super::tag_actions::notes(partial.count())
-        ));
-        self.toast_undo = true;
-        self.undo = Some(partial);
+        );
+        self.show_toast(said, true);
+        self.vault_view.undo = Some(partial);
         self.refresh_vault();
     }
 
     /// The note a change across the vault leaves, with its Undo; or a word
     /// on something done, with only its cross.
     pub(crate) fn undo_toast(&self) -> Option<Element<'_, Message>> {
-        let said = self.toast.as_ref()?;
+        let toast = self.vault_view.toast.as_ref()?;
         Some(
             container(
-                row![text(said.as_str()).size(13)]
-                    .push((self.toast_undo && self.undo.is_some()).then(|| {
+                row![text(toast.said.as_str()).size(13)]
+                    .push((toast.undo && self.vault_view.undo.is_some()).then(|| {
                         button(text("Undo").size(13))
                             .padding([4, 10])
                             .on_press(Message::Undo)

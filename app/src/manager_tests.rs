@@ -26,10 +26,14 @@ fn the_manager_sorts_suggests_and_merges_or_deletes_several_with_one_undo() {
     send(&mut app, ManagerMessage::Open(None));
     let order = |app: &App| -> Vec<String> {
         let vault = app.vault.as_ref().unwrap();
-        sorted(vault, vault.tags(), app.manager.as_ref().unwrap())
-            .into_iter()
-            .map(|(tag, _, used)| format!("{tag} {used}"))
-            .collect()
+        sorted(
+            vault,
+            vault.tags(),
+            app.vault_view.manager.as_ref().unwrap(),
+        )
+        .into_iter()
+        .map(|(tag, _, used)| format!("{tag} {used}"))
+        .collect()
     };
     send(&mut app, ManagerMessage::Sort(Column::Name));
     assert_eq!(
@@ -70,25 +74,25 @@ fn the_manager_sorts_suggests_and_merges_or_deletes_several_with_one_undo() {
         "---\ntags: [duty]\ncreated: 2026-09-20\n---\nb\n"
     );
     assert_eq!(
-        app.toast.as_deref(),
+        app.toast(),
         Some("Merged #internal, #ops and #work into #duty: 2 notes changed")
     );
-    assert!(app.manager.as_ref().unwrap().selected.is_empty());
+    assert!(app.vault_view.manager.as_ref().unwrap().selected.is_empty());
     let _ = app.update(Message::Undo);
     assert_eq!(std::fs::read_to_string(&a).unwrap(), a_text);
     assert_eq!(std::fs::read_to_string(&b).unwrap(), b_text);
     // Deleting the selected, after the question.
     send(&mut app, ManagerMessage::Select("ops".into(), true));
     send(&mut app, ManagerMessage::Delete);
-    assert!(app.manager.as_ref().unwrap().deleting);
+    assert!(app.vault_view.manager.as_ref().unwrap().deleting);
     send(&mut app, ManagerMessage::ConfirmDelete);
     assert_eq!(
         std::fs::read_to_string(&a).unwrap(),
         "---\ntags: [work]\ncreated: 2026-09-01\n---\nOn #internal duty.\n"
     );
-    assert_eq!(app.toast.as_deref(), Some("Deleted #ops: 1 note changed"));
+    assert_eq!(app.toast(), Some("Deleted #ops: 1 note changed"));
     // A note picked in the sidebar goes back to the note.
     let _ = app.update(Message::Opened(Some(b.clone())));
-    assert!(app.manager.is_none());
+    assert!(app.vault_view.manager.is_none());
     std::fs::remove_dir_all(&dir).unwrap();
 }

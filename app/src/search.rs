@@ -297,8 +297,13 @@ impl App {
         match message {
             SearchMessage::Open => {
                 self.menu = false;
-                let query = self.search.take().map(|s| s.query).unwrap_or_default();
-                self.search = Some(Search {
+                let query = self
+                    .vault_view
+                    .search
+                    .take()
+                    .map(|s| s.query)
+                    .unwrap_or_default();
+                self.vault_view.search = Some(Search {
                     query,
                     ..Search::default()
                 });
@@ -306,27 +311,29 @@ impl App {
                 return iced::widget::operation::focus(FIELD);
             }
             SearchMessage::Query(query) => {
-                let search = self.search.get_or_insert_with(Search::default);
+                let search = self.vault_view.search.get_or_insert_with(Search::default);
                 search.query = query;
                 search.selected = 0;
                 self.find();
             }
             SearchMessage::Move(step) => {
-                if let Some(search) = &mut self.search {
+                if let Some(search) = &mut self.vault_view.search {
                     let last = search.found.len().saturating_sub(1) as i32;
                     search.selected = (search.selected as i32 + step).clamp(0, last) as usize;
                 }
             }
             SearchMessage::Modifiers(modifiers) => {
-                if let Some(search) = &mut self.search {
+                if let Some(search) = &mut self.vault_view.search {
                     search.command = modifiers.command();
                 }
             }
-            SearchMessage::Choose(None) if self.search.as_ref().is_some_and(|s| s.command) => {
+            SearchMessage::Choose(None)
+                if self.vault_view.search.as_ref().is_some_and(|s| s.command) =>
+            {
                 return self.list();
             }
             SearchMessage::Choose(at) => {
-                let Some(search) = self.search.take() else {
+                let Some(search) = self.vault_view.search.take() else {
                     return Task::none();
                 };
                 let chosen = search.found.into_iter().nth(at.unwrap_or(search.selected));
@@ -336,8 +343,8 @@ impl App {
                         return self.search_update(SearchMessage::Go(path, range));
                     }
                     Some(Found::Tag(tag, _)) => {
-                        self.listing = None;
-                        self.shown = super::sidebar::Shown::Tag(tag);
+                        self.vault_view.listing = None;
+                        self.vault_view.shown = super::sidebar::Shown::Tag(tag);
                         Task::none()
                     }
                     None => Task::none(),
@@ -345,7 +352,7 @@ impl App {
                 return Task::batch([task, livemark::widget::Editor::focus()]);
             }
             SearchMessage::Go(path, range) => {
-                self.search = None;
+                self.vault_view.search = None;
                 let task = self.update(Message::Opened(Some(path.clone())));
                 if self.path.as_ref() == Some(&path) {
                     self.editor.select(range.start, range.end);
@@ -353,17 +360,17 @@ impl App {
                 return Task::batch([task, livemark::widget::Editor::focus()]);
             }
             SearchMessage::Close => {
-                self.search = None;
+                self.vault_view.search = None;
                 return livemark::widget::Editor::focus();
             }
-            SearchMessage::Clear => self.listing = None,
+            SearchMessage::Clear => self.vault_view.listing = None,
         }
         Task::none()
     }
 
     /// The drop-down's results for its query.
     fn find(&mut self) {
-        let Some(search) = &mut self.search else {
+        let Some(search) = &mut self.vault_view.search else {
             return;
         };
         (search.found, search.count) = match &self.vault {
@@ -378,12 +385,16 @@ impl App {
         if self.vault.is_none() {
             return Task::none();
         }
-        let (Some(search), Some(vault)) = (self.search.take(), &self.vault) else {
+        let (Some(search), Some(vault)) = (self.vault_view.search.take(), &self.vault) else {
             return Task::none();
         };
         let (hits, count) = self::search(vault, &search.query, NOTES, LINES);
-        let generation = self.listing.as_ref().map_or(0, |l| l.generation + 1);
-        self.listing = Some(Listing {
+        let generation = self
+            .vault_view
+            .listing
+            .as_ref()
+            .map_or(0, |l| l.generation + 1);
+        self.vault_view.listing = Some(Listing {
             query: search.query,
             hits,
             count,
