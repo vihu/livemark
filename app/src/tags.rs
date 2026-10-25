@@ -7,6 +7,8 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
+use livemark::parse::properties::{Form, TagList};
+
 /// What to do to a tag (lowercase names, without `#`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Edit {
@@ -27,15 +29,7 @@ impl Edit {
 
 /// `text` with `edit` applied, or `None` when nothing in it changes.
 pub fn apply(text: &str, edit: &Edit) -> Option<String> {
-    let mut changes: Vec<(Range<usize>, String)> = Vec::new();
-    if let Some(yaml) = livemark::parse::front_matter_text(text) {
-        let start = yaml.as_ptr() as usize - text.as_ptr() as usize;
-        changes.extend(
-            list_changes(yaml, edit)
-                .into_iter()
-                .map(|(r, s)| (r.start + start..r.end + start, s)),
-        );
-    }
+    let mut changes = list_changes(text, edit);
     for range in livemark::parse::tags(text) {
         if text[range.start + 1..range.end].to_lowercase() != edit.from() {
             continue;
@@ -60,15 +54,6 @@ pub fn apply(text: &str, edit: &Edit) -> Option<String> {
     (out != text).then_some(out)
 }
 
-/// A tag's name as a list item spells it: quotes and `#` off, lowercase.
-fn name(item: &str) -> String {
-    item.trim()
-        .trim_matches(['"', '\''])
-        .trim()
-        .trim_start_matches('#')
-        .to_lowercase()
-}
-
 /// An item's text with its name replaced, its quotes and `#` kept.
 fn renamed(item: &str, to: &str) -> String {
     let start = item
@@ -82,109 +67,56 @@ fn renamed(item: &str, to: &str) -> String {
     format!("{}{to}{}", &item[..start], &item[end.max(start)..])
 }
 
-/// The changes to the `tags` list in `yaml`, in its offsets.
-fn list_changes(yaml: &str, edit: &Edit) -> Vec<(Range<usize>, String)> {
+/// The changes to the front matter's `tags` list, as the library reads it
+/// (`livemark::parse::properties`). A rename onto a name the list lacks
+/// renames the first copy; every other copy of the name goes.
+fn list_changes(text: &str, edit: &Edit) -> Vec<(Range<usize>, String)> {
+    let Some(list) = livemark::parse::properties::properties(text).and_then(|p| p.tags) else {
+        return Vec::new();
+    };
+    let names: Vec<String> = list.items.iter().map(|i| i.name.to_lowercase()).collect();
+    let mut gone: Vec<usize> = (0..names.len())
+        .filter(|&i| names[i] == edit.from())
+        .collect();
     let mut changes = Vec::new();
-    let mut lines = yaml.split_inclusive('\n').scan(0, |at, line| {
-        let start = *at;
-        *at += line.len();
-        Some((start, line))
-    });
-    while let Some((start, line)) = lines.next() {
-        let content = line.trim_end_matches(['\n', '\r']);
-        let Some((key, value)) = content.split_once(':') else {
-            continue;
-        };
-        if !matches!(key.trim(), "tags" | "tag") {
-            continue;
-        }
-        let value_start = start + key.len() + 1;
-        if value.trim().is_empty() {
-            // A `- item` a line, up to the first line that is not one.
-            let items: Vec<(usize, &str)> = lines
-                .by_ref()
-                .take_while(|(_, l)| l.trim_start().starts_with("- "))
-                .collect();
-            let names: Vec<String> = items
-                .iter()
-                .map(|(_, l)| name(l.trim_start()[2..].trim_end_matches(['\n', '\r'])))
-                .collect();
-            for ((at, item_line), item_name) in items.iter().zip(&names) {
-                if *item_name != edit.from() {
-                    continue;
-                }
-                let keep_one = match edit {
-                    Edit::Rename { to, .. } => !names.contains(to),
-                    Edit::Delete(_) => false,
-                };
-                if keep_one {
-                    let dash = item_line.find("- ").unwrap_or(0) + 2;
-                    let body = item_line[dash..].trim_end_matches(['\n', '\r']);
-                    let Edit::Rename { to, .. } = edit else {
-                        unreachable!()
-                    };
-                    changes.push((at + dash..at + dash + body.len(), renamed(body, to)));
-                } else {
-                    changes.push((*at..at + item_line.len(), String::new()));
-                }
-            }
-            continue;
-        }
-        changes.extend(inline_list(value, value_start, edit));
+    if let Edit::Rename { to, .. } = edit
+        && !names.contains(to)
+        && !gone.is_empty()
+    {
+        let item = &list.items[gone.remove(0)];
+        changes.push((item.range.clone(), renamed(&text[item.range.clone()], to)));
     }
+    changes.extend(cuts(&list, &gone).into_iter().map(|r| (r, String::new())));
     changes
 }
 
-/// `[a, b]` or `a, b` after `tags:`, `value` starting at `offset`.
-fn inline_list(value: &str, offset: usize, edit: &Edit) -> Vec<(Range<usize>, String)> {
-    let open = value.find('[');
-    let (from, to) = match open {
-        Some(i) => (
-            i + 1,
-            value.rfind(']').filter(|&j| j > i).unwrap_or(value.len()),
-        ),
-        None => (0, value.len()),
-    };
-    // Items with their ranges, the spaces around each kept out of them.
-    let mut items: Vec<Range<usize>> = Vec::new();
-    let mut at = from;
-    for part in value[from..to].split(',') {
-        let lead = part.len() - part.trim_start().len();
-        let len = part.trim().len();
-        items.push(at + lead..at + lead + len);
-        at += part.len() + 1;
+/// What taking the items at `gone` (ascending) out of `list` removes: a
+/// `- ` item's whole line; in `[a, b]` or `a, b`, each run of neighbours
+/// with the comma and spaces up to the next item, or after the one before
+/// when the run ends the list. Runs are apart, so the cuts never overlap.
+fn cuts(list: &TagList, gone: &[usize]) -> Vec<Range<usize>> {
+    let items = &list.items;
+    if matches!(list.form, Form::Block { .. }) {
+        return gone.iter().map(|&i| items[i].cut.clone()).collect();
     }
-    let names: Vec<String> = items.iter().map(|r| name(&value[r.clone()])).collect();
-    let mut changes = Vec::new();
-    for (i, item) in items.iter().enumerate() {
-        if names[i] != edit.from() || item.is_empty() {
-            continue;
+    let mut cuts = Vec::new();
+    let mut i = 0;
+    while i < gone.len() {
+        let first = gone[i];
+        while i + 1 < gone.len() && gone[i + 1] == gone[i] + 1 {
+            i += 1;
         }
-        let keep_one = match edit {
-            Edit::Rename { to, .. } => !names.contains(to),
-            Edit::Delete(_) => false,
-        };
-        let range = if keep_one {
-            let Edit::Rename { to, .. } = edit else {
-                unreachable!()
-            };
-            changes.push((
-                offset + item.start..offset + item.end,
-                renamed(&value[item.clone()], to),
-            ));
-            continue;
-        } else if i + 1 < items.len() {
-            // The item and the comma and spaces up to the next one.
-            item.start..items[i + 1].start
-        } else if i > 0 {
-            // The last: from the comma after the one before.
-            items[i - 1].end..item.end
+        let last = gone[i];
+        i += 1;
+        cuts.push(if last + 1 < items.len() {
+            items[first].range.start..items[last + 1].range.start
+        } else if first > 0 {
+            items[first - 1].range.end..items[last].range.end
         } else {
-            item.clone()
-        };
-        changes.push((offset + range.start..offset + range.end, String::new()));
+            items[first].range.start..items[last].range.end
+        });
     }
-    changes
+    cuts
 }
 
 impl super::App {
@@ -335,5 +267,43 @@ mod tests {
         );
         // Code and links are not tags.
         assert_eq!(apply("`#old` [x](#old)\n", &delete), None);
+    }
+
+    #[test]
+    fn copies_of_a_name_side_by_side_go_with_one_comma() {
+        // Found in REVIEW-001: two cuts at the list's end overlapped.
+        let delete = |name: &str| Edit::Delete(name.into());
+        for (text, name, want) in [
+            ("[x, Work, work]", "work", "[x]"),
+            ("[a, a]", "a", "[]"),
+            ("[a, a, x]", "a", "[x]"),
+            ("[a, x, a]", "a", "[x]"),
+            ("x, a, '#a'", "a", "x"),
+        ] {
+            let note = format!("---\ntags: {text}\n---\n");
+            assert_eq!(
+                apply(&note, &delete(name)).unwrap(),
+                format!("---\ntags: {want}\n---\n"),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            apply("---\ntags: [b, a, a]\n---\n", &rename("a", "b")).unwrap(),
+            "---\ntags: [b]\n---\n"
+        );
+        assert_eq!(
+            apply("---\ntags: [a, A]\n---\n", &rename("a", "b")).unwrap(),
+            "---\ntags: [b]\n---\n",
+            "renamed once, the copy gone"
+        );
+        // Lone `\r` endings, the list not on the first line.
+        assert_eq!(
+            apply("---\rtitle: x\rtags: [a, b]\r---\r", &delete("a")).unwrap(),
+            "---\rtitle: x\rtags: [b]\r---\r"
+        );
+        assert_eq!(
+            apply("---\ntags:\n  - a\n  - a\n---\n", &delete("a")).unwrap(),
+            "---\ntags:\n---\n"
+        );
     }
 }

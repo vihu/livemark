@@ -113,14 +113,17 @@ pub(crate) fn relinked(text: &str, from: &Path, old: &Path, new: &Path) -> Optio
             let dest = dest.split_whitespace().next().unwrap_or("");
             let dest = dest.trim_start_matches('<').trim_end_matches('>');
             if !dest.is_empty() && resolve(from, dest).as_deref() == Some(old) {
-                let start = at + content.find(dest).unwrap_or(0);
+                // Where it is written after `]:`, an `<` stepped over.
+                let after = rest.trim_start();
+                let start = at + content.len() - after.len() + usize::from(after.starts_with('<'));
                 changes.push((start..start + dest.len(), to(dest)));
             }
         }
         at += line.len();
     }
+    // Apart: a change inside one kept already is dropped.
     changes.sort_by_key(|(r, _)| r.start);
-    changes.dedup_by(|a, b| a.0 == b.0);
+    changes.dedup_by(|later, kept| later.0.start < kept.0.end);
     let count = changes.len();
     (count > 0).then(|| (splice(text, &changes), count))
 }
@@ -173,5 +176,25 @@ mod tests {
         );
         assert_eq!(n, 2);
         assert_eq!(relinked("no links\n", from, old, new), None);
+    }
+
+    #[test]
+    fn a_definition_after_an_inline_link_on_its_line_is_found_after_its_colon() {
+        // Found in REVIEW-001: the definition's change was placed inside the
+        // inline link's destination, and the two overlapped.
+        let from = Path::new("/v/a.md");
+        let (old, new) = (Path::new("/v/b.md"), Path::new("/v/c.md"));
+        for (text, want) in [
+            (
+                "[Hotels](b.md#rooms) and [b]: b.md\n",
+                "[Hotels](c.md#rooms) and [b]: c.md\n",
+            ),
+            (
+                "[see](./b.md) then [x]: <b.md>\n",
+                "[see](c.md) then [x]: <c.md>\n",
+            ),
+        ] {
+            assert_eq!(relinked(text, from, old, new).unwrap().0, want, "{text}");
+        }
     }
 }
