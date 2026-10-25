@@ -123,7 +123,7 @@ impl App {
                 }
                 None => {
                     self.path = None;
-                    self.editor = self.editor_for(String::new());
+                    self.replace_editor(String::new());
                     self.saved = self.editor.version();
                 }
             }

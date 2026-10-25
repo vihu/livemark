@@ -252,7 +252,7 @@ impl App {
         });
         if self.path.as_deref() == Some(path) {
             self.path = None;
-            self.editor = self.editor_for(String::new());
+            self.replace_editor(String::new());
             self.saved = self.editor.version();
             self.stamp = None;
         }

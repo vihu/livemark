@@ -93,14 +93,34 @@ impl App {
             // saved: ask first (Load it, Keep mine), then save again.
             Message::Save { choose: false } if self.changed_on_disk() => self.changed = true,
             Message::Save { choose } => {
-                let text = self.editor.text().to_owned();
                 let version = self.editor.version();
-                let path = self.path.clone().filter(|_| !choose);
-                return Task::perform(file::save_as(path, text), move |result| {
-                    Message::Saved(result, version)
+                // A known file is written here and now, as autosave writes
+                // it: only the dialog waits, and nothing is written while
+                // the window goes on.
+                if let Some(path) = self.path.clone().filter(|_| !choose) {
+                    let saved = file::save(&path, self.editor.text())
+                        .map(|()| Some(path.clone()))
+                        .map_err(|e| format!("{}: {e}", path.display()));
+                    return self.update(Message::Saved(saved, version, self.opened));
+                }
+                let text = self.editor.text().to_owned();
+                let opened = self.opened;
+                return Task::perform(file::save_as(text), move |result| {
+                    Message::Saved(result, version, opened)
                 });
             }
-            Message::Saved(Ok(Some(path)), version) => {
+            // Saved as while another note opened: the file holds the note
+            // that was saved, and the one open now keeps its own file.
+            Message::Saved(result, _, opened) if opened != self.opened => match result {
+                Ok(Some(path)) => {
+                    self.settings.opened(&path);
+                    self.remember();
+                    self.refresh_vault();
+                }
+                Ok(None) => {}
+                Err(error) => self.error = Some(error),
+            },
+            Message::Saved(Ok(Some(path)), version, _) => {
                 self.error = None;
                 self.stamp = file::modified(&path);
                 self.changed = false;
@@ -127,8 +147,8 @@ impl App {
                     }
                 }
             }
-            Message::Saved(Ok(None), _) => self.pending = None,
-            Message::Saved(Err(error), _) => {
+            Message::Saved(Ok(None), ..) => self.pending = None,
+            Message::Saved(Err(error), ..) => {
                 self.error = Some(error);
                 self.pending = None;
             }

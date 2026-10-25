@@ -18,8 +18,11 @@ pub fn modified(path: &Path) -> Option<std::time::SystemTime> {
 /// Writes `text` to `path` through a temporary file in the same directory,
 /// then renames it over the original, so the file holds either the old or
 /// the new text. A symlink is followed (its target is replaced, not the
-/// link), and an existing file's permissions are kept.
+/// link), and an existing file's permissions are kept. Each write has its
+/// own temporary file, so two writers (another thread, another instance of
+/// the app) never mix their bytes; the last rename wins.
 pub fn save(path: &Path, text: &str) -> std::io::Result<()> {
+    static SAVES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let target = match std::fs::canonicalize(path) {
         Ok(target) => target,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_owned(),
@@ -28,7 +31,12 @@ pub fn save(path: &Path, text: &str) -> std::io::Result<()> {
     let name = target
         .file_name()
         .ok_or_else(|| std::io::Error::other("the path names no file"))?;
-    let temp = target.with_file_name(format!(".{}.livemark-save", name.to_string_lossy()));
+    let n = SAVES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temp = target.with_file_name(format!(
+        ".{}.{}-{n}.livemark-save",
+        name.to_string_lossy(),
+        std::process::id()
+    ));
     let written = (|| {
         let mut file = std::fs::File::create(&temp)?;
         file.write_all(text.as_bytes())?;
@@ -130,20 +138,15 @@ pub async fn pick_folder() -> Option<PathBuf> {
     Some(folder.path().to_owned())
 }
 
-/// Saves to `path`, or asks where first when there is none.
-pub async fn save_as(path: Option<PathBuf>, text: String) -> Result<Option<PathBuf>, String> {
-    let path = match path {
-        Some(path) => path,
-        None => {
-            let dialog = rfd::AsyncFileDialog::new()
-                .add_filter("Markdown", &["md"])
-                .set_file_name("untitled.md");
-            let Some(file) = dialog.save_file().await else {
-                return Ok(None);
-            };
-            file.path().to_owned()
-        }
+/// Asks where, then saves there; `None` when the dialog was cancelled.
+pub async fn save_as(text: String) -> Result<Option<PathBuf>, String> {
+    let dialog = rfd::AsyncFileDialog::new()
+        .add_filter("Markdown", &["md"])
+        .set_file_name("untitled.md");
+    let Some(file) = dialog.save_file().await else {
+        return Ok(None);
     };
+    let path = file.path().to_owned();
     save(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(Some(path))
 }

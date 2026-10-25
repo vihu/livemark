@@ -162,6 +162,9 @@ struct App {
     settings_file: Option<PathBuf>,
     /// A picture pasted into a note not saved yet: kept once it is.
     waiting_picture: Option<Vec<u8>>,
+    /// Counts the editors the note has been replaced by, so a Save as
+    /// that ends after another note opened leaves that note alone.
+    opened: u64,
     /// Whether the vault menu is open, and the list open beside it.
     menu: bool,
     submenu: Option<menu::Submenu>,
@@ -219,9 +222,9 @@ enum Message {
     Save {
         choose: bool,
     },
-    /// Where it was written (`None` when the dialog was cancelled), and the
-    /// editor version that was written.
-    Saved(Result<Option<PathBuf>, String>, u64),
+    /// Where it was written (`None` when the dialog was cancelled), the
+    /// editor version that was written and `App::opened` at the time.
+    Saved(Result<Option<PathBuf>, String>, u64, u64),
     CloseRequested,
     /// The answer to "unsaved changes": save first, or discard them.
     Unsaved(Option<bool>),
@@ -315,6 +318,7 @@ impl App {
             settings: Settings::default(),
             settings_file: None,
             waiting_picture: None,
+            opened: 0,
             menu: false,
             submenu: None,
             vault: None,
@@ -378,6 +382,14 @@ impl App {
 
     /// A new editor for `text`, drawn as the current one: its zoom, mode,
     /// split ratio and line width carried over.
+    /// A new editor holding `text` in place of the note's: a save still
+    /// under way and a picture waiting for a place belonged to the old one.
+    fn replace_editor(&mut self, text: String) {
+        self.editor = self.editor_for(text);
+        self.opened += 1;
+        self.waiting_picture = None;
+    }
+
     fn editor_for(&self, text: String) -> Editor {
         let mut editor = Editor::new(text);
         editor.set_zoom(self.editor.zoom());
