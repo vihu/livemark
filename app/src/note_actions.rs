@@ -204,22 +204,27 @@ impl App {
             return Err(format!("{} is not in the vault", path.display()));
         };
         let new_path = free_path(path, title);
-        let mut changes: Vec<(PathBuf, String)> = Vec::new();
+        let mut changes: Vec<(PathBuf, String, String)> = Vec::new();
         if let Some(text) = retitled(&note.text, &note.title, title) {
-            changes.push((path.to_path_buf(), text));
+            changes.push((path.to_path_buf(), note.text.clone(), text));
         }
         let mut links = 0;
         for other in vault.linked_from(path) {
             if let Some((text, n)) = relinked(&other.text, &other.path, path, &new_path) {
-                changes.push((other.path.clone(), text));
+                changes.push((other.path.clone(), other.text.clone(), text));
                 links += n;
             }
         }
-        let touched: Vec<&Path> = changes.iter().map(|(p, _)| p.as_path()).collect();
+        let touched: Vec<&Path> = changes.iter().map(|(p, ..)| p.as_path()).collect();
         self.guard(&[touched.as_slice(), &[path]].concat())?;
-        let mut undo = super::undo::write(changes)?;
+        let written = super::undo::write(changes);
+        let mut undo = self.written(written)?;
         if new_path != path {
-            std::fs::rename(path, &new_path).map_err(|e| format!("{}: {e}", path.display()))?;
+            if let Err(e) = std::fs::rename(path, &new_path) {
+                // The links already point at the new name: Undo puts them back.
+                self.keep_partial(undo);
+                return Err(format!("{}: {e}", path.display()));
+            }
             undo.moved = Some((path.to_path_buf(), new_path.clone()));
         }
         let open_touched = self.path.as_deref().is_some_and(|open| undo.touches(open));

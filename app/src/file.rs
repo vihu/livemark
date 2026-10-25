@@ -10,6 +10,16 @@ pub fn load(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// The names a note called `base` may take in `folder`, first to last:
+/// `base.md`, then `base-2.md`, `base-3.md` and on (the user's pick in
+/// PLAN-004); the caller takes the first free one.
+pub fn numbered(folder: &Path, base: &str) -> impl Iterator<Item = PathBuf> {
+    (1..).map(move |n| match n {
+        1 => folder.join(format!("{base}.md")),
+        n => folder.join(format!("{base}-{n}.md")),
+    })
+}
+
 /// When the file at `path` was last modified, if it can be read.
 pub fn modified(path: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()

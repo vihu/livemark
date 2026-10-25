@@ -197,3 +197,65 @@ fn a_note_outside_the_vault_moves_or_copies_in_with_front_matter_and_back() {
     assert!(app.outside_bar().is_none());
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn a_text_file_moved_into_the_vault_becomes_a_markdown_note_it_lists() {
+    use crate::into_vault::IntoVault;
+    let base = std::env::temp_dir().join(format!("livemark-into-txt-{}", std::process::id()));
+    let (vault_dir, away) = (base.join("vault"), base.join("away"));
+    std::fs::create_dir_all(&vault_dir).unwrap();
+    std::fs::create_dir_all(&away).unwrap();
+    let outside = away.join("list.txt");
+    write(&outside, "milk\n", 0);
+    let mut app = App::open(Some(outside.clone()), None);
+    let _ = app.update(Message::Vault(crate::sidebar::VaultMessage::Picked(Some(
+        vault_dir.clone(),
+    ))));
+    let inside = app.vault.as_ref().unwrap().root.join("list.md");
+    let _ = app.update(Message::IntoVault(IntoVault::Move));
+    assert_eq!(app.path.as_ref(), Some(&inside));
+    let listed = app
+        .vault
+        .as_ref()
+        .unwrap()
+        .notes
+        .iter()
+        .any(|n| n.path == inside);
+    assert!(listed, "listed in the sidebar");
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_change_written_part_way_keeps_the_undo_of_what_it_wrote() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = std::env::temp_dir().join(format!("livemark-partway-{}", std::process::id()));
+    let locked = dir.join("locked");
+    std::fs::create_dir_all(&locked).unwrap();
+    let (a, b) = (dir.join("a.md"), locked.join("b.md"));
+    write(&a, "a\n", 0);
+    write(&b, "b\n", 0);
+    // Changed on disk since it was read: nothing written.
+    let stale = crate::undo::write(vec![
+        (a.clone(), "a\n".into(), "A\n".into()),
+        (b.clone(), "old b\n".into(), "B\n".into()),
+    ]);
+    let (undo, error) = *stale.unwrap_err();
+    assert!(error.contains("changed on disk"), "{error}");
+    assert_eq!((undo.count(), read(&a)), (0, "a\n".into()));
+    // A folder that takes no new file: the first is written, then it stops,
+    // with the Undo of the first.
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let partway = crate::undo::write(vec![
+        (a.clone(), "a\n".into(), "A\n".into()),
+        (b.clone(), "b\n".into(), "B\n".into()),
+    ]);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (undo, _) = *partway.unwrap_err();
+    assert_eq!(
+        (undo.count(), read(&a), read(&b)),
+        (1, "A\n".into(), "b\n".into())
+    );
+    assert_eq!(undo.restore(), Ok(0));
+    assert_eq!(read(&a), "a\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

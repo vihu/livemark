@@ -55,12 +55,43 @@ use iced::{Task, Theme, window};
 use livemark::widget::{self, Editor};
 use settings::Settings;
 
+/// A crash's message and backtrace also go to `crash.log` next to the
+/// settings, before the usual report on stderr: started from a launcher,
+/// stderr goes nowhere.
+fn keep_crashes() {
+    let Some(log) = Settings::path().and_then(|file| Some(file.parent()?.join("crash.log"))) else {
+        return;
+    };
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        use std::io::Write as _;
+        if let Some(folder) = log.parent() {
+            let _ = std::fs::create_dir_all(folder);
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log);
+        if let Ok(mut file) = file {
+            let _ = writeln!(
+                file,
+                "livemark {} at {}: {info}\n{}\n",
+                env!("CARGO_PKG_VERSION"),
+                jiff::Timestamp::now(),
+                std::backtrace::Backtrace::force_capture()
+            );
+        }
+        report(info);
+    }));
+}
+
 pub fn main() -> iced::Result {
     let args = <cli::Args as clap::Parser>::parse();
     // `livemark note ...`, `livemark tags`: no window (`cli.rs`).
     if let Some(command) = args.command {
         std::process::exit(cli::run(command));
     }
+    keep_crashes();
     let path = args.file;
     let settings_file = Settings::path();
     let (settings, settings_error) = match settings_file.as_deref().map(Settings::load) {

@@ -61,11 +61,7 @@ pub(crate) fn free_path(path: &Path, title: &str) -> PathBuf {
     } else {
         super::note::slug(title)
     };
-    (1..)
-        .map(|n| match n {
-            1 => folder.join(format!("{base}.md")),
-            n => folder.join(format!("{base}-{n}.md")),
-        })
+    super::file::numbered(folder, &base)
         .find(|candidate| candidate == path || !candidate.exists())
         .unwrap_or_else(|| path.to_path_buf())
 }

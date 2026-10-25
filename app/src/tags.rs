@@ -129,25 +129,31 @@ impl super::App {
             return Err("No vault is open".into());
         };
         vault.refresh();
-        // Each note's text as the edits before left it.
-        let mut texts: std::collections::BTreeMap<PathBuf, String> = Default::default();
+        // Each note's text as read, and as the edits before left it.
+        let mut texts: std::collections::BTreeMap<PathBuf, (String, String)> = Default::default();
         for edit in &edits {
             for note in &vault.notes {
-                let touched = texts.contains_key(&note.path);
-                if !touched && !note.tags.iter().any(|t| t == edit.from()) {
+                let touched = texts.get(&note.path);
+                if touched.is_none() && !note.tags.iter().any(|t| t == edit.from()) {
                     continue;
                 }
-                let current = texts.get(&note.path).unwrap_or(&note.text);
+                let current = touched.map_or(&note.text, |(_, after)| after);
                 if let Some(after) = apply(current, edit) {
-                    texts.insert(note.path.clone(), after);
+                    texts
+                        .entry(note.path.clone())
+                        .or_insert_with(|| (note.text.clone(), String::new()))
+                        .1 = after;
                 }
             }
         }
-        let changes: Vec<(PathBuf, String)> = texts.into_iter().collect();
+        let changes: Vec<(PathBuf, String, String)> = texts
+            .into_iter()
+            .map(|(path, (before, after))| (path, before, after))
+            .collect();
         let open = self.path.clone();
         let touches_open = open
             .as_ref()
-            .is_some_and(|open| changes.iter().any(|(p, _)| p == open));
+            .is_some_and(|open| changes.iter().any(|(p, ..)| p == open));
         if touches_open && self.unsaved() {
             let tags: Vec<String> = edits.iter().map(|e| format!("#{}", e.from())).collect();
             return Err(format!(
@@ -155,7 +161,8 @@ impl super::App {
                 tags.join(" or ")
             ));
         }
-        let undo = super::undo::write(changes)?;
+        let undo = super::undo::write(changes);
+        let undo = self.written(undo)?;
         let count = undo.count();
         use super::sidebar::Shown;
         for edit in &edits {

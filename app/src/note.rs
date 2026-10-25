@@ -75,13 +75,7 @@ pub fn create(folder: &Path, header: &Header, body: &str) -> std::io::Result<Pat
             text.push('\n');
         }
     }
-    for n in 1.. {
-        let name = if n == 1 {
-            format!("{base}.md")
-        } else {
-            format!("{base}-{n}.md")
-        };
-        let path = folder.join(name);
+    for path in super::file::numbered(folder, &base) {
         match std::fs::File::create_new(&path) {
             Ok(mut file) => {
                 file.write_all(text.as_bytes())?;

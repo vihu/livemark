@@ -454,6 +454,12 @@ fn autosave_writes_after_the_quiet_on_leaving_and_before_another_note() {
     write(&b, "theirs\n", 30);
     let _ = app.update(Message::Blurred);
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "theirs\n");
+    // With the window in focus, the quiet's end asks about it at once.
+    assert!(!app.changed);
+    app.last_edit = Some(Instant::now() - Duration::from_secs(3));
+    let _ = app.autosave_tick();
+    assert!(app.changed, "Load it or Keep mine asked");
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "theirs\n");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
