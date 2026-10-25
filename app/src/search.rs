@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use iced::{Task, keyboard};
 
-use super::matching::title_match;
+use super::matching::{title_match, title_match_in};
 use super::vault::{Note, Vault};
 use super::{App, Message};
 
@@ -131,7 +131,7 @@ pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
         .enumerate()
         .filter(|(_, note)| tagged(note, &tags))
         .filter_map(|(rank, note)| {
-            let (score, marks) = title_match(&note.title, &wanted)?;
+            let (score, marks) = title_match_in(&note.title, &note.title_words, &wanted)?;
             Some((score, rank, note, marks))
         })
         .collect();
@@ -147,7 +147,9 @@ pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
             Found::Note(note.title.clone(), meta, note.path.clone(), marks.clone())
         })
         .collect();
-    let (hits, count) = search(vault, query, NOTES, LINES);
+    // Only what the drop-down shows: a line each, for as many notes as it
+    // lists, besides those it lists by title already.
+    let (hits, count) = search(vault, query, titles.len() + IN_TEXT, 1);
     let lines = hits
         .into_iter()
         .filter(|hit| !titles.iter().any(|(_, _, note, _)| note.path == hit.path))
@@ -237,19 +239,34 @@ fn lines(text: &str, words: &[String], most: usize) -> Vec<(usize, String, Range
         else {
             continue;
         };
-        // Lowercasing kept the bytes where they were: the match's own
-        // range; else the line's.
-        let range = if lower.len() == line.len() {
-            at + offset..at + offset + word.len()
-        } else {
-            at..at + line.len()
-        };
+        // The match's own bytes in the line as written, character by
+        // character (lowercasing can change a character's length); the
+        // whole line when the match starts or ends inside one.
+        let range = original(line, offset..offset + word.len())
+            .map_or(at..at + line.len(), |r| at + r.start..at + r.end);
         found.push((number + 1, around(line, range.start - at), range));
         if found.len() == most {
             break;
         }
     }
     found
+}
+
+/// The bytes of `line` that lowercase to `range` of its lowercase, when
+/// both ends fall between characters there.
+fn original(line: &str, range: Range<usize>) -> Option<Range<usize>> {
+    let mut lower = 0;
+    let mut start = None;
+    for (i, c) in line.char_indices() {
+        if lower == range.start {
+            start = Some(i);
+        }
+        if lower == range.end {
+            return Some(start?..i);
+        }
+        lower += c.to_lowercase().map(char::len_utf8).sum::<usize>();
+    }
+    (lower == range.end).then_some(start?..line.len())
 }
 
 /// Up to `AROUND` characters each side of byte `at` in `line`, trimmed.
@@ -398,11 +415,11 @@ mod tests {
                 && shown.contains("needle")
                 && shown.ends_with('\u{2026}')
         );
-        // A line whose lowercase is longer: the whole line is the range.
-        let text = "\u{130}stanbul hotel\n";
-        assert_eq!(
-            lines(text, &["hotel".to_owned()], LINES)[0].2,
-            0..text.len() - 1
-        );
+        // Lowercase longer or shorter by the character: the match's own
+        // bytes still (found in REVIEW-001: the length alone misled).
+        for text in ["\u{130}stanbul hotel\n", "\u{23a}hotel\u{1e9e}\n"] {
+            let range = lines(text, &["hotel".to_owned()], LINES)[0].2.clone();
+            assert_eq!(&text[range], "hotel", "{text:?}");
+        }
     }
 }

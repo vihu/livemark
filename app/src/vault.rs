@@ -16,6 +16,9 @@ use livemark::parse::properties::{properties, unquoted};
 pub struct Note {
     pub path: PathBuf,
     pub title: String,
+    /// The title's words, for the search field and `[[` completion
+    /// (`matching::words_of`), worked out once.
+    pub title_words: Vec<(std::ops::Range<usize>, Vec<char>)>,
     /// Lowercase, each once, in order of first use.
     pub tags: Vec<String>,
     /// `YYYY-MM-DD`, from front matter or the file name.
@@ -314,6 +317,7 @@ pub fn read(path: PathBuf, modified: SystemTime, text: String) -> Note {
         .collect();
     Note {
         path,
+        title_words: super::matching::words_of(&title),
         title,
         tags,
         created,

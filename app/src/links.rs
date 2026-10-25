@@ -77,7 +77,8 @@ pub(crate) fn link_choices(vault: &Vault, from: &Path, query: &str) -> Vec<Choic
         .enumerate()
         .filter(|(_, note)| note.path != from)
         .filter_map(|(rank, note)| {
-            let (score, _) = crate::matching::title_match(&note.title, query)?;
+            let (score, _) =
+                crate::matching::title_match_in(&note.title, &note.title_words, query)?;
             Some((score, rank, note))
         })
         .collect();
