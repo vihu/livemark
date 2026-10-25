@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-25)
 
 - Save as no longer hands the new file to a note opened while its dialog
   was up, which could then be written over it; Ctrl+S writes at once.
