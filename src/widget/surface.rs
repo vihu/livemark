@@ -11,13 +11,10 @@ use iced::advanced::widget::operation::Focusable;
 use iced::advanced::widget::{self, Operation, Tree};
 use iced::advanced::{Renderer as _, Shell, Widget, clipboard, input_method, mouse};
 use iced::keyboard;
-use iced::widget::text_editor::{Binding, KeyPress, Motion as IcedMotion};
 use iced::{Element, Event, Length, Pixels, Point, Rectangle, Size, Theme, Vector, window};
 
-use super::find::FindInput;
 use super::shape::TEXT_SIZE;
-use super::{Editor, ID, Input, Key, Message, Pane, Vertical, keys, scrollbar};
-use crate::edit::Motion;
+use super::{Editor, ID, Input, Message, Pane, scrollbar};
 
 /// Space between the widget's edge and the text.
 pub(super) const PADDING: f32 = 16.0;
@@ -63,21 +60,21 @@ pub(super) struct Surface<'a> {
 }
 
 #[derive(Default)]
-struct State {
-    focus: Option<Focus>,
+pub(super) struct State {
+    pub(super) focus: Option<Focus>,
     last_click: Option<mouse::Click>,
     dragging: bool,
     preedit: Option<input_method::Preedit>,
     /// A paste asked the clipboard for this: its text, then, when it has
     /// none, a picture.
-    pasting: Option<clipboard::Kind>,
+    pub(super) pasting: Option<clipboard::Kind>,
     modifiers: keyboard::Modifiers,
     /// The scroll bar's thumb is held this far below its top.
     thumb_grab: Option<f32>,
 }
 
-struct Focus {
-    updated_at: Instant,
+pub(super) struct Focus {
+    pub(super) updated_at: Instant,
     now: Instant,
     window_focused: bool,
 }
@@ -370,99 +367,11 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                     _ => {}
                 }
             }
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key,
-                modified_key,
-                physical_key,
-                modifiers,
-                text,
-                ..
-            }) if self.pane == Pane::Text
-                && (state.focus.is_some() || self.editor.find.is_some()) =>
-            {
-                // The find bar's keys, also while its fields have focus
-                // (REFERENCE-001 section 16).
-                if let Some(input) = self.find_key(key, *physical_key, *modifiers) {
-                    publish(shell, Input::Find(input));
-                    shell.capture_event();
-                    return;
-                }
-                if state.focus.is_none() {
-                    // A find bar field has focus: Tab goes to the next.
-                    if *key == keyboard::Key::Named(keyboard::key::Named::Tab)
-                        && !modifiers.command()
-                        && !modifiers.alt()
-                    {
-                        let forward = !modifiers.shift();
-                        publish(shell, Input::Find(FindInput::Tab { forward }));
-                        shell.capture_event();
-                    }
-                    return;
-                }
-                // The completion list's keys, while it is up.
+            Event::Keyboard(event @ keyboard::Event::KeyPressed { .. })
                 if self.pane == Pane::Text
-                    && self.editor.choosing()
-                    && !modifiers.command()
-                    && !modifiers.alt()
-                    && let keyboard::Key::Named(named) = key
-                {
-                    use super::complete::CompleteInput;
-                    let input = match named {
-                        keyboard::key::Named::ArrowUp => Some(CompleteInput::Move(-1)),
-                        keyboard::key::Named::ArrowDown => Some(CompleteInput::Move(1)),
-                        keyboard::key::Named::Enter | keyboard::key::Named::Tab => {
-                            Some(CompleteInput::Accept(None))
-                        }
-                        keyboard::key::Named::Escape => Some(CompleteInput::Dismiss),
-                        _ => None,
-                    };
-                    if let Some(input) = input {
-                        publish(shell, Input::Complete(input));
-                        shell.capture_event();
-                        return;
-                    }
-                }
-                let press = KeyPress {
-                    key: key.clone(),
-                    modified_key: modified_key.clone(),
-                    physical_key: *physical_key,
-                    modifiers: *modifiers,
-                    text: text.clone(),
-                    is_focused: true,
-                };
-                // Tab types nothing in iced's bindings (its text is a
-                // control character); here it indents (REFERENCE-001
-                // section 7).
-                if *key == keyboard::Key::Named(keyboard::key::Named::Tab) && !modifiers.command() {
-                    publish(shell, Input::Key(Key::Indent(modifiers.shift())));
-                    if let Some(focus) = &mut state.focus {
-                        focus.updated_at = Instant::now();
-                    }
-                    shell.capture_event();
-                    return;
-                }
-                if let Some(shortcut) = keys::shortcut(key, *physical_key, *modifiers) {
-                    publish(shell, Input::Key(shortcut));
-                    if let Some(focus) = &mut state.focus {
-                        focus.updated_at = Instant::now();
-                    }
-                    shell.capture_event();
-                    return;
-                }
-                let Some(binding) = Binding::<()>::from_key_press(press) else {
-                    return;
-                };
-                // Ctrl/Cmd with a letter is the host's shortcut (Ctrl+S),
-                // not typing; AltGr letters come with Alt and still type.
-                if matches!(binding, Binding::Insert(_)) && modifiers.command() && !modifiers.alt()
-                {
-                    return;
-                }
-                self.bind(binding, modifiers.shift(), state, shell);
-                if let Some(focus) = &mut state.focus {
-                    focus.updated_at = Instant::now();
-                }
-                shell.capture_event();
+                    && (state.focus.is_some() || self.editor.find.is_some()) =>
+            {
+                self.key_pressed(event, state, shell);
             }
             _ => {}
         }
@@ -575,105 +484,6 @@ impl Surface<'_> {
             && position.y <= track.y + track.height;
         let thumb = self.editor.thumb(self.pane, track).filter(|_| near)?;
         Some((track, thumb, position.y))
-    }
-
-    /// Ctrl/Cmd+F and Ctrl/Cmd+H open the find bar (with Shift they are
-    /// left to the host); while it is open, F3
-    /// and Ctrl/Cmd+G go to the next match (Shift: the previous one) and
-    /// Escape closes it.
-    fn find_key(
-        &self,
-        key: &keyboard::Key,
-        physical_key: keyboard::key::Physical,
-        modifiers: keyboard::Modifiers,
-    ) -> Option<FindInput> {
-        let letter = key.to_latin(physical_key);
-        let open = self.editor.find.is_some();
-        let forward = !modifiers.shift();
-        match key.as_ref() {
-            // With Shift they are the host's (the app's search of every note).
-            _ if modifiers.command()
-                && !modifiers.alt()
-                && !modifiers.shift()
-                && matches!(letter, Some('f' | 'h')) =>
-            {
-                Some(FindInput::Open {
-                    replace: letter == Some('h'),
-                })
-            }
-            keyboard::Key::Named(keyboard::key::Named::F3) if open => {
-                Some(FindInput::Step { forward })
-            }
-            _ if open && modifiers.command() && letter == Some('g') => {
-                Some(FindInput::Step { forward })
-            }
-            keyboard::Key::Named(keyboard::key::Named::Escape) if open => Some(FindInput::Close),
-            _ => None,
-        }
-    }
-
-    /// Carries out a key binding: clipboard ones here, the rest as
-    /// messages.
-    fn bind(
-        &self,
-        binding: Binding<()>,
-        shift: bool,
-        state: &mut State,
-        shell: &mut Shell<'_, Message>,
-    ) {
-        let key = |key| Message(Input::Key(key));
-        match binding {
-            Binding::Copy => shell.publish(key(Key::Copy(false))),
-            Binding::Cut => shell.publish(key(Key::Copy(true))),
-            Binding::Paste => {
-                state.pasting = Some(clipboard::Kind::Text);
-                shell.read_clipboard(clipboard::Kind::Text);
-            }
-            // iced binds only Ctrl+Y to redo; REFERENCE-001 section 15 adds
-            // Ctrl+Shift+Z.
-            Binding::Undo if shift => shell.publish(key(Key::Redo)),
-            Binding::Undo => shell.publish(key(Key::Undo)),
-            Binding::Redo => shell.publish(key(Key::Redo)),
-            Binding::SelectAll => shell.publish(key(Key::SelectAll)),
-            Binding::Insert(c) => shell.publish(key(Key::Insert(c))),
-            Binding::Enter if shift => shell.publish(key(Key::SoftEnter)),
-            Binding::Enter => shell.publish(key(Key::Enter)),
-            Binding::Backspace => shell.publish(key(Key::Delete(Motion::Left))),
-            Binding::BackspaceWord => shell.publish(key(Key::Delete(Motion::WordLeft))),
-            Binding::BackspaceLine => shell.publish(key(Key::Delete(Motion::LineStart))),
-            Binding::Delete => shell.publish(key(Key::Delete(Motion::Right))),
-            Binding::DeleteWord => shell.publish(key(Key::Delete(Motion::WordRight))),
-            Binding::DeleteLine => shell.publish(key(Key::Delete(Motion::LineEnd))),
-            Binding::Unfocus => shell.publish(key(Key::Collapse)),
-            Binding::Move(motion) | Binding::Select(motion) => {
-                let extend = matches!(binding, Binding::Select(_));
-                shell.publish(key(motion_key(motion, extend)));
-            }
-            Binding::Sequence(bindings) => {
-                for binding in bindings {
-                    self.bind(binding, shift, state, shell);
-                }
-            }
-            Binding::SelectWord | Binding::SelectLine | Binding::Custom(()) => {}
-        }
-    }
-}
-
-fn motion_key(motion: IcedMotion, extend: bool) -> Key {
-    let line = |motion| Key::Move(motion, extend);
-    match motion {
-        IcedMotion::Left => line(Motion::Left),
-        IcedMotion::Right => line(Motion::Right),
-        IcedMotion::WordLeft => line(Motion::WordLeft),
-        IcedMotion::WordRight => line(Motion::WordRight),
-        IcedMotion::Home => line(Motion::LineStart),
-        IcedMotion::End => line(Motion::LineEnd),
-        IcedMotion::DocumentStart => line(Motion::DocumentStart),
-        IcedMotion::DocumentEnd => line(Motion::DocumentEnd),
-        IcedMotion::Up => Key::Vertical(Vertical::Up, extend),
-        IcedMotion::Down => Key::Vertical(Vertical::Down, extend),
-        IcedMotion::PageUp => Key::Vertical(Vertical::PageUp, extend),
-        IcedMotion::PageDown => Key::Vertical(Vertical::PageDown, extend),
     }
 }
 

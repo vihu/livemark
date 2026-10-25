@@ -10,8 +10,9 @@ use iced::advanced::renderer::{self, Renderer as _};
 use iced::advanced::text::{self, Renderer as _};
 use iced::{Border, Color, Padding, Pixels, Point, Rectangle, Size, Vector, border};
 
-use super::lines::Shaped;
+use super::lines::{Lines, Shaped, Source};
 use super::shape::cursor;
+use super::table::table_row;
 use crate::style::{Mark, MarkKind};
 
 /// The colors marks are drawn in.
@@ -231,4 +232,63 @@ pub(super) fn on_bullet_or_quote<'a>(
             && box_of(shaped, m.range.clone())
                 .is_some_and(|(rect, _)| rect.expand(Padding::from([0.0, 2.0])).contains(point))
     })
+}
+
+/// The marks of the sorted `marks` on the line at `range`.
+pub fn marks_in(marks: &[Mark], range: Range<usize>) -> impl Iterator<Item = &Mark> {
+    let first = marks.partition_point(|m| m.range.end < range.start);
+    marks[first..]
+        .iter()
+        .take_while(move |m| m.range.start <= range.end)
+        .filter(move |m| range.start <= m.range.start && m.range.end <= range.end)
+}
+
+impl Lines {
+    /// Whether `x`, `y` in the text area is on where source `range` is
+    /// drawn (in a table drawn as a grid: on the text of the cell there).
+    pub fn covers(&mut self, source: &Source, range: Range<usize>, x: f32, y: f32) -> bool {
+        let (index, top) = self.line_at_y(source, y);
+        let line = source.doc.line_range(index);
+        if let Some((table, row)) = table_row(source, index) {
+            let start = self.grid_x(source, table);
+            return self.grid(source, table).covers(row, x - start, y - top);
+        }
+        let (start, end) = (range.start.max(line.start), range.end.min(line.end));
+        if start > end {
+            return false;
+        }
+        let shaped = self.shaped(source, index);
+        let display = shaped.line.to_display(start)..shaped.line.to_display(end);
+        let point = iced::Point::new(x, y - top);
+        shaped
+            .stretches(display)
+            .iter()
+            .any(|(rect, _)| rect.contains(point))
+    }
+
+    /// Where the text of the item or quote starts when `x`, `y` in the text
+    /// area is on its concealed bullet or quote marker: after the marker,
+    /// any task box and nested `>` (where its wrapped rows hang).
+    pub fn text_after_mark(&mut self, source: &Source, x: f32, y: f32) -> Option<usize> {
+        let (index, top) = self.line_at_y(source, y);
+        let range = source.doc.line_range(index);
+        let shaped = self.shaped(source, index);
+        let point = iced::Point::new(x, y - top);
+        let on = super::marks::on_bullet_or_quote(
+            &shaped,
+            marks_in(source.concealed, range.clone()),
+            point,
+        );
+        on.then(|| source.styled.hang_at(range)).flatten()
+    }
+
+    /// The concealed task box whose checkbox is at `x`, `y` in the text
+    /// area, if any.
+    pub fn task_at(&mut self, source: &Source, x: f32, y: f32) -> Option<Range<usize>> {
+        let (index, top) = self.line_at_y(source, y);
+        let shaped = self.shaped(source, index);
+        let range = source.doc.line_range(index);
+        let point = iced::Point::new(x, y - top);
+        super::marks::task_at(&shaped, marks_in(source.concealed, range), point)
+    }
 }
