@@ -279,13 +279,7 @@ fn walk(dir: &Path) -> Vec<(PathBuf, SystemTime, u64)> {
         .into_iter()
         .filter_entry(|entry| !hidden(entry))
         .flatten()
-        .filter(|entry| {
-            entry.file_type().is_file()
-                && entry
-                    .path()
-                    .extension()
-                    .is_some_and(|e| e == "md" || e == "markdown")
-        })
+        .filter(|entry| entry.file_type().is_file() && super::file::is_markdown(entry.path()))
         .filter_map(|entry| {
             let metadata = entry.metadata().ok()?;
             let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
@@ -340,10 +334,7 @@ pub fn resolve(from: &Path, dest: &str) -> Option<PathBuf> {
     }
     let decoded = percent_encoding::percent_decode_str(dest).decode_utf8_lossy();
     let target = Path::new(decoded.as_ref());
-    if !target
-        .extension()
-        .is_some_and(|e| e == "md" || e == "markdown")
-    {
+    if !super::file::is_markdown(target) {
         return None;
     }
     let joined = from.parent().unwrap_or(Path::new("")).join(target);
@@ -465,6 +456,17 @@ mod tests {
         for dest in ["https://x.org/a.md", "mailto:a@b.c", "#top", "pic.png", ""] {
             assert_eq!(resolve(from, dest), None, "{dest:?}");
         }
+        // Names with what a link reads otherwise, written by `link_path`
+        // (found in REVIEW-001: only spaces were encoded).
+        for name in ["C# notes.md", "why?.md", "50% (draft).md", "café.md"] {
+            let dest = crate::file::link_path(name);
+            assert_eq!(
+                resolve(from, &dest),
+                Some(Path::new("/v/notes").join(name)),
+                "{dest}"
+            );
+        }
+        assert_eq!(crate::file::link_path("café (1).md"), "café%20%281%29.md");
     }
 
     #[test]

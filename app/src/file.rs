@@ -104,7 +104,7 @@ pub fn save_picture(note: &Path, bytes: &[u8], extension: &str) -> Result<String
             Ok(mut file) => {
                 file.write_all(bytes)
                     .map_err(|e| format!("{}: {e}", path.display()))?;
-                return Ok(format!("assets/{}", name.replace(' ', "%20")));
+                return Ok(format!("assets/{}", link_path(&name)));
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(format!("{}: {e}", path.display())),
@@ -114,13 +114,36 @@ pub fn save_picture(note: &Path, bytes: &[u8], extension: &str) -> Result<String
 }
 
 /// Where an image's markdown in the note at `note` points to `file`: its
-/// path from the note's folder when it is inside it, else the whole path;
-/// spaces as `%20`.
+/// path from the note's folder when it is inside it, else the whole path
+/// (`link_path`).
 pub fn link_to(note: &Path, file: &Path) -> String {
     let inside = note
         .parent()
         .and_then(|folder| file.strip_prefix(folder).ok());
-    inside.unwrap_or(file).to_string_lossy().replace(' ', "%20")
+    link_path(&inside.unwrap_or(file).to_string_lossy())
+}
+
+/// `path` as a link's destination: `/` between parts, and what a link
+/// would read otherwise (a space, `#`, `?`, `%`, `<`, `>`, a parenthesis)
+/// percent-encoded; anything else, other scripts included, as written.
+/// The readers decode it (`vault::resolve`, `image_bytes`).
+pub fn link_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for c in path.chars() {
+        match c {
+            ' ' | '#' | '?' | '%' | '<' | '>' | '(' | ')' => {
+                out.push_str(&format!("%{:02X}", c as u8))
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Whether `file` is a markdown note (`.md` or `.markdown`).
+pub fn is_markdown(file: &Path) -> bool {
+    file.extension()
+        .is_some_and(|e| e == "md" || e == "markdown")
 }
 
 /// Whether `file` is a picture the editor draws (PNG, JPEG, GIF, WebP).

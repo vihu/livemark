@@ -98,12 +98,13 @@ pub(crate) fn link_choices(vault: &Vault, from: &Path, query: &str) -> Vec<Choic
 }
 
 /// The path to `to` from the folder of the note at `from`, `../` where
-/// needed, spaces as `%20`: a link that still works in the git web UI.
+/// needed, as a link writes it (`file::link_path`): a link that still
+/// works in the git web UI.
 pub(crate) fn relative(from: &Path, to: &Path) -> String {
     let folder = from.parent().unwrap_or(Path::new(""));
     let path = pathdiff::diff_paths(to, folder).unwrap_or_else(|| to.to_path_buf());
     let parts: Vec<_> = path.iter().map(|part| part.to_string_lossy()).collect();
-    parts.join("/").replace(' ', "%20")
+    crate::file::link_path(&parts.join("/"))
 }
 
 /// The notes linking to the note at `path`, most recent first, as links
