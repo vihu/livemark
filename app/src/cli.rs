@@ -13,7 +13,7 @@
 //! ```
 //!
 //! The vault is `--vault`, else the one the app last opened (settings).
-use std::io::{IsTerminal, Read};
+use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -21,7 +21,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use super::file;
 use super::note::{self, Header};
-use super::search::{search, tagged};
+use super::search::{LINES, search, tagged};
 use super::settings::Settings;
 use super::vault::Vault;
 
@@ -129,17 +129,23 @@ pub fn run(command: Command) -> i32 {
             vault,
         } => {
             let mut body = String::new();
-            // Never waiting on a terminal: no body then.
-            if !std::io::stdin().is_terminal() {
-                let _ = std::io::stdin().read_to_string(&mut body);
+            // Never waiting on a terminal: no body then. A body that does
+            // not read (not UTF-8) writes no note.
+            let read = if std::io::stdin().is_terminal() {
+                Ok(0)
+            } else {
+                std::io::stdin().read_to_string(&mut body)
+            };
+            match read {
+                Ok(_) => write_note(
+                    &title,
+                    &tags,
+                    by.as_deref(),
+                    vault.or_else(saved_vault),
+                    &body,
+                ),
+                Err(e) => Err(format!("the body on standard input: {e}")),
             }
-            write_note(
-                &title,
-                &tags,
-                by.as_deref(),
-                vault.or_else(saved_vault),
-                &body,
-            )
         }
         Command::Tags { vault } => list_tags(vault.or_else(saved_vault)),
         Command::List { filter } => list_notes(&filter),
@@ -147,13 +153,17 @@ pub fn run(command: Command) -> i32 {
         Command::Picture { note, files } => add_pictures(&note, &files),
     };
     match outcome {
-        Ok(out) => {
-            // Nothing found prints nothing.
-            if !out.is_empty() {
-                println!("{out}");
+        // Nothing found prints nothing.
+        Ok(out) if out.is_empty() => 0,
+        Ok(out) => match writeln!(std::io::stdout().lock(), "{out}") {
+            Ok(()) => 0,
+            // The reader stopped early (`| head`): nothing more to say.
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => 0,
+            Err(e) => {
+                eprintln!("livemark: standard output: {e}");
+                1
             }
-            0
-        }
+        },
         Err(error) => {
             eprintln!("livemark: {error}");
             1
@@ -186,6 +196,15 @@ fn write_note(
         return Err("the title is one non-empty line".into());
     }
     let clean = clean_tags(tags);
+    // As `#tags` are read: written into the YAML list, nothing else fits.
+    if let Some(bad) = clean.iter().find(|tag| {
+        let hashed = format!("#{tag}");
+        livemark::parse::tag_at(&hashed, 0) != Some(0..hashed.len())
+    }) {
+        return Err(format!(
+            "--tags: {bad} is not a tag (letters, digits, _, - and /, not only digits)"
+        ));
+    }
     let by = by.map(str::trim);
     if by.is_some_and(|by| by.is_empty() || by.contains(['\n', '\r', ':'])) {
         return Err("--by is a plain name, like claude-code".into());
@@ -268,10 +287,10 @@ fn list_notes(filter: &Filter) -> Result<String, String> {
 /// the match; a note matched by `#tag` alone is its path.
 fn search_notes(words: &[String], filter: &Filter) -> Result<String, String> {
     let vault = filtered(filter)?;
-    let (hits, count) = search(&vault, &words.join(" "));
+    let (hits, count) = search(&vault, &words.join(" "), filter.limit, LINES);
     left_out(filter.limit, count);
     let mut out = Vec::new();
-    for hit in hits.iter().take(filter.limit) {
+    for hit in &hits {
         let path = hit.path.display();
         if hit.lines.is_empty() {
             out.push(path.to_string());
@@ -501,6 +520,33 @@ mod tests {
         assert_eq!(call(&["search", "nowhere"]).unwrap(), "");
         assert!(parse(&["search"]).is_err());
         assert!(parse(&["list", "--sort", "title"]).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn search_prints_up_to_its_limit_and_tags_must_read_as_tags() {
+        let dir = std::env::temp_dir().join(format!("livemark-cli-many-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // More than the app's sidebar keeps (`search::NOTES`).
+        for n in 0..crate::search::NOTES + 5 {
+            std::fs::write(dir.join(format!("n{n}.md")), "a word\n").unwrap();
+        }
+        let vault = dir.to_string_lossy().into_owned();
+        let found =
+            |limit: &str| match parse(&["search", "word", "--limit", limit, "--vault", &vault])
+                .unwrap()
+                .command
+            {
+                Some(Command::Search { words, filter }) => search_notes(&words, &filter).unwrap(),
+                other => panic!("{other:?}"),
+            };
+        assert_eq!(found("500").lines().count(), crate::search::NOTES + 5);
+        assert_eq!(found("3").lines().count(), 3);
+        // Brackets and the like would break the YAML list.
+        let error = write_note("T", &["a]b".into()], None, Some(dir.clone()), "").unwrap_err();
+        assert!(error.contains("a]b is not a tag"), "{error}");
+        assert!(write_note("T", &["2026".into()], None, Some(dir.clone()), "").is_err());
+        assert!(write_note("T", &["work/q4, c-2".into()], None, Some(dir.clone()), "").is_ok());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

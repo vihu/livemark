@@ -70,11 +70,21 @@ fn five_thousand_notes_are_read_quickly() {
     vault.refresh();
     let refreshed = start.elapsed();
     let start = std::time::Instant::now();
-    let (hits, count) = crate::search::search(&vault, "words more");
+    let (hits, count) = crate::search::search(
+        &vault,
+        "words more",
+        crate::search::NOTES,
+        crate::search::LINES,
+    );
     let everywhere = start.elapsed();
     assert_eq!((hits.len(), count), (200, 5000));
     let start = std::time::Instant::now();
-    let (hits, _) = crate::search::search(&vault, "nowhere");
+    let (hits, _) = crate::search::search(
+        &vault,
+        "nowhere",
+        crate::search::NOTES,
+        crate::search::LINES,
+    );
     let nowhere = start.elapsed();
     assert!(hits.is_empty());
     println!(

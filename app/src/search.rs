@@ -21,7 +21,7 @@ pub(crate) const FIELD: iced::widget::Id = iced::widget::Id::new("livemark-searc
 
 /// The most notes listed in the sidebar, and lines a note.
 pub(crate) const NOTES: usize = 200;
-const LINES: usize = 5;
+pub(crate) const LINES: usize = 5;
 
 /// What the drop-down shows of each group; notes when nothing is typed.
 const TITLES: usize = 5;
@@ -147,7 +147,7 @@ pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
             Found::Note(note.title.clone(), meta, note.path.clone(), marks.clone())
         })
         .collect();
-    let (hits, count) = search(vault, query);
+    let (hits, count) = search(vault, query, NOTES, LINES);
     let lines = hits
         .into_iter()
         .filter(|hit| !titles.iter().any(|(_, _, note, _)| note.path == hit.path))
@@ -196,7 +196,7 @@ fn find_recent(recent: &[PathBuf], query: &str) -> Vec<Found> {
 
 /// The notes of `vault` with every word and tag in `query`, most recent
 /// first, and how many there are.
-pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
+pub fn search(vault: &Vault, query: &str, notes: usize, most: usize) -> (Vec<Hit>, usize) {
     let (words, tags) = split(query);
     if words.is_empty() && tags.is_empty() {
         return (Vec::new(), 0);
@@ -208,13 +208,13 @@ pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
             continue;
         }
         count += 1;
-        if hits.len() >= NOTES {
+        if hits.len() >= notes {
             continue;
         }
         hits.push(Hit {
             title: note.title.clone(),
             path: note.path.clone(),
-            lines: lines(&note.text, &words),
+            lines: lines(&note.text, &words, most),
         });
     }
     (hits, count)
@@ -222,7 +222,7 @@ pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
 
 /// The lines of `text` with one of `words` in them: their number, the text
 /// around the first match and the match's range.
-fn lines(text: &str, words: &[String]) -> Vec<(usize, String, Range<usize>)> {
+fn lines(text: &str, words: &[String], most: usize) -> Vec<(usize, String, Range<usize>)> {
     let mut found = Vec::new();
     let mut start = 0;
     for (number, line) in text.split_inclusive('\n').enumerate() {
@@ -245,7 +245,7 @@ fn lines(text: &str, words: &[String]) -> Vec<(usize, String, Range<usize>)> {
             at..at + line.len()
         };
         found.push((number + 1, around(line, range.start - at), range));
-        if found.len() == LINES {
+        if found.len() == most {
             break;
         }
     }
@@ -367,7 +367,7 @@ impl App {
         let (Some(search), Some(vault)) = (self.search.take(), &self.vault) else {
             return Task::none();
         };
-        let (hits, count) = self::search(vault, &search.query);
+        let (hits, count) = self::search(vault, &search.query, NOTES, LINES);
         let generation = self.listing.as_ref().map_or(0, |l| l.generation + 1);
         self.listing = Some(Listing {
             query: search.query,
@@ -381,12 +381,12 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{around, lines};
+    use super::{LINES, around, lines};
 
     #[test]
     fn matching_lines_carry_their_range_and_some_context() {
         let text = "first line\nThe Hotel near Alfama\r\nnothing\nhotel again\n";
-        let found = lines(text, &["hotel".to_owned()]);
+        let found = lines(text, &["hotel".to_owned()], LINES);
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].0, 2);
         assert_eq!(&text[found[0].2.clone()], "Hotel");
@@ -400,6 +400,9 @@ mod tests {
         );
         // A line whose lowercase is longer: the whole line is the range.
         let text = "\u{130}stanbul hotel\n";
-        assert_eq!(lines(text, &["hotel".to_owned()])[0].2, 0..text.len() - 1);
+        assert_eq!(
+            lines(text, &["hotel".to_owned()], LINES)[0].2,
+            0..text.len() - 1
+        );
     }
 }
