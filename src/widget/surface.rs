@@ -212,7 +212,12 @@ impl Widget<Message, Theme, iced::Renderer> for Surface<'_> {
                 });
             }
             Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
-                if modifiers.shift() != state.modifiers.shift() && self.pane == Pane::Text {
+                // Only the find bar reads it (Shift+Enter steps back): a
+                // message, and a host's view, for every capital letter
+                // otherwise. A Shift held as the bar closed is let go.
+                let wanted = self.editor.find.is_some() || self.editor.shift;
+                if modifiers.shift() != state.modifiers.shift() && self.pane == Pane::Text && wanted
+                {
                     publish(shell, Input::Shift(modifiers.shift()));
                 }
                 state.modifiers = *modifiers;

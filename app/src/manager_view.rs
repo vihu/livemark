@@ -129,7 +129,7 @@ impl App {
         .spacing(16)
         .padding([8, 12]);
         let mut table = column![];
-        for (tag, count, used) in sorted(vault, tags.clone(), manager) {
+        for (tag, count, used) in sorted(vault, tags, manager) {
             table = table
                 .push(self.manager_row(manager, tag, count, used))
                 .push(rule::horizontal(1).style(|theme: &Theme| rule::Style {

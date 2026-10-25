@@ -40,6 +40,11 @@ pub struct Vault {
     /// When the git repository the vault is in last moved its HEAD (a
     /// commit, a pull), read from `.git/logs/HEAD`; `None` outside one.
     pub last_commit: Option<SystemTime>,
+    /// [`Vault::tags`], counted again when a refresh changes something.
+    tags: Vec<(String, usize)>,
+    /// [`Vault::look_alikes`], worked out when first asked for after the
+    /// tags changed.
+    alike: std::cell::OnceCell<Vec<(String, String)>>,
 }
 
 impl Vault {
@@ -57,6 +62,8 @@ impl Vault {
             notes: Vec::new(),
             generation: 0,
             last_commit: None,
+            tags: Vec::new(),
+            alike: std::cell::OnceCell::new(),
         };
         vault.refresh();
         Ok(vault)
@@ -96,6 +103,11 @@ impl Vault {
         self.last_commit = last_commit;
         if changed {
             self.generation += 1;
+            let tags = count_tags(&self.notes);
+            if tags != self.tags {
+                self.tags = tags;
+                self.alike = std::cell::OnceCell::new();
+            }
         }
         changed
     }
@@ -114,18 +126,16 @@ impl Vault {
     }
 
     /// Every tag with how many notes have it, most used first, then by
-    /// name.
-    pub fn tags(&self) -> Vec<(String, usize)> {
-        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-        for tag in self.notes.iter().flat_map(|note| &note.tags) {
-            *counts.entry(tag).or_default() += 1;
-        }
-        let mut tags: Vec<(String, usize)> = counts
-            .into_iter()
-            .map(|(tag, count)| (tag.to_owned(), count))
-            .collect();
-        tags.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        tags
+    /// name, as of the last refresh.
+    pub fn tags(&self) -> &[(String, usize)] {
+        &self.tags
+    }
+
+    /// Every pair of tags that look alike (`manager::look_alikes`), worked
+    /// out once for each change to the tags.
+    pub fn look_alikes(&self) -> &[(String, String)] {
+        self.alike
+            .get_or_init(|| super::manager::look_alikes(&self.tags))
     }
 
     /// The notes linking to the note at `path`, most recent first.
@@ -166,6 +176,21 @@ fn last_commit(root: &Path) -> Option<SystemTime> {
     let head = line.split('\t').next()?;
     let seconds: u64 = head.rsplit(' ').nth(1)?.parse().ok()?;
     Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+}
+
+/// Every tag of `notes` with how many have it, most used first, then by
+/// name.
+fn count_tags(notes: &[Note]) -> Vec<(String, usize)> {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for tag in notes.iter().flat_map(|note| &note.tags) {
+        *counts.entry(tag).or_default() += 1;
+    }
+    let mut tags: Vec<(String, usize)> = counts
+        .into_iter()
+        .map(|(tag, count)| (tag.to_owned(), count))
+        .collect();
+    tags.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    tags
 }
 
 /// The markdown files under `dir` with their modification times and

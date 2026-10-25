@@ -154,20 +154,20 @@ impl App {
         let (Some(manager), Some(vault)) = (&self.manager, &self.vault) else {
             return Vec::new();
         };
-        let tags: BTreeSet<String> = vault.tags().into_iter().map(|(tag, _)| tag).collect();
+        let tags: BTreeSet<String> = vault.tags().iter().map(|(tag, _)| tag.clone()).collect();
         manager.selected.intersection(&tags).cloned().collect()
     }
 
     /// The pair of tags the manager suggests merging, the smaller first.
     pub(crate) fn suggestion(&self) -> Option<(String, String)> {
-        look_alike(&self.vault.as_ref()?.tags(), &self.kept_apart)
+        look_alike(self.vault.as_ref()?.look_alikes(), &self.kept_apart)
     }
 }
 
 /// The tags with their counts and newest dates, in the manager's order.
 pub(super) fn sorted(
     vault: &super::vault::Vault,
-    tags: Vec<(String, usize)>,
+    tags: &[(String, usize)],
     manager: &Manager,
 ) -> Vec<(String, usize, String)> {
     let mut used: HashMap<&str, &str> = HashMap::new();
@@ -181,14 +181,14 @@ pub(super) fn sorted(
         }
     }
     let mut rows: Vec<(String, usize, String)> = tags
-        .into_iter()
+        .iter()
         .map(|(tag, count)| {
             let date = used
                 .get(tag.as_str())
                 .copied()
                 .unwrap_or_default()
                 .to_owned();
-            (tag, count, date)
+            (tag.clone(), *count, date)
         })
         .collect();
     match manager.sort {
@@ -210,45 +210,65 @@ pub(super) fn plural(n: usize, what: &str) -> String {
     }
 }
 
-/// The first pair of tags that look alike (most used first), the less
-/// used one first, unless kept apart: the same but for `-` and `_`, one
-/// the other's plural, or a letter apart in a name of five or more (two in
-/// one of eight or more), their digits the same (`q1` is not `q2`).
-pub fn look_alike(tags: &[(String, usize)], kept: &[(String, String)]) -> Option<(String, String)> {
+/// Every pair of tags that look alike, in the order of `tags` (most used
+/// first), the less used one first: the same but for `-` and `_`, one the
+/// other's plural, or a letter apart in a name of five or more (two in one
+/// of eight or more), their digits the same (`q1` is not `q2`).
+pub fn look_alikes(tags: &[(String, usize)]) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
     for (i, (a, _)) in tags.iter().enumerate() {
         for (b, _) in &tags[i + 1..] {
-            let apart = kept
-                .iter()
-                .any(|(x, y)| (x == a && y == b) || (x == b && y == a));
-            if !apart && alike(a, b) {
-                return Some((b.clone(), a.clone()));
+            if alike(a, b) {
+                pairs.push((b.clone(), a.clone()));
             }
         }
     }
-    None
+    pairs
 }
 
+/// The first of `pairs` not kept apart.
+pub fn look_alike(
+    pairs: &[(String, String)],
+    kept: &[(String, String)],
+) -> Option<(String, String)> {
+    pairs
+        .iter()
+        .find(|(a, b)| {
+            !kept
+                .iter()
+                .any(|(x, y)| (x == a && y == b) || (x == b && y == a))
+        })
+        .cloned()
+}
+
+/// Whether two tags look alike; nothing allocated before the edit
+/// distance, which is only worked out when the lengths are close enough.
 fn alike(a: &str, b: &str) -> bool {
-    let bare = |s: &str| s.replace(['-', '_'], "");
-    if bare(a) == bare(b) {
+    fn bare(s: &str) -> impl Iterator<Item = char> + '_ {
+        s.chars().filter(|c| !matches!(c, '-' | '_'))
+    }
+    fn digits(s: &str) -> impl Iterator<Item = char> + '_ {
+        s.chars().filter(char::is_ascii_digit)
+    }
+    if bare(a).eq(bare(b)) {
         return true;
     }
     let plural = |x: &str, y: &str| y.strip_prefix(x).is_some_and(|s| s == "s" || s == "es");
     if plural(a, b) || plural(b, a) {
         return true;
     }
-    let digits = |s: &str| s.chars().filter(char::is_ascii_digit).collect::<String>();
-    let most = match a.chars().count().min(b.chars().count()) {
+    let (long_a, long_b) = (a.chars().count(), b.chars().count());
+    let most = match long_a.min(long_b) {
         0..=4 => return false,
         5..=7 => 1,
         _ => 2,
     };
-    digits(a) == digits(b) && strsim::levenshtein(a, b) <= most
+    long_a.abs_diff(long_b) <= most && digits(a).eq(digits(b)) && strsim::levenshtein(a, b) <= most
 }
 
 #[cfg(test)]
 mod tests {
-    use super::look_alike;
+    use super::{look_alike, look_alikes};
 
     fn tags(names: &[&str]) -> Vec<(String, usize)> {
         names
@@ -260,7 +280,7 @@ mod tests {
 
     #[test]
     fn look_alike_tags_are_spelling_slips_plurals_and_dashes_not_numbers() {
-        let pair = |names: &[&str]| look_alike(&tags(names), &[]);
+        let pair = |names: &[&str]| look_alike(&look_alikes(&tags(names)), &[]);
         let some = |a: &str, b: &str| Some((a.to_owned(), b.to_owned()));
         assert_eq!(
             pair(&["travel", "work", "trip", "trips"]),
@@ -279,6 +299,9 @@ mod tests {
         assert_eq!(pair(&["travel", "trips"]), None);
         // Kept apart, either way round.
         let kept = [("trips".to_owned(), "trip".to_owned())];
-        assert_eq!(look_alike(&tags(&["trip", "trips"]), &kept), None);
+        assert_eq!(
+            look_alike(&look_alikes(&tags(&["trip", "trips"])), &kept),
+            None
+        );
     }
 }

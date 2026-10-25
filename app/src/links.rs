@@ -33,11 +33,11 @@ impl App {
                 let query = completing.query.to_lowercase();
                 vault
                     .tags()
-                    .into_iter()
+                    .iter()
                     .filter(|(tag, _)| tag.starts_with(&query) && *tag != query)
                     .map(|(tag, count)| Choice {
                         label: format!("#{tag}"),
-                        detail: crate::tag_actions::notes(count),
+                        detail: crate::tag_actions::notes(*count),
                         insert: format!("#{tag}"),
                     })
                     .collect()

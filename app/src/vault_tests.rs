@@ -389,3 +389,24 @@ fn the_tag_menu_renames_merges_deletes_and_undoes() {
     assert_eq!(app.tag_action, None);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn tag_counts_and_look_alikes_follow_a_refresh_that_changes_the_tags() {
+    let dir = std::env::temp_dir().join(format!("livemark-app-alike-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    write(&dir.join("a.md"), "#trip\n", 0);
+    write(&dir.join("b.md"), "#trip #trips\n", 0);
+    let mut vault = crate::vault::Vault::open(&dir).unwrap();
+    assert_eq!(vault.tags(), [("trip".into(), 2), ("trips".into(), 1)]);
+    assert_eq!(vault.look_alikes(), [("trips".into(), "trip".into())]);
+    // A body changed: the tags and their pairs stay as worked out.
+    write(&dir.join("a.md"), "more #trip\n", 10);
+    assert!(vault.refresh());
+    assert_eq!(vault.look_alikes(), [("trips".into(), "trip".into())]);
+    // The tags changed: counted again, no pair left.
+    write(&dir.join("b.md"), "#trip #travel\n", 20);
+    assert!(vault.refresh());
+    assert_eq!(vault.tags(), [("trip".into(), 2), ("travel".into(), 1)]);
+    assert!(vault.look_alikes().is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

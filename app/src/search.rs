@@ -167,10 +167,10 @@ pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
     if !prefixes.is_empty() {
         let names = vault
             .tags()
-            .into_iter()
+            .iter()
             .filter(|(tag, _)| prefixes.iter().any(|p| tag.starts_with(p.as_str())))
             .take(TAGS)
-            .map(|(tag, count)| Found::Tag(tag, count));
+            .map(|(tag, count)| Found::Tag(tag.clone(), *count));
         found.extend(names);
     }
     (found, count)
