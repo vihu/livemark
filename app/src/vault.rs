@@ -4,7 +4,8 @@
 //! `created`), else its first heading and its file name's date; inline
 //! `#tags` count too. Read again by modification time when asked
 //! (`refresh`), so changes from git, other editors or agents show up.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::io::{Read as _, Seek as _};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -40,6 +41,10 @@ pub struct Vault {
     /// When the git repository the vault is in last moved its HEAD (a
     /// commit, a pull), read from `.git/logs/HEAD`; `None` outside one.
     pub last_commit: Option<SystemTime>,
+    /// Markdown files that did not read (not UTF-8, not readable), with
+    /// their time and size: said at the sidebar's foot, read again only
+    /// when they change.
+    pub skipped: Vec<(PathBuf, SystemTime, u64)>,
     /// [`Vault::tags`], counted again when a refresh changes something.
     tags: Vec<(String, usize)>,
     /// [`Vault::look_alikes`], worked out when first asked for after the
@@ -62,6 +67,7 @@ impl Vault {
             notes: Vec::new(),
             generation: 0,
             last_commit: None,
+            skipped: Vec::new(),
             tags: Vec::new(),
             alike: std::cell::OnceCell::new(),
         };
@@ -70,27 +76,90 @@ impl Vault {
     }
 
     /// Reads again the notes whose files changed, came or went; returns
-    /// whether anything did.
+    /// whether anything did. When none did, the notes stay as they are.
     pub fn refresh(&mut self) -> bool {
         let files = walk(&self.root);
-        let mut changed = files.len() != self.notes.len();
-        let mut old: BTreeMap<PathBuf, Note> = std::mem::take(&mut self.notes)
+        let last_commit = last_commit(&self.root);
+        let committed = last_commit != self.last_commit;
+        self.last_commit = last_commit;
+        if self.holds(&files) {
+            if committed {
+                self.generation += 1;
+            }
+            return committed;
+        }
+        let mut old: HashMap<PathBuf, Note> = std::mem::take(&mut self.notes)
             .into_iter()
             .map(|note| (note.path.clone(), note))
+            .collect();
+        let old_skipped: HashMap<PathBuf, (SystemTime, u64)> = std::mem::take(&mut self.skipped)
+            .into_iter()
+            .map(|(path, modified, size)| (path, (modified, size)))
             .collect();
         for (path, modified, size) in files {
             match old.remove(&path) {
                 Some(note) if (note.modified, note.size) == (modified, size) => {
                     self.notes.push(note);
                 }
-                _ => {
-                    changed = true;
-                    if let Ok(text) = std::fs::read_to_string(&path) {
-                        self.notes.push(read(path, modified, text));
-                    }
+                _ if old_skipped.get(&path) == Some(&(modified, size)) => {
+                    self.skipped.push((path, modified, size));
                 }
+                _ => match std::fs::read_to_string(&path) {
+                    Ok(text) => self.notes.push(read(path, modified, text)),
+                    Err(_) => self.skipped.push((path, modified, size)),
+                },
             }
         }
+        self.changed();
+        true
+    }
+
+    /// Whether `files` (from `walk`) are the notes and skipped files the
+    /// vault has, each at the time and size it was read.
+    fn holds(&self, files: &[(PathBuf, SystemTime, u64)]) -> bool {
+        if files.len() != self.notes.len() + self.skipped.len() {
+            return false;
+        }
+        let known: HashMap<&Path, (SystemTime, u64)> = self
+            .notes
+            .iter()
+            .map(|note| (note.path.as_path(), (note.modified, note.size)))
+            .chain(
+                self.skipped
+                    .iter()
+                    .map(|(path, m, s)| (path.as_path(), (*m, *s))),
+            )
+            .collect();
+        files
+            .iter()
+            .all(|(path, m, s)| known.get(path.as_path()) == Some(&(*m, *s)))
+    }
+
+    /// The note at `path` read again after the app wrote it, with no walk
+    /// over the vault; `false` when the vault has no note there (for a
+    /// refresh to find it).
+    pub fn reread(&mut self, path: &Path) -> bool {
+        let Some(at) = self.notes.iter().position(|note| note.path == path) else {
+            return false;
+        };
+        let Ok((modified, size)) =
+            std::fs::metadata(path).and_then(|m| Ok((m.modified()?, m.len())))
+        else {
+            return false;
+        };
+        if (self.notes[at].modified, self.notes[at].size) == (modified, size) {
+            return true;
+        }
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return false;
+        };
+        self.notes[at] = read(path.to_path_buf(), modified, text);
+        self.changed();
+        true
+    }
+
+    /// After notes changed: in order again, counted again.
+    fn changed(&mut self) {
         // Then newest created, then by title: a fresh clone gives every
         // file the same time.
         self.notes.sort_by(|a, b| {
@@ -98,18 +167,12 @@ impl Vault {
                 .cmp(&(a.modified, &a.created))
                 .then_with(|| a.title.cmp(&b.title))
         });
-        let last_commit = last_commit(&self.root);
-        changed |= last_commit != self.last_commit;
-        self.last_commit = last_commit;
-        if changed {
-            self.generation += 1;
-            let tags = count_tags(&self.notes);
-            if tags != self.tags {
-                self.tags = tags;
-                self.alike = std::cell::OnceCell::new();
-            }
+        self.generation += 1;
+        let tags = count_tags(&self.notes);
+        if tags != self.tags {
+            self.tags = tags;
+            self.alike = std::cell::OnceCell::new();
         }
-        changed
     }
 
     /// How many notes changed since the last commit, going by file times
@@ -171,8 +234,15 @@ fn last_commit(root: &Path) -> Option<SystemTime> {
     } else {
         git
     };
-    let log = std::fs::read_to_string(git.join("logs").join("HEAD")).ok()?;
-    let line = log.lines().last()?;
+    // Its last line only: the log grows by a line a commit, for good.
+    let mut log = std::fs::File::open(git.join("logs").join("HEAD")).ok()?;
+    let len = log.metadata().ok()?.len();
+    log.seek(std::io::SeekFrom::Start(len.saturating_sub(4096)))
+        .ok()?;
+    let mut tail = Vec::new();
+    log.read_to_end(&mut tail).ok()?;
+    let tail = String::from_utf8_lossy(&tail);
+    let line = tail.lines().last()?;
     let head = line.split('\t').next()?;
     let seconds: u64 = head.rsplit(' ').nth(1)?.parse().ok()?;
     Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
@@ -342,6 +412,40 @@ mod tests {
         .unwrap();
         vault.refresh();
         assert_eq!(vault.uncommitted(), Some(2));
+        // A long log: only its end is read, the last line still found.
+        let mut log = "0 a Me <me@x> 500 +0400\tcommit: an older one\n".repeat(200);
+        log.push_str("a b Me <me@x> 3500 +0400\tcommit: more\n");
+        std::fs::write(dir.join(".git/logs/HEAD"), log).unwrap();
+        vault.refresh();
+        assert_eq!(vault.uncommitted(), Some(1));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_note_written_by_the_app_is_read_again_alone_and_bad_files_are_counted() {
+        let dir = std::env::temp_dir().join(format!("livemark-reread-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.md"), "# A\n").unwrap();
+        std::fs::write(dir.join("latin.md"), b"caf\xe9\n").unwrap();
+        let mut vault = Vault::open(&dir).unwrap();
+        let a = vault.root.join("a.md");
+        assert_eq!((vault.notes.len(), vault.skipped.len()), (1, 1));
+        // Nothing changed: no new generation, the file not read again.
+        let generation = vault.generation;
+        assert!(!vault.refresh());
+        assert_eq!(vault.generation, generation);
+        // Written here: read again without a walk; a path it lacks is left
+        // to a refresh.
+        std::fs::write(&a, "# A, longer\n#tag\n").unwrap();
+        assert!(vault.reread(&a));
+        assert_eq!(vault.notes[0].title, "A, longer");
+        assert_eq!(vault.tags(), [("tag".into(), 1)]);
+        assert!(vault.generation > generation);
+        assert!(!vault.reread(&vault.root.join("elsewhere.md")));
+        // A skipped file mended: a note again.
+        std::fs::write(dir.join("latin.md"), "café\n").unwrap();
+        assert!(vault.refresh());
+        assert_eq!((vault.notes.len(), vault.skipped.len()), (2, 0));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

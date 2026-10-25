@@ -130,10 +130,10 @@ impl App {
                 }
                 self.settings.opened(&path);
                 self.remember();
-                self.path = Some(path);
+                self.path = Some(path.clone());
                 self.saved = version;
                 self.load_images();
-                self.refresh_vault();
+                self.refresh_saved(&path);
                 // A picture pasted before the note had a place.
                 if let Some(png) = self.waiting_picture.take() {
                     let _ = self.paste_picture(png);

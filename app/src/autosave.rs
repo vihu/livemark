@@ -72,7 +72,7 @@ impl App {
                 self.saved = self.editor.version();
                 self.stamp = file::modified(&path);
                 self.last_edit = None;
-                self.refresh_vault();
+                self.refresh_saved(&path);
                 true
             }
             Err(error) => {

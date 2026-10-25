@@ -168,6 +168,17 @@ impl App {
         self.refresh_footer();
     }
 
+    /// After the app wrote the note at `path`: only that note read again
+    /// when the vault has it (no walk over every file), else a refresh.
+    pub(crate) fn refresh_saved(&mut self, path: &std::path::Path) {
+        if let Some(vault) = &mut self.vault
+            && !vault.reread(path)
+        {
+            vault.refresh();
+        }
+        self.refresh_footer();
+    }
+
     /// The sidebar's tags, notes and commit status, when a vault is open
     /// (`shell.rs` puts its head over them).
     pub(crate) fn vault_body(&self) -> Option<Element<'_, Message>> {
@@ -318,7 +329,15 @@ impl App {
             };
             text(line).size(11).style(text::secondary)
         });
-        Some(column![body].push(status).spacing(8).into())
+        // Notes it could not read are left out of everything: said here.
+        let skipped = (!vault.skipped.is_empty()).then(|| {
+            let line = match vault.skipped.len() {
+                1 => "1 file not read: not UTF-8 or not readable".to_owned(),
+                n => format!("{n} files not read: not UTF-8 or not readable"),
+            };
+            text(line).size(11).style(text::secondary)
+        });
+        Some(column![body].push(status).push(skipped).spacing(8).into())
     }
 }
 
