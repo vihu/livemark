@@ -446,4 +446,6 @@ fn map(changes: &[Change], at: usize) -> usize {
 }
 
 #[cfg(test)]
+mod indent_tests;
+#[cfg(test)]
 mod tests;

@@ -471,6 +471,8 @@ impl Editor {
 }
 
 #[cfg(test)]
+mod press_tests;
+#[cfg(test)]
 mod properties_tests;
 #[cfg(test)]
 mod split_tests;
