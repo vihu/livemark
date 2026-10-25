@@ -5,6 +5,7 @@
 use std::ops::Range;
 use std::time::Duration;
 
+use super::Direction;
 use crate::doc::{Change, Doc, Kind, Selection};
 
 /// What to look for. Not a regular expression, not whole words
@@ -85,9 +86,10 @@ pub fn prev_match(matches: &[Range<usize>], from: usize, to: usize) -> Option<Ra
     (found != (from..to)).then_some(found)
 }
 
-/// Selects the next match after the selection (`forward`) or the one
+/// Selects the next match after the selection (`Forward`) or the one
 /// before it, wrapping around. Returns whether there was one.
-pub fn find(doc: &mut Doc, query: &Query, forward: bool) -> bool {
+pub fn find(doc: &mut Doc, query: &Query, direction: Direction) -> bool {
+    let forward = direction == Direction::Forward;
     let matches = query.matches(doc.text());
     let range = doc.selection().range();
     let found = if forward {

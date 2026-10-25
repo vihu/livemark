@@ -18,11 +18,7 @@ pub use indent::indent;
 /// character boundary: a context's columns come from the line its
 /// container starts on, which can be another line (as in CodeMirror).
 fn offset(line_start: usize, line: &str, col: usize) -> usize {
-    let mut col = col.min(line.len());
-    while !line.is_char_boundary(col) {
-        col -= 1;
-    }
-    line_start + col
+    line_start + line.floor_char_boundary(col)
 }
 
 /// The line holding `pos`: its start and text, without the line ending.
@@ -449,5 +445,7 @@ fn map(changes: &[Change], at: usize) -> usize {
     at.wrapping_add_signed(delta)
 }
 
+#[cfg(test)]
+mod indent_tests;
 #[cfg(test)]
 mod tests;

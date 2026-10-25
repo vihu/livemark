@@ -27,7 +27,7 @@ impl App {
             return Task::none();
         };
         if let IntoVault::Dismiss = message {
-            self.outside_dismissed = Some(path);
+            self.vault_view.outside_dismissed = Some(path);
             return Task::none();
         }
         if self.unsaved() {
@@ -37,12 +37,12 @@ impl App {
         let moving = matches!(message, IntoVault::Move);
         match self.bring_in(&path, moving) {
             Ok(target) => {
-                self.toast = Some(format!(
+                let said = format!(
                     "{} into the vault as {}",
                     if moving { "Moved" } else { "Copied" },
                     file_name(&target)
-                ));
-                self.toast_undo = true;
+                );
+                self.show_toast(said, true);
                 self.error = None;
                 if moving {
                     self.path = Some(target);
@@ -63,22 +63,24 @@ impl App {
     fn bring_in(&mut self, path: &Path, moving: bool) -> Result<PathBuf, String> {
         let root = self.vault.as_ref().ok_or("No vault is open")?.root.clone();
         let failed = |path: &Path, e: std::io::Error| format!("{}: {e}", path.display());
-        let text = std::fs::read_to_string(path).map_err(|e| failed(path, e))?;
-        let text = with_front_matter(&text, path);
-        let name = path
-            .file_name()
-            .map_or_else(|| "note.md".into(), |n| n.to_string_lossy().into_owned());
-        let stem = name.trim_end_matches(".md").to_owned();
-        let target = (1..)
-            .map(|n| match n {
-                1 => root.join(&name),
-                n => root.join(format!("{stem}-{n}.md")),
-            })
+        let original = std::fs::read_to_string(path).map_err(|e| failed(path, e))?;
+        let text = with_front_matter(&original, path);
+        // Always a `.md` name: the vault lists only markdown files, and a
+        // `.txt` brought in would vanish from it.
+        let stem = path
+            .file_stem()
+            .map_or_else(|| "note".into(), |n| n.to_string_lossy().into_owned());
+        let target = super::file::numbered(&root, &stem)
             .find(|candidate| !candidate.exists())
-            .unwrap_or_else(|| root.join(&name));
+            .unwrap_or_else(|| root.join(format!("{stem}.md")));
         let undo = if moving {
-            let mut undo = super::undo::write(vec![(path.to_path_buf(), text)])?;
-            move_file(path, &target).map_err(|e| failed(path, e))?;
+            let written = super::undo::write(vec![(path.to_path_buf(), original, text)]);
+            let mut undo = self.written(written)?;
+            if let Err(e) = move_file(path, &target) {
+                // Its front matter is written: Undo takes it out again.
+                self.keep_partial(undo);
+                return Err(failed(path, e));
+            }
             undo.moved = Some((path.to_path_buf(), target.clone()));
             undo
         } else {
@@ -93,14 +95,14 @@ impl App {
                 ..Undo::default()
             }
         };
-        self.undo = Some(undo);
+        self.vault_view.undo = Some(undo);
         Ok(target)
     }
 
     /// The bar over a note outside the vault, unless dismissed for it.
     pub(crate) fn outside_bar(&self) -> Option<Element<'_, Message>> {
         let path = self.path.as_deref()?;
-        if !self.outside_vault(path) || self.outside_dismissed.as_deref() == Some(path) {
+        if !self.outside_vault(path) || self.vault_view.outside_dismissed.as_deref() == Some(path) {
             return None;
         }
         let said = format!(

@@ -59,20 +59,20 @@ impl App {
     pub(crate) fn context_update(&mut self, message: ContextMessage) -> Task<Message> {
         match message {
             ContextMessage::Open(target) => {
-                self.tag_action = None;
-                self.note_action = None;
-                self.context = Some(Menu {
+                self.vault_view.tag_action = None;
+                self.vault_view.note_action = None;
+                self.vault_view.context = Some(Menu {
                     at: self.pointer,
                     target,
                 });
             }
-            ContextMessage::Close => self.context = None,
+            ContextMessage::Close => self.vault_view.context = None,
             ContextMessage::Pick(message) => {
-                self.context = None;
+                self.vault_view.context = None;
                 return self.update(*message);
             }
             ContextMessage::Copy | ContextMessage::Cut => {
-                self.context = None;
+                self.vault_view.context = None;
                 let range = self.editor.selection().range();
                 if range.is_empty() {
                     return Task::none();
@@ -84,12 +84,12 @@ impl App {
                 return iced::clipboard::write(picked).discard();
             }
             ContextMessage::Paste => {
-                self.context = None;
+                self.vault_view.context = None;
                 return iced::clipboard::read_text()
                     .map(|text| Message::Paste(text.ok().map(|text| text.to_string())));
             }
             ContextMessage::SelectAll => {
-                self.context = None;
+                self.vault_view.context = None;
                 let end = self.editor.text().len();
                 self.editor.select(0, end);
             }
@@ -99,7 +99,7 @@ impl App {
 
     /// The open menu over the window, with the press-catcher under it.
     pub(crate) fn context_layer(&self) -> Option<Element<'_, Message>> {
-        let menu = self.context.as_ref()?;
+        let menu = self.vault_view.context.as_ref()?;
         let items = self.context_items(&menu.target);
         let rows = items.iter().filter(|i| i.is_some()).count() as f32;
         let rules = items.iter().filter(|i| i.is_none()).count() as f32;

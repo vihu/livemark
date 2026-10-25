@@ -163,6 +163,8 @@ fn run(
     };
     for message in messages {
         let _ = editor.update(message);
+        // As a host asks after every message (the app does).
+        let _ = editor.completing();
     }
 }
 

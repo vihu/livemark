@@ -190,6 +190,9 @@ fn zoom_scales_every_line_and_keeps_the_caret_row_in_place() {
     // Clamped, and back.
     editor.set_zoom(10.0);
     assert_eq!(editor.zoom(), 3.0);
+    // Not a number: left as it was (`clamp` would pass it through).
+    editor.set_zoom(f32::NAN);
+    assert_eq!(editor.zoom(), 3.0);
     editor.set_zoom(1.0);
     assert!((at(&editor).1 - height).abs() < 0.5);
 }

@@ -1,10 +1,11 @@
-//! What the editor does with its view's messages: clicks and drags, keys,
-//! input method commits and the clipboard (REFERENCE-001 sections 13 to 19).
-use iced::{Point, Task};
+//! What the editor does with its view's messages: keys, input method
+//! commits and the clipboard (REFERENCE-001 sections 13 to 19); presses and
+//! drags through `pointer.rs`.
+use iced::Task;
 
-use super::{Editor, Input, Key, Message, Mode, Pane, Press, Unit, Vertical};
+use super::{Editor, Input, Key, Message, Mode, Pane, Vertical};
 use crate::doc::Selection;
-use crate::edit::{self, Motion};
+use crate::edit::{self, Direction, Motion};
 use crate::layout::Affinity;
 use crate::style::Styled;
 
@@ -177,7 +178,7 @@ impl Editor {
                 Key::Insert(c) => edit::type_text(&mut self.doc, c.encode_utf8(&mut [0; 4]), now),
                 Key::Enter => edit::enter(&mut self.doc, now),
                 Key::SoftEnter => edit::markup::soft_break(&mut self.doc, now),
-                Key::Indent(outdent) => edit::markup::indent(&mut self.doc, outdent, now),
+                Key::Indent(direction) => edit::markup::indent(&mut self.doc, direction, now),
                 Key::Format(format) => {
                     edit::format::toggle(&mut self.doc, &self.styled, format, now);
                 }
@@ -185,8 +186,8 @@ impl Editor {
                 Key::AddTag => edit::properties::add_tag(&mut self.doc, &self.styled, now),
                 Key::Block(block) => edit::blocks::toggle(&mut self.doc, block, now),
                 Key::SetMode(mode) => self.set_mode(mode),
-                Key::MoveLines(down) => edit::lines::move_lines(&mut self.doc, down, now),
-                Key::CopyLines(down) => edit::lines::copy_lines(&mut self.doc, down, now),
+                Key::MoveLines(direction) => edit::lines::move_lines(&mut self.doc, direction, now),
+                Key::CopyLines(direction) => edit::lines::copy_lines(&mut self.doc, direction, now),
                 Key::DeleteLines => edit::lines::delete_lines(&mut self.doc, now),
                 Key::BlankLine => edit::lines::blank_line(&mut self.doc, now),
                 Key::Follow => {
@@ -206,20 +207,25 @@ impl Editor {
                 Key::Delete(Motion::Left) => edit::backspace(&mut self.doc, now),
                 Key::Delete(motion) => edit::delete(&mut self.doc, motion, now),
                 Key::Move(motion @ (Motion::LineStart | Motion::LineEnd), extend) => {
-                    side = self.line_boundary(motion == Motion::LineEnd, extend);
+                    let direction = if motion == Motion::LineEnd {
+                        Direction::Forward
+                    } else {
+                        Direction::Back
+                    };
+                    side = self.line_boundary(direction, extend);
                 }
                 Key::Move(motion, extend) => edit::go(&mut self.doc, motion, extend),
                 Key::Vertical(direction, extend) => {
                     side = self.vertical(direction, extend);
                     vertical = true;
                 }
-                Key::Copy(cut) => {
+                key @ (Key::Copy | Key::Cut) => {
                     // With nothing selected, the line (REFERENCE-001
                     // section 18); worked out here, after every earlier
                     // message, so a click just before is counted.
                     let (text, _, linewise) = edit::copied(&self.doc);
                     self.linewise = linewise.then(|| text.clone());
-                    if cut {
+                    if matches!(key, Key::Cut) {
                         edit::cut(&mut self.doc, now);
                     } else {
                         keep_view = true;
@@ -268,185 +274,19 @@ impl Editor {
         task
     }
 
-    /// Where the link under `at` in `pane` goes, if one is there.
-    pub(super) fn link_under(&self, pane: Pane, at: Point) -> Option<String> {
-        let (offset, _) = self.hit(pane, at);
-        let (range, dest) = self.styled.link_span_at(offset)?;
-        // On the link's text, not in the space beside it, which hits its
-        // end too.
-        let over = self.with_pane(pane, |lines, source| {
-            lines.covers(source, range, at.x, at.y)
-        });
-        over.then(|| dest.to_owned())
-    }
-
-    /// The name of the `#tag` under `at` in `pane`, if one is there.
-    pub(super) fn tag_under(&self, pane: Pane, at: Point) -> Option<String> {
-        let (offset, _) = self.hit(pane, at);
-        let (range, name) = self.styled.tag_at(offset)?;
-        let over = self.with_pane(pane, |lines, source| {
-            lines.covers(source, range, at.x, at.y)
-        });
-        over.then(|| name.to_owned())
-    }
-
-    /// The source offset under `at` in `pane`: in a table drawn as a grid,
-    /// the cell's (REFERENCE-001 section 10).
-    pub(super) fn hit(&self, pane: Pane, at: Point) -> (usize, Affinity) {
-        self.with_pane(pane, |lines, source| {
-            // On the properties: into the YAML, which then shows.
-            if let Some((_, offset)) = lines.block_hit(source, at.x, at.y) {
-                return (offset, Affinity::After);
-            }
-            match lines.table_hit(source, at.x, at.y) {
-                Some(offset) => (offset, Affinity::After),
-                None => lines.hit(source, at.x, at.y),
-            }
-        })
-    }
-
-    /// A press: a caret (Shift extends the selection), a word on a double
-    /// click, a line on a triple click (REFERENCE-001 section 14).
-    /// Returns the side the caret is drawn on, or `None` when a checkbox
-    /// was ticked and the caret stayed.
-    fn press(&mut self, at: Point, shift: bool, clicks: u8, plain: bool) -> Option<Affinity> {
-        // A tag's cross on the properties takes it out, the caret staying;
-        // "+ tag" puts the caret where a new one goes (PLAN-005).
-        let control = (plain && clicks == 1)
-            .then(|| self.with_lines(|lines, source| lines.block_hit(source, at.x, at.y)))
-            .flatten()
-            .and_then(|(control, _)| control);
-        let now = self.started.elapsed();
-        match control {
-            Some(super::properties::Hit::Remove(chip)) => {
-                edit::properties::remove_tag(&mut self.doc, &self.styled, &chip, now);
-                return None;
-            }
-            Some(super::properties::Hit::Add) => {
-                edit::properties::add_tag(&mut self.doc, &self.styled, now);
-                return Some(Affinity::After);
-            }
-            None => {}
-        }
-        // A checkbox toggles its task and leaves the caret where it is
-        // (REFERENCE-001 section 8), each click of a quick pair too; with a
-        // modifier it is an ordinary click.
-        if plain {
-            let task = self.with_lines(|lines, source| lines.task_at(source, at.x, at.y));
-            if let Some(task) = task {
-                edit::format::toggle_task(&mut self.doc, task, self.started.elapsed());
-                return None;
-            }
-        }
-        // A second or third click hits the text as the first one saw it:
-        // its release revealed markers, and may have scrolled to keep the
-        // caret in view (REFERENCE-001 section 2).
-        let view = self.with_lines(|lines, _| (lines.anchor, lines.offset));
-        let (frozen, view) = match self.last_press.take() {
-            Some((last, version)) if clicks >= 2 && version == self.doc.version() => {
-                self.with_lines(|lines, _| (lines.anchor, lines.offset) = last.view);
-                (last.frozen, last.view)
-            }
-            _ => (self.doc.selection(), view),
-        };
-        self.press = Some(Press {
-            frozen,
-            unit: Unit::Char,
-            first: 0..0,
-            view,
-        });
-        let (offset, side) = self.hit(Pane::Text, at);
-        // On a bullet's dot or a quote marker, drawn: the item's or quote's
-        // text, so the dot stays (REFERENCE-001 sections 6, 7, 14). Drags,
-        // Shift+clicks and the margin keep the line's start.
-        let on_mark = clicks == 1 && plain;
-        let (offset, side) = match on_mark
-            .then(|| self.with_lines(|lines, source| lines.text_after_mark(source, at.x, at.y)))
-            .flatten()
-        {
-            Some(text) => (text, Affinity::After),
-            None => (offset, side),
-        };
-        let (unit, first) = match clicks {
-            1 => (Unit::Char, offset..offset),
-            2 => (
-                Unit::Word,
-                edit::word_at(&self.doc, offset, side == Affinity::Before),
-            ),
-            _ => (Unit::Line, edit::line_with_ending(&self.doc, offset)),
-        };
-        let selection = match unit {
-            Unit::Char if shift => Selection {
-                anchor: frozen.anchor,
-                head: offset,
-            },
-            Unit::Char => Selection::caret(offset),
-            Unit::Word | Unit::Line => Selection {
-                anchor: first.start,
-                head: first.end,
-            },
-        };
-        self.doc.set_selection(selection);
-        self.press = Some(Press {
-            frozen,
-            unit,
-            first,
-            view,
-        });
-        Some(side)
-    }
-
-    /// A drag: the selection grows from the press by characters, or by
-    /// whole words or lines after a double or triple click, towards the
-    /// pointer (CodeMirror's `basicMouseSelection`).
-    fn drag(&mut self, at: Point) -> Affinity {
-        let (offset, side) = self.hit(Pane::Text, at);
-        let Some(press) = &self.press else {
-            return side;
-        };
-        let selection = match press.unit {
-            Unit::Char => Selection {
-                anchor: self.doc.selection().anchor,
-                head: offset,
-            },
-            Unit::Word | Unit::Line => {
-                let here = if press.unit == Unit::Word {
-                    edit::word_at(&self.doc, offset, side == Affinity::Before)
-                } else {
-                    edit::line_with_ending(&self.doc, offset)
-                };
-                let from = press.first.start.min(here.start);
-                let to = press.first.end.max(here.end);
-                if from < here.start {
-                    Selection {
-                        anchor: from,
-                        head: to,
-                    }
-                } else {
-                    Selection {
-                        anchor: to,
-                        head: from,
-                    }
-                }
-            }
-        };
-        self.doc.set_selection(selection);
-        side
-    }
-
     /// Home and End: the edge of the visual row, then of the source line,
     /// Home stopping at the indentation (REFERENCE-001 section 13). The
     /// caret stays on the row it moved to the edge of.
-    fn line_boundary(&mut self, forward: bool, extend: bool) -> Affinity {
+    fn line_boundary(&mut self, direction: Direction, extend: bool) -> Affinity {
         let selection = self.doc.selection();
         let side = self.side;
         let row = self.with_lines(|lines, source| lines.row_bounds(source, selection.head, side));
         let line = self.doc.line_range(self.doc.line_at(selection.head));
         let markup = self.styled.hang_at(line);
-        let head = edit::line_boundary(&self.doc, selection.head, row, forward, markup);
+        let head = edit::line_boundary(&self.doc, selection.head, row, direction, markup);
         let anchor = if extend { selection.anchor } else { head };
         self.doc.set_selection(Selection { anchor, head });
-        if forward {
+        if direction == Direction::Forward {
             Affinity::Before
         } else {
             Affinity::After

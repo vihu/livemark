@@ -10,6 +10,16 @@ pub fn load(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// The names a note called `base` may take in `folder`, first to last:
+/// `base.md`, then `base-2.md`, `base-3.md` and on (the user's pick in
+/// PLAN-004); the caller takes the first free one.
+pub fn numbered(folder: &Path, base: &str) -> impl Iterator<Item = PathBuf> {
+    (1..).map(move |n| match n {
+        1 => folder.join(format!("{base}.md")),
+        n => folder.join(format!("{base}-{n}.md")),
+    })
+}
+
 /// When the file at `path` was last modified, if it can be read.
 pub fn modified(path: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
@@ -18,8 +28,11 @@ pub fn modified(path: &Path) -> Option<std::time::SystemTime> {
 /// Writes `text` to `path` through a temporary file in the same directory,
 /// then renames it over the original, so the file holds either the old or
 /// the new text. A symlink is followed (its target is replaced, not the
-/// link), and an existing file's permissions are kept.
+/// link), and an existing file's permissions are kept. Each write has its
+/// own temporary file, so two writers (another thread, another instance of
+/// the app) never mix their bytes; the last rename wins.
 pub fn save(path: &Path, text: &str) -> std::io::Result<()> {
+    static SAVES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let target = match std::fs::canonicalize(path) {
         Ok(target) => target,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_owned(),
@@ -28,7 +41,12 @@ pub fn save(path: &Path, text: &str) -> std::io::Result<()> {
     let name = target
         .file_name()
         .ok_or_else(|| std::io::Error::other("the path names no file"))?;
-    let temp = target.with_file_name(format!(".{}.livemark-save", name.to_string_lossy()));
+    let n = SAVES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temp = target.with_file_name(format!(
+        ".{}.{}-{n}.livemark-save",
+        name.to_string_lossy(),
+        std::process::id()
+    ));
     let written = (|| {
         let mut file = std::fs::File::create(&temp)?;
         file.write_all(text.as_bytes())?;
@@ -86,7 +104,7 @@ pub fn save_picture(note: &Path, bytes: &[u8], extension: &str) -> Result<String
             Ok(mut file) => {
                 file.write_all(bytes)
                     .map_err(|e| format!("{}: {e}", path.display()))?;
-                return Ok(format!("assets/{}", name.replace(' ', "%20")));
+                return Ok(format!("assets/{}", link_path(&name)));
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(format!("{}: {e}", path.display())),
@@ -96,13 +114,36 @@ pub fn save_picture(note: &Path, bytes: &[u8], extension: &str) -> Result<String
 }
 
 /// Where an image's markdown in the note at `note` points to `file`: its
-/// path from the note's folder when it is inside it, else the whole path;
-/// spaces as `%20`.
+/// path from the note's folder when it is inside it, else the whole path
+/// (`link_path`).
 pub fn link_to(note: &Path, file: &Path) -> String {
     let inside = note
         .parent()
         .and_then(|folder| file.strip_prefix(folder).ok());
-    inside.unwrap_or(file).to_string_lossy().replace(' ', "%20")
+    link_path(&inside.unwrap_or(file).to_string_lossy())
+}
+
+/// `path` as a link's destination: `/` between parts, and what a link
+/// would read otherwise (a space, `#`, `?`, `%`, `<`, `>`, a parenthesis)
+/// percent-encoded; anything else, other scripts included, as written.
+/// The readers decode it (`vault::resolve`, `image_bytes`).
+pub fn link_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for c in path.chars() {
+        match c {
+            ' ' | '#' | '?' | '%' | '<' | '>' | '(' | ')' => {
+                out.push_str(&format!("%{:02X}", c as u8))
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Whether `file` is a markdown note (`.md` or `.markdown`).
+pub fn is_markdown(file: &Path) -> bool {
+    file.extension()
+        .is_some_and(|e| e == "md" || e == "markdown")
 }
 
 /// Whether `file` is a picture the editor draws (PNG, JPEG, GIF, WebP).
@@ -130,20 +171,15 @@ pub async fn pick_folder() -> Option<PathBuf> {
     Some(folder.path().to_owned())
 }
 
-/// Saves to `path`, or asks where first when there is none.
-pub async fn save_as(path: Option<PathBuf>, text: String) -> Result<Option<PathBuf>, String> {
-    let path = match path {
-        Some(path) => path,
-        None => {
-            let dialog = rfd::AsyncFileDialog::new()
-                .add_filter("Markdown", &["md"])
-                .set_file_name("untitled.md");
-            let Some(file) = dialog.save_file().await else {
-                return Ok(None);
-            };
-            file.path().to_owned()
-        }
+/// Asks where, then saves there; `None` when the dialog was cancelled.
+pub async fn save_as(text: String) -> Result<Option<PathBuf>, String> {
+    let dialog = rfd::AsyncFileDialog::new()
+        .add_filter("Markdown", &["md"])
+        .set_file_name("untitled.md");
+    let Some(file) = dialog.save_file().await else {
+        return Ok(None);
     };
+    let path = file.path().to_owned();
     save(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(Some(path))
 }

@@ -8,7 +8,7 @@ use super::links::relative;
 use super::vault::resolve;
 
 /// `text` with its title set to `new`: the front matter's `title`, or a
-/// line for it, or the first `#` heading when that was the title (`old`);
+/// line for it, or the first heading when that was the title (`old`);
 /// `None` when the title is the file's name.
 pub(crate) fn retitled(text: &str, old: &str, new: &str) -> Option<String> {
     let value = super::note::yaml_title(new);
@@ -25,19 +25,10 @@ pub(crate) fn retitled(text: &str, old: &str, new: &str) -> Option<String> {
         };
         return Some(splice(text, &[(at..at, format!("title: {value}{nl}"))]));
     }
-    let mut start = 0;
-    for line in text.split_inclusive('\n') {
-        let content = line.trim_end_matches(['\n', '\r']);
-        if let Some(heading) = content.strip_prefix("# ")
-            && heading.trim() == old
-        {
-            let from = start + 2 + (heading.len() - heading.trim_start().len());
-            let to = from + heading.trim().len();
-            return Some(splice(text, &[(from..to, new.to_owned())]));
-        }
-        start += line.len();
-    }
-    None
+    // The heading the vault took the title from (`livemark::parse::heading`).
+    livemark::parse::heading(text)
+        .filter(|range| text[range.clone()] == *old)
+        .map(|range| splice(text, &[(range, new.to_owned())]))
 }
 
 /// The file the note at `path` gets when titled `title`: its date kept,
@@ -61,11 +52,7 @@ pub(crate) fn free_path(path: &Path, title: &str) -> PathBuf {
     } else {
         super::note::slug(title)
     };
-    (1..)
-        .map(|n| match n {
-            1 => folder.join(format!("{base}.md")),
-            n => folder.join(format!("{base}-{n}.md")),
-        })
+    super::file::numbered(folder, &base)
         .find(|candidate| candidate == path || !candidate.exists())
         .unwrap_or_else(|| path.to_path_buf())
 }
@@ -113,14 +100,17 @@ pub(crate) fn relinked(text: &str, from: &Path, old: &Path, new: &Path) -> Optio
             let dest = dest.split_whitespace().next().unwrap_or("");
             let dest = dest.trim_start_matches('<').trim_end_matches('>');
             if !dest.is_empty() && resolve(from, dest).as_deref() == Some(old) {
-                let start = at + content.find(dest).unwrap_or(0);
+                // Where it is written after `]:`, an `<` stepped over.
+                let after = rest.trim_start();
+                let start = at + content.len() - after.len() + usize::from(after.starts_with('<'));
                 changes.push((start..start + dest.len(), to(dest)));
             }
         }
         at += line.len();
     }
+    // Apart: a change inside one kept already is dropped.
     changes.sort_by_key(|(r, _)| r.start);
-    changes.dedup_by(|a, b| a.0 == b.0);
+    changes.dedup_by(|later, kept| later.0.start < kept.0.end);
     let count = changes.len();
     (count > 0).then(|| (splice(text, &changes), count))
 }
@@ -159,6 +149,16 @@ mod tests {
             "# New\nbody\n"
         );
         assert_eq!(retitled("just text\n", "file-name", "New"), None);
+        // The heading the vault reads the title from, at any level, not a
+        // comment in code before it.
+        assert_eq!(
+            retitled("## Old ##\nbody\n", "Old", "New").unwrap(),
+            "## New ##\nbody\n"
+        );
+        assert_eq!(
+            retitled("```sh\n# Old\n```\n# Old\n", "Old", "New").unwrap(),
+            "```sh\n# Old\n```\n# New\n"
+        );
     }
 
     #[test]
@@ -173,5 +173,25 @@ mod tests {
         );
         assert_eq!(n, 2);
         assert_eq!(relinked("no links\n", from, old, new), None);
+    }
+
+    #[test]
+    fn a_definition_after_an_inline_link_on_its_line_is_found_after_its_colon() {
+        // Found in REVIEW-001: the definition's change was placed inside the
+        // inline link's destination, and the two overlapped.
+        let from = Path::new("/v/a.md");
+        let (old, new) = (Path::new("/v/b.md"), Path::new("/v/c.md"));
+        for (text, want) in [
+            (
+                "[Hotels](b.md#rooms) and [b]: b.md\n",
+                "[Hotels](c.md#rooms) and [b]: c.md\n",
+            ),
+            (
+                "[see](./b.md) then [x]: <b.md>\n",
+                "[see](c.md) then [x]: <c.md>\n",
+            ),
+        ] {
+            assert_eq!(relinked(text, from, old, new).unwrap().0, want, "{text}");
+        }
     }
 }

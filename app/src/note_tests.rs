@@ -63,10 +63,7 @@ fn a_rename_moves_the_file_retitles_it_and_its_links_follow_then_undo() {
         read(&root.join("sub/trip.md")),
         "# Trip\n- [ ] [Hotels](../2026-09-30-lisbon-stays.md)\n"
     );
-    assert_eq!(
-        app.toast.as_deref(),
-        Some("Renamed to Lisbon stays: 2 links follow")
-    );
+    assert_eq!(app.toast(), Some("Renamed to Lisbon stays: 2 links follow"));
     assert_eq!(app.path.as_ref(), Some(&new), "the open note follows");
     assert!(app.editor.text().contains("title: Lisbon stays"));
     // Undo: the file, its title and every link back.
@@ -79,7 +76,9 @@ fn a_rename_moves_the_file_retitles_it_and_its_links_follow_then_undo() {
     // autosave is off (on, it writes the note first).
     app.settings.autosave = false;
     note(&mut app, NoteMessage::StartRename(None));
-    assert!(matches!(&app.note_action, Some(NoteAction::Rename { path, .. }) if *path == old));
+    assert!(
+        matches!(&app.vault_view.note_action, Some(NoteAction::Rename { path, .. }) if *path == old)
+    );
     app.editor.insert_text("typed ");
     note(&mut app, NoteMessage::RenameText("Elsewhere".into()));
     note(&mut app, NoteMessage::Confirm);
@@ -94,10 +93,13 @@ fn delete_asks_then_undo_brings_the_note_back_open() {
     let hotels = root.join("2026-09-30-lisbon-hotels.md");
     let plan = root.join("plan.md");
     note(&mut app, NoteMessage::StartDelete(plan.clone()));
-    assert_eq!(app.note_action, Some(NoteAction::Delete(plan.clone())));
+    assert_eq!(
+        app.vault_view.note_action,
+        Some(NoteAction::Delete(plan.clone()))
+    );
     note(&mut app, NoteMessage::Confirm);
     assert!(!plan.exists());
-    assert_eq!(app.toast.as_deref(), Some("Deleted Plan"));
+    assert_eq!(app.toast(), Some("Deleted Plan"));
     let _ = app.update(Message::Undo);
     assert!(read(&plan).starts_with("# Plan"));
     // The open note: an empty one in its place, back open after Undo.
@@ -120,18 +122,20 @@ fn duplicate_opens_a_copy_and_copy_link_says_so_without_undo() {
     note(&mut app, NoteMessage::Duplicate(hotels.clone()));
     assert!(read(&copy).contains("title: Lisbon hotels copy"));
     assert_eq!(app.path.as_ref(), Some(&copy));
-    assert_eq!(
-        app.toast.as_deref(),
-        Some("Duplicated as Lisbon hotels copy")
-    );
+    assert_eq!(app.toast(), Some("Duplicated as Lisbon hotels copy"));
     let _ = app.update(Message::Undo);
     assert!(!copy.exists());
     assert_eq!(app.path.as_ref(), Some(&hotels), "back to the original");
     // A link from the open note, to paste; nothing to undo.
     let _ = app.update(Message::Opened(Some(root.join("sub/trip.md"))));
     note(&mut app, NoteMessage::CopyLink(hotels.clone()));
-    assert_eq!(app.toast.as_deref(), Some("Copied a link to Lisbon hotels"));
-    assert!(!app.toast_undo);
+    assert_eq!(app.toast(), Some("Copied a link to Lisbon hotels"));
+    assert!(
+        app.vault_view
+            .toast
+            .as_ref()
+            .is_some_and(|toast| !toast.undo)
+    );
     std::fs::remove_dir_all(&root).unwrap();
 }
 
@@ -196,4 +200,66 @@ fn a_note_outside_the_vault_moves_or_copies_in_with_front_matter_and_back() {
     send(&mut app, IntoVault::Dismiss);
     assert!(app.outside_bar().is_none());
     std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_text_file_moved_into_the_vault_becomes_a_markdown_note_it_lists() {
+    use crate::into_vault::IntoVault;
+    let base = std::env::temp_dir().join(format!("livemark-into-txt-{}", std::process::id()));
+    let (vault_dir, away) = (base.join("vault"), base.join("away"));
+    std::fs::create_dir_all(&vault_dir).unwrap();
+    std::fs::create_dir_all(&away).unwrap();
+    let outside = away.join("list.txt");
+    write(&outside, "milk\n", 0);
+    let mut app = App::open(Some(outside.clone()), None);
+    let _ = app.update(Message::Vault(crate::sidebar::VaultMessage::Picked(Some(
+        vault_dir.clone(),
+    ))));
+    let inside = app.vault.as_ref().unwrap().root.join("list.md");
+    let _ = app.update(Message::IntoVault(IntoVault::Move));
+    assert_eq!(app.path.as_ref(), Some(&inside));
+    let listed = app
+        .vault
+        .as_ref()
+        .unwrap()
+        .notes
+        .iter()
+        .any(|n| n.path == inside);
+    assert!(listed, "listed in the sidebar");
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_change_written_part_way_keeps_the_undo_of_what_it_wrote() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = std::env::temp_dir().join(format!("livemark-partway-{}", std::process::id()));
+    let locked = dir.join("locked");
+    std::fs::create_dir_all(&locked).unwrap();
+    let (a, b) = (dir.join("a.md"), locked.join("b.md"));
+    write(&a, "a\n", 0);
+    write(&b, "b\n", 0);
+    // Changed on disk since it was read: nothing written.
+    let stale = crate::undo::write(vec![
+        (a.clone(), "a\n".into(), "A\n".into()),
+        (b.clone(), "old b\n".into(), "B\n".into()),
+    ]);
+    let (undo, error) = *stale.unwrap_err();
+    assert!(error.contains("changed on disk"), "{error}");
+    assert_eq!((undo.count(), read(&a)), (0, "a\n".into()));
+    // A folder that takes no new file: the first is written, then it stops,
+    // with the Undo of the first.
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let partway = crate::undo::write(vec![
+        (a.clone(), "a\n".into(), "A\n".into()),
+        (b.clone(), "b\n".into(), "B\n".into()),
+    ]);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (undo, _) = *partway.unwrap_err();
+    assert_eq!(
+        (undo.count(), read(&a), read(&b)),
+        (1, "A\n".into(), "b\n".into())
+    );
+    assert_eq!(undo.restore(), Ok(0));
+    assert_eq!(read(&a), "a\n");
+    std::fs::remove_dir_all(&dir).unwrap();
 }

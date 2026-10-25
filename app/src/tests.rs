@@ -454,5 +454,41 @@ fn autosave_writes_after_the_quiet_on_leaving_and_before_another_note() {
     write(&b, "theirs\n", 30);
     let _ = app.update(Message::Blurred);
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "theirs\n");
+    // With the window in focus, the quiet's end asks about it at once.
+    assert!(!app.changed);
+    app.last_edit = Some(Instant::now() - Duration::from_secs(3));
+    let _ = app.autosave_tick();
+    assert!(app.changed, "Load it or Keep mine asked");
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "theirs\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn ctrl_s_writes_at_once_and_a_late_save_as_leaves_the_open_note_alone() {
+    let dir = std::env::temp_dir().join(format!("livemark-late-save-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b, copy) = (dir.join("a.md"), dir.join("b.md"), dir.join("copy.md"));
+    write(&a, "alpha\n", 0);
+    write(&b, "bravo\n", 0);
+    let mut app = App::open(Some(a.clone()), None);
+    app.settings.autosave = true;
+    // Ctrl+S on a note with a file: written before the next message.
+    app.editor.insert_text("typed ");
+    let _ = app.update(Message::Save { choose: false });
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "typed alpha\n");
+    assert!(!app.unsaved());
+    // Save as: the dialog stays up while another note opens, then answers.
+    let (version, opened) = (app.editor.version(), app.opened);
+    let _ = app.update(Message::Save { choose: true });
+    let _ = app.update(Message::Opened(Some(b.clone())));
+    assert_eq!(app.editor.text(), "bravo\n");
+    std::fs::write(&copy, "typed alpha\n").unwrap();
+    let _ = app.update(Message::Saved(Ok(Some(copy.clone())), version, opened));
+    assert_eq!(app.path.as_ref(), Some(&b), "b keeps its file");
+    assert!(!app.unsaved());
+    // Leaving the window writes nothing over the copy.
+    let _ = app.update(Message::Blurred);
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "typed alpha\n");
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "bravo\n");
     std::fs::remove_dir_all(&dir).unwrap();
 }

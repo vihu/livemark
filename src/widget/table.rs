@@ -5,6 +5,7 @@
 //! sized by `fit`, and placed by the delimiter row's alignment. The
 //! delimiter row's line is shaped short and drawn as the rule under the
 //! header.
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -13,9 +14,11 @@ use iced::advanced::graphics::text::{Raw, cosmic_text};
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Border, Color, Point, Rectangle, Size, Vector};
 
+use super::lines::{Lines, Source};
+use super::marks::marks_in;
 use super::shape::{Colors, shape};
 use crate::layout::{Affinity, Line};
-use crate::style::{Align, Style, Styled, Table};
+use crate::style::{Align, MarkKind, Style, Styled, Table};
 
 /// Space between a cell's border and its text, at 100%.
 const PAD: f32 = 8.0;
@@ -298,4 +301,92 @@ fn widest_word(buffer: &cosmic_text::Buffer) -> f32 {
 /// when the row has fewer cells.
 fn cell_range(range: &Range<usize>, cells: &[Range<usize>], column: usize) -> Range<usize> {
     cells.get(column).cloned().unwrap_or(range.end..range.end)
+}
+
+/// The table and row line `index` is drawn as, when it is a grid row.
+pub(super) fn table_row(source: &Source, index: usize) -> Option<(usize, usize)> {
+    marks_in(source.concealed, source.doc.line_range(index)).find_map(|m| match m.kind {
+        MarkKind::TableRow(table, row) => Some((table, row)),
+        _ => None,
+    })
+}
+
+impl Lines {
+    /// Table `index` of `source` as a grid.
+    pub fn grid(&mut self, source: &Source, index: usize) -> Arc<Grid> {
+        let table = &source.styled.tables()[index];
+        let mut hasher = DefaultHasher::new();
+        source.doc.text()[table.range.clone()].hash(&mut hasher);
+        // Its styling too, relative to its start: a link reference
+        // definition elsewhere changes how its cells look.
+        let start = table.range.start;
+        let runs = source.styled.runs();
+        let first = runs.partition_point(|(r, _)| r.end <= start);
+        for (r, style) in runs[first..]
+            .iter()
+            .take_while(|(r, _)| r.start < table.range.end)
+        {
+            (r.start.saturating_sub(start), r.end - start, style).hash(&mut hasher);
+        }
+        for m in &table.markers {
+            (m.start - start, m.end - start).hash(&mut hasher);
+        }
+        // The room right of where it starts (a list item's or quote's
+        // indent), not the whole width.
+        let width = (self.width - self.grid_x(source, index)).max(0.0);
+        width.to_bits().hash(&mut hasher);
+        for color in [
+            self.colors.text,
+            self.colors.marker,
+            self.colors.code,
+            self.colors.link,
+        ] {
+            color.into_rgba8().hash(&mut hasher);
+        }
+        self.zoom.to_bits().hash(&mut hasher);
+        let key = hasher.finish();
+        self.grids_used.push(key);
+        if let Some(grid) = self.grids.get(&key) {
+            return grid.clone();
+        }
+        let grid = Arc::new(Grid::new(
+            source.doc.text(),
+            source.styled,
+            table,
+            (self.colors, self.zoom),
+            width,
+        ));
+        self.grids.insert(key, grid.clone());
+        grid
+    }
+
+    /// The source offset under `x`, `y` in the text area when that is a
+    /// table drawn as a grid: in the cell there (a click on the rule
+    /// under the header goes to the header's first cell).
+    pub fn table_hit(&mut self, source: &Source, x: f32, y: f32) -> Option<usize> {
+        let (index, top) = self.line_at_y(source, y);
+        let range = source.doc.line_range(index);
+        let mark = marks_in(source.concealed, range)
+            .find(|m| matches!(m.kind, MarkKind::TableRow(..) | MarkKind::TableRule(_)))?
+            .clone();
+        // The rule is under the header's last row.
+        let (table, row, y) = match mark.kind {
+            MarkKind::TableRow(table, row) => (table, row, y - top),
+            MarkKind::TableRule(table) => (table, 0, f32::MAX),
+            _ => return None,
+        };
+        let start = self.grid_x(source, table);
+        let grid = self.grid(source, table);
+        Some(grid.hit(&source.styled.tables()[table], row, x - start, y))
+    }
+
+    /// Where table `table`'s grid starts, from the text area's left edge:
+    /// at its header row's first pipe, for every row (rows after the first
+    /// can have other prefixes, and the delimiter row's line is thin).
+    pub fn grid_x(&mut self, source: &Source, table: usize) -> f32 {
+        let header = source.styled.tables()[table].rows[0].0.start;
+        // Its text, not its height, which is the grid's.
+        let shaped = self.shaped_text(source, source.doc.line_at(header));
+        super::marks::start_x(&shaped, header)
+    }
 }

@@ -8,8 +8,9 @@ use iced::advanced::image::{self, Renderer as _};
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::{Color, Point, Rectangle, Size, Theme, Vector};
 
-use super::lines::{Shaped, marks_in};
+use super::lines::Shaped;
 use super::marks;
+use super::marks::marks_in;
 use super::shape::{Colors, TEXT_SIZE, readable};
 use super::{Editor, Pane};
 use crate::style::{MarkKind, Style};

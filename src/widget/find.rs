@@ -10,6 +10,7 @@ use iced::{Element, Fill, Task};
 
 use super::{Editor, ID, Input, Message};
 use crate::doc::Selection;
+use crate::edit::Direction;
 use crate::edit::find::{self, Query, next_match};
 
 const FIND: Id = Id::new("livemark-find");
@@ -97,7 +98,12 @@ impl Editor {
             FindInput::Replacement(text) => state.replacement = text,
             FindInput::Step { forward } => {
                 let query = state.query.clone();
-                find::find(&mut self.doc, &query, forward && !self.shift);
+                let direction = if forward && !self.shift {
+                    Direction::Forward
+                } else {
+                    Direction::Back
+                };
+                find::find(&mut self.doc, &query, direction);
             }
             FindInput::Replace => {
                 let (query, replacement) = (state.query.clone(), state.replacement.clone());

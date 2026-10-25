@@ -129,7 +129,7 @@ impl App {
         .spacing(16)
         .padding([8, 12]);
         let mut table = column![];
-        for (tag, count, used) in sorted(vault, tags.clone(), manager) {
+        for (tag, count, used) in sorted(vault, tags, manager) {
             table = table
                 .push(self.manager_row(manager, tag, count, used))
                 .push(rule::horizontal(1).style(|theme: &Theme| rule::Style {
@@ -248,7 +248,7 @@ impl App {
             background: on.then(|| theme.palette().primary.base.color.scale_alpha(0.08).into()),
             ..container::Style::default()
         });
-        let below = match &self.tag_action {
+        let below = match &self.vault_view.tag_action {
             Some(TagAction::Rename {
                 tag: renaming,
                 value,

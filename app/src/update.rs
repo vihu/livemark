@@ -37,10 +37,7 @@ impl App {
         match message {
             // The note is out of sight behind the tag manager: its toolbar
             // does nothing meanwhile.
-            Message::Editor(_) if self.manager.is_some() || self.appearance => {}
-            Message::Editor(message) if message.pasted_image().is_some() => {
-                return self.paste_picture(message.pasted_image().unwrap_or_default());
-            }
+            Message::Editor(_) if self.vault_view.manager.is_some() || self.appearance => {}
             Message::Dropped(file) => return self.dropped(file),
             Message::Vault(message) => return self.vault_update(message),
             Message::Tag(message) => return self.tag_update(message),
@@ -48,6 +45,10 @@ impl App {
             Message::Note(message) => return self.note_update(message),
             Message::Search(message) => return self.search_update(message),
             Message::Editor(message) => {
+                // Encoded once, as the clipboard's picture comes.
+                if let Some(png) = message.pasted_image() {
+                    return self.paste_picture(png);
+                }
                 if let Some(tag) = message.tag() {
                     self.show_tag(tag);
                 }
@@ -93,14 +94,34 @@ impl App {
             // saved: ask first (Load it, Keep mine), then save again.
             Message::Save { choose: false } if self.changed_on_disk() => self.changed = true,
             Message::Save { choose } => {
-                let text = self.editor.text().to_owned();
                 let version = self.editor.version();
-                let path = self.path.clone().filter(|_| !choose);
-                return Task::perform(file::save_as(path, text), move |result| {
-                    Message::Saved(result, version)
+                // A known file is written here and now, as autosave writes
+                // it: only the dialog waits, and nothing is written while
+                // the window goes on.
+                if let Some(path) = self.path.clone().filter(|_| !choose) {
+                    let saved = file::save(&path, self.editor.text())
+                        .map(|()| Some(path.clone()))
+                        .map_err(|e| format!("{}: {e}", path.display()));
+                    return self.update(Message::Saved(saved, version, self.opened));
+                }
+                let text = self.editor.text().to_owned();
+                let opened = self.opened;
+                return Task::perform(file::save_as(text), move |result| {
+                    Message::Saved(result, version, opened)
                 });
             }
-            Message::Saved(Ok(Some(path)), version) => {
+            // Saved as while another note opened: the file holds the note
+            // that was saved, and the one open now keeps its own file.
+            Message::Saved(result, _, opened) if opened != self.opened => match result {
+                Ok(Some(path)) => {
+                    self.settings.opened(&path);
+                    self.remember();
+                    self.refresh_vault();
+                }
+                Ok(None) => {}
+                Err(error) => self.error = Some(error),
+            },
+            Message::Saved(Ok(Some(path)), version, _) => {
                 self.error = None;
                 self.stamp = file::modified(&path);
                 self.changed = false;
@@ -110,10 +131,10 @@ impl App {
                 }
                 self.settings.opened(&path);
                 self.remember();
-                self.path = Some(path);
+                self.path = Some(path.clone());
                 self.saved = version;
                 self.load_images();
-                self.refresh_vault();
+                self.refresh_saved(&path);
                 // A picture pasted before the note had a place.
                 if let Some(png) = self.waiting_picture.take() {
                     let _ = self.paste_picture(png);
@@ -127,8 +148,8 @@ impl App {
                     }
                 }
             }
-            Message::Saved(Ok(None), _) => self.pending = None,
-            Message::Saved(Err(error), _) => {
+            Message::Saved(Ok(None), ..) => self.pending = None,
+            Message::Saved(Err(error), ..) => {
                 self.error = Some(error);
                 self.pending = None;
             }
@@ -178,7 +199,7 @@ impl App {
             Message::Recent(path) => return self.update(Message::Opened(Some(path))),
             Message::Resize(resize) => self.resize_update(resize),
             Message::Undo => {
-                self.toast = None;
+                self.vault_view.toast = None;
                 match self.undo_last() {
                     Ok(0) => {}
                     Ok(kept) => {
@@ -190,27 +211,29 @@ impl App {
                     Err(error) => self.error = Some(error),
                 }
             }
-            Message::DismissToast => self.toast = None,
+            Message::DismissToast => self.vault_view.toast = None,
             Message::IntoVault(message) => return self.bring_in_update(message),
             Message::Pressed { at, right } => {
                 self.pointer = at;
                 // A right press elsewhere closes the menu; one on something
                 // with a menu opens that next.
                 if right {
-                    self.context = None;
+                    self.vault_view.context = None;
                 }
             }
             Message::Context(message) => return self.context_update(message),
             Message::Paste(text) => {
-                if let Some(text) = text.filter(|_| self.manager.is_none() && !self.appearance) {
+                if let Some(text) =
+                    text.filter(|_| self.vault_view.manager.is_none() && !self.appearance)
+                {
                     self.editor.insert_text(&text);
                     return self.typed();
                 }
             }
             Message::Escape => {
-                self.context = None;
-                self.tag_action = None;
-                self.note_action = None;
+                self.vault_view.context = None;
+                self.vault_view.tag_action = None;
+                self.vault_view.note_action = None;
             }
             Message::Sidebar => {
                 self.settings.sidebar = !self.settings.sidebar;

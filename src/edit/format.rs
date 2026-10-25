@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use super::word_at;
 use crate::doc::{Change, Doc, Kind, Selection};
+use crate::layout::Affinity;
 use crate::style::{Styled, Syntax};
 
 /// An inline format with a toggle key.
@@ -317,7 +318,7 @@ fn strictly_in_word(doc: &Doc, at: usize) -> Option<std::ops::Range<usize>> {
     let word = |c: char| c.is_alphanumeric() || c == '_';
     let before = text[..at].chars().next_back().is_some_and(word);
     let after = text[at..].chars().next().is_some_and(word);
-    (before && after).then(|| word_at(doc, at, false))
+    (before && after).then(|| word_at(doc, at, Affinity::After))
 }
 
 /// Ctrl/Cmd+K (REFERENCE-001 section 12): a selected URL becomes

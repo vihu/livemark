@@ -71,7 +71,7 @@ impl App {
         match message {
             AppearanceMessage::Open => {
                 self.menu = false;
-                self.manager = None;
+                self.vault_view.manager = None;
                 self.appearance = true;
             }
             AppearanceMessage::Close => {

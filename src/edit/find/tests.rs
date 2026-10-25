@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use super::{Query, find, next_match, prev_match, replace, replace_all};
 use crate::doc::{Doc, Selection};
+use crate::edit::Direction;
 
 fn query(text: &str) -> Query {
     Query {
@@ -44,11 +45,11 @@ fn next_and_previous_wrap_around() {
         "the only match, already selected"
     );
     let mut doc = Doc::new("a cat, a Cat".into());
-    assert!(find(&mut doc, &query("cat"), true));
+    assert!(find(&mut doc, &query("cat"), Direction::Forward));
     assert_eq!(doc.selection(), Selection { anchor: 2, head: 5 });
-    assert!(find(&mut doc, &query("cat"), true));
+    assert!(find(&mut doc, &query("cat"), Direction::Forward));
     assert_eq!(selected(&doc), "Cat");
-    assert!(!find(&mut doc, &query("dog"), true));
+    assert!(!find(&mut doc, &query("dog"), Direction::Forward));
 }
 
 #[test]

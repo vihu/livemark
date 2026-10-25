@@ -12,17 +12,26 @@ use std::ops::Range;
 /// title's own first word and words in its order a little more. An empty
 /// query matches every title equally.
 pub fn title_match(title: &str, query: &str) -> Option<(i32, Vec<Range<usize>>)> {
-    let words = words_of(title);
+    title_match_in(title, &words_of(title), query)
+}
+
+/// [`title_match`] with the title's words worked out already
+/// ([`words_of`], kept with each note), for a query run over every note.
+pub fn title_match_in(
+    title: &str,
+    words: &[(Range<usize>, Vec<char>)],
+    query: &str,
+) -> Option<(i32, Vec<Range<usize>>)> {
     let mut score = 0;
     let mut marks: Vec<Range<usize>> = Vec::new();
     let mut last = None;
-    for wanted in query.split_whitespace().map(str::to_lowercase) {
-        let wanted: Vec<char> = wanted.chars().collect();
+    for typed in query.split_whitespace().map(str::to_lowercase) {
+        let wanted: Vec<char> = typed.chars().collect();
         let best = words
             .iter()
             .enumerate()
             .filter_map(|(i, (range, word))| {
-                word_match(&wanted, word, &title[range.clone()]).map(|(points, within)| {
+                word_match(&wanted, &typed, word, &title[range.clone()]).map(|(points, within)| {
                     (
                         points,
                         i,
@@ -47,16 +56,26 @@ pub fn title_match(title: &str, query: &str) -> Option<(i32, Vec<Range<usize>>)>
     Some((score, marks))
 }
 
-/// One query word against one title word (lowercase `word`, `original` as
-/// written): its points and the stretch of `original` it covers.
-fn word_match(wanted: &[char], word: &[char], original: &str) -> Option<(i32, Range<usize>)> {
-    // Byte offsets of the original word's characters, to mark them.
-    let at: Vec<usize> = original
-        .char_indices()
-        .map(|(i, _)| i)
-        .chain([original.len()])
-        .collect();
-    let span = |from: usize, to: usize| at[from.min(at.len() - 1)]..at[to.min(at.len() - 1)];
+/// One query word (`wanted`, its characters, as `typed`) against one
+/// title word (lowercase `word`, `original` as written): its points and
+/// the stretch of `original` it covers.
+fn word_match(
+    wanted: &[char],
+    typed: &str,
+    word: &[char],
+    original: &str,
+) -> Option<(i32, Range<usize>)> {
+    // Byte offsets of the original word's characters, to mark them: only
+    // for a match, so nothing is allocated for the words that miss.
+    let span = |from: usize, to: usize| {
+        let at = |n: usize| {
+            original
+                .char_indices()
+                .nth(n)
+                .map_or(original.len(), |(i, _)| i)
+        };
+        at(from)..at(to)
+    };
     let (n, len) = (wanted.len(), word.len());
     if word == wanted {
         return Some((100, span(0, len)));
@@ -76,9 +95,9 @@ fn word_match(wanted: &[char], word: &[char], original: &str) -> Option<(i32, Ra
     };
     // The whole word, or its start as far as typed: optimal string
     // alignment, so two letters swapped are one typo.
-    let text = |chars: &[char]| chars.iter().collect::<String>();
     let near = |to: &[char]| {
-        n.abs_diff(to.len()) <= most && strsim::osa_distance(&text(wanted), &text(to)) <= most
+        n.abs_diff(to.len()) <= most
+            && strsim::osa_distance(typed, &to.iter().collect::<String>()) <= most
     };
     if near(word) {
         return Some((40, span(0, len)));
@@ -90,7 +109,7 @@ fn word_match(wanted: &[char], word: &[char], original: &str) -> Option<(i32, Ra
 }
 
 /// A title's words (letters and digits) with their byte ranges, lowercase.
-fn words_of(title: &str) -> Vec<(Range<usize>, Vec<char>)> {
+pub fn words_of(title: &str) -> Vec<(Range<usize>, Vec<char>)> {
     let mut words = Vec::new();
     let mut start = None;
     for (i, c) in title.char_indices().chain([(title.len(), ' ')]) {

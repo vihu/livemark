@@ -42,7 +42,7 @@ impl App {
         match file::load(&path) {
             Ok(text) => {
                 let selection = self.editor.selection();
-                self.editor = self.editor_for(text);
+                self.replace_editor(text);
                 self.tried.clear();
                 self.editor.select(selection.anchor, selection.head);
                 self.saved = self.editor.version();
@@ -75,7 +75,7 @@ impl App {
         }
         match file::load(&path) {
             Ok(text) => {
-                self.editor = self.editor_for(text);
+                self.replace_editor(text);
                 self.tried.clear();
                 self.saved = self.editor.version();
                 // Versions start again with a new editor.
@@ -83,7 +83,7 @@ impl App {
                 self.stamp = file::modified(&path);
                 self.changed = false;
                 // A note picked goes back from the tag manager to it.
-                self.manager = None;
+                self.vault_view.manager = None;
                 self.appearance = false;
                 self.settings.opened(&path);
                 self.remember();
@@ -103,7 +103,7 @@ impl App {
     /// An empty, untitled note in place of the current one.
     pub(crate) fn new_note(&mut self) -> Task<Message> {
         self.path = None;
-        self.editor = self.editor_for(String::new());
+        self.replace_editor(String::new());
         self.tried.clear();
         self.saved = self.editor.version();
         self.discarded = None;

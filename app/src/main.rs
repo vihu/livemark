@@ -55,12 +55,43 @@ use iced::{Task, Theme, window};
 use livemark::widget::{self, Editor};
 use settings::Settings;
 
+/// A crash's message and backtrace also go to `crash.log` next to the
+/// settings, before the usual report on stderr: started from a launcher,
+/// stderr goes nowhere.
+fn keep_crashes() {
+    let Some(log) = Settings::path().and_then(|file| Some(file.parent()?.join("crash.log"))) else {
+        return;
+    };
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        use std::io::Write as _;
+        if let Some(folder) = log.parent() {
+            let _ = std::fs::create_dir_all(folder);
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log);
+        if let Ok(mut file) = file {
+            let _ = writeln!(
+                file,
+                "livemark {} at {}: {info}\n{}\n",
+                env!("CARGO_PKG_VERSION"),
+                jiff::Timestamp::now(),
+                std::backtrace::Backtrace::force_capture()
+            );
+        }
+        report(info);
+    }));
+}
+
 pub fn main() -> iced::Result {
     let args = <cli::Args as clap::Parser>::parse();
     // `livemark note ...`, `livemark tags`: no window (`cli.rs`).
     if let Some(command) = args.command {
         std::process::exit(cli::run(command));
     }
+    keep_crashes();
     let path = args.file;
     let settings_file = Settings::path();
     let (settings, settings_error) = match settings_file.as_deref().map(Settings::load) {
@@ -140,8 +171,6 @@ struct App {
     appearance: bool,
     /// The sidebar's edge is being dragged.
     resizing: bool,
-    /// The file whose "outside the vault" bar was closed.
-    outside_dismissed: Option<PathBuf>,
     /// When the note was last edited, for autosave, and whether a wait
     /// for the quiet after it is under way.
     last_edit: Option<std::time::Instant>,
@@ -162,42 +191,63 @@ struct App {
     settings_file: Option<PathBuf>,
     /// A picture pasted into a note not saved yet: kept once it is.
     waiting_picture: Option<Vec<u8>>,
+    /// Counts the editors the note has been replaced by, so a Save as
+    /// that ends after another note opened leaves that note alone.
+    opened: u64,
     /// Whether the vault menu is open, and the list open beside it.
     menu: bool,
     submenu: Option<menu::Submenu>,
     /// The vault open, if any (PLAN-004).
     vault: Option<vault::Vault>,
+    /// What the window shows for it, and what passes with it.
+    vault_view: VaultView,
+    /// Where the pointer last pressed (a right-click menu opens there).
+    pointer: iced::Point,
+    /// What the editor was completing when choices were last offered.
+    completing: Option<livemark::widget::Completing>,
+}
+
+/// What the window shows for the open vault, and what passes with it:
+/// filters, lists, the search field, questions and menus, the tag manager,
+/// the last change's Undo. Back to its default when the vault is left or
+/// another is opened (`vaults.rs`), so nothing of one shows in another.
+#[derive(Default)]
+struct VaultView {
     /// Which notes the sidebar lists.
     shown: sidebar::Shown,
     /// Whether the sidebar lists every tag, not only the top eight.
     all_tags: bool,
-    /// The last change to the vault's files, while it can be undone.
-    undo: Option<undo::Undo>,
-    /// What the note over the text says, while it shows.
-    toast: Option<String>,
-    /// Whether it offers Undo (a change), or only says something done.
-    toast_undo: bool,
-    /// The question open under a note in the sidebar.
-    note_action: Option<note_actions::NoteAction>,
-    /// The right-click menu open, and where the pointer last pressed.
-    context: Option<context::Menu>,
-    pointer: iced::Point,
-    /// The sidebar's tag under the pointer, its tag with the menu open,
-    /// and the question open under one.
-    hovered_tag: Option<String>,
-    tag_action: Option<tag_actions::TagAction>,
+    /// Every match listed in the sidebar (Ctrl+Enter), until cleared.
+    listing: Option<search::Listing>,
+    /// The search field's results (Ctrl+P), while they show.
+    search: Option<search::Search>,
+    /// The title being typed for a new note in the vault.
+    naming: Option<String>,
     /// The tag manager, in place of the note while it is open.
     manager: Option<manager::Manager>,
     /// Look-alike tags the user chose to keep apart.
     kept_apart: Vec<(String, String)>,
-    /// The title being typed for a new note in the vault.
-    naming: Option<String>,
-    /// The search field's results (Ctrl+P), while they show.
-    search: Option<search::Search>,
-    /// Every match listed in the sidebar (Ctrl+Enter), until cleared.
-    listing: Option<search::Listing>,
-    /// What the editor was completing when choices were last offered.
-    completing: Option<livemark::widget::Completing>,
+    /// The sidebar tag with its menu or question open.
+    tag_action: Option<tag_actions::TagAction>,
+    /// The sidebar's tag under the pointer.
+    hovered_tag: Option<String>,
+    /// The question open under a note in the sidebar.
+    note_action: Option<note_actions::NoteAction>,
+    /// The right-click menu open.
+    context: Option<context::Menu>,
+    /// The last change to the vault's files, while it can be undone.
+    undo: Option<undo::Undo>,
+    /// What the note over the text says, while it shows.
+    toast: Option<Toast>,
+    /// The file whose "outside the vault" bar was closed.
+    outside_dismissed: Option<PathBuf>,
+}
+
+/// The note over the text: what it says, and whether it offers Undo (a
+/// change across the vault) or only says something done.
+struct Toast {
+    said: String,
+    undo: bool,
 }
 
 /// What happens once unsaved changes are saved or discarded.
@@ -219,9 +269,9 @@ enum Message {
     Save {
         choose: bool,
     },
-    /// Where it was written (`None` when the dialog was cancelled), and the
-    /// editor version that was written.
-    Saved(Result<Option<PathBuf>, String>, u64),
+    /// Where it was written (`None` when the dialog was cancelled), the
+    /// editor version that was written and `App::opened` at the time.
+    Saved(Result<Option<PathBuf>, String>, u64, u64),
     CloseRequested,
     /// The answer to "unsaved changes": save first, or discard them.
     Unsaved(Option<bool>),
@@ -305,7 +355,6 @@ impl App {
             system_mode: iced::theme::Mode::None,
             appearance: false,
             resizing: false,
-            outside_dismissed: None,
             last_edit: None,
             autosave_waiting: false,
             pending: None,
@@ -315,24 +364,12 @@ impl App {
             settings: Settings::default(),
             settings_file: None,
             waiting_picture: None,
+            opened: 0,
             menu: false,
             submenu: None,
             vault: None,
-            shown: sidebar::Shown::All,
-            all_tags: false,
-            undo: None,
-            toast: None,
-            toast_undo: false,
-            context: None,
+            vault_view: VaultView::default(),
             pointer: iced::Point::ORIGIN,
-            note_action: None,
-            hovered_tag: None,
-            tag_action: None,
-            manager: None,
-            kept_apart: Vec::new(),
-            naming: None,
-            search: None,
-            listing: None,
             completing: None,
         }
         .with_images()
@@ -378,6 +415,14 @@ impl App {
 
     /// A new editor for `text`, drawn as the current one: its zoom, mode,
     /// split ratio and line width carried over.
+    /// A new editor holding `text` in place of the note's: a save still
+    /// under way and a picture waiting for a place belonged to the old one.
+    fn replace_editor(&mut self, text: String) {
+        self.editor = self.editor_for(text);
+        self.opened += 1;
+        self.waiting_picture = None;
+    }
+
     fn editor_for(&self, text: String) -> Editor {
         let mut editor = Editor::new(text);
         editor.set_zoom(self.editor.zoom());

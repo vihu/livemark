@@ -167,26 +167,28 @@ impl Settings {
             })
     }
 
-    /// Writes them to `path`, making its folder.
+    /// Writes them to `path`, making its folder; through a temporary file,
+    /// as notes are, so a crash or a second instance never leaves half a
+    /// file (which the next start would set aside as broken).
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder)?;
         }
         let text = toml::to_string(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, text)
+        crate::file::save(path, &text)
     }
 
     /// Values out of range back to their defaults; System's pick by day a
     /// light theme, by night a dark one; at most ten recent files.
     fn checked(mut self) -> Self {
         let default = Self::default();
-        if !(0.5..=3.0).contains(&self.zoom) {
+        if !livemark::widget::ZOOMS.contains(&self.zoom) {
             self.zoom = default.zoom;
         }
         if !(0.5..=2.0).contains(&self.scale) {
             self.scale = default.scale;
         }
-        if !(0.2..=0.8).contains(&self.split) {
+        if !livemark::widget::SPLIT_RATIOS.contains(&self.split) {
             self.split = default.split;
         }
         if !SIDEBAR_WIDTHS.contains(&self.sidebar_width) {

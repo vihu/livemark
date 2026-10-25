@@ -84,7 +84,7 @@ impl Editor {
     pub fn completing(&self) -> Option<Completing> {
         let completion = &self.completion;
         let kind = completion.kind.filter(|_| !completion.dismissed)?;
-        let typed = &self.doc.text()[completion.range.clone()];
+        let typed = self.doc.text().get(completion.range.clone())?;
         let trigger = match kind {
             Complete::Link => 2,
             Complete::Tag if completion.listed => 0,
@@ -92,7 +92,7 @@ impl Editor {
         };
         Some(Completing {
             kind,
-            query: typed[trigger..].to_owned(),
+            query: typed.get(trigger..)?.to_owned(),
         })
     }
 
@@ -121,8 +121,12 @@ impl Editor {
         let listed = self.listed_tag().is_some();
         let completion = &mut self.completion;
         match found {
+            // The same trigger: an inline `#` and a list item at one offset
+            // (Undo in the `tags` list) are two triggers.
             Some((kind, range))
-                if completion.kind == Some(kind) && completion.range.start == range.start =>
+                if completion.kind == Some(kind)
+                    && completion.range.start == range.start
+                    && completion.listed == listed =>
             {
                 completion.range = range;
             }
@@ -167,8 +171,11 @@ impl Editor {
             .take_while(|&(_, c)| name(c))
             .last()
             .map_or(before.len(), |(i, _)| i);
-        // At least one letter typed: a lone `#` may be a heading.
-        if !before[..start].ends_with('#') {
+        // At least one letter typed: a lone `#` may be a heading. Not in
+        // front matter, where YAML reads a `#` as a comment (the `tags`
+        // list completes without one, above).
+        let in_front = self.styled.properties().is_some_and(|p| head < p.block.end);
+        if in_front || !before[..start].ends_with('#') {
             return None;
         }
         let hash = start - 1;
@@ -400,6 +407,34 @@ mod tests {
         assert_eq!(
             typed("[[").completing().map(|c| c.query),
             Some(String::new())
+        );
+    }
+
+    #[test]
+    fn a_hash_typed_in_the_tags_list_then_undone_completes_the_item() {
+        // Found in REVIEW-001: an inline `#b` completion kept at the
+        // item's offset after Undo read past the empty item.
+        use crate::widget::Key;
+        let text = "---\ntags: [a, ]\n---\nbody\n";
+        let mut editor = Editor::new(text.into());
+        let item = text.find(", ]").unwrap() + 2;
+        editor.select(item, item);
+        for typed in ["#", "b"] {
+            let _ = editor.update(Message(Input::Commit(typed.into())));
+            let completing = editor.completing();
+            assert!(
+                completing.is_none_or(|c| !c.query.starts_with('#')),
+                "no inline `#` completion in front matter"
+            );
+        }
+        while editor.text() != text {
+            let _ = editor.update(Message(Input::Key(Key::Undo)));
+            let _ = editor.completing();
+        }
+        assert_eq!(
+            editor.completing().map(|c| (c.kind, c.query)),
+            Some((Complete::Tag, String::new())),
+            "the list item, empty"
         );
     }
 }

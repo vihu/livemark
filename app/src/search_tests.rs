@@ -31,7 +31,8 @@ fn the_search_field_finds_titles_lines_and_tags_and_opens_them() {
     };
     // Each result by its group's first letter and its title or tag.
     let found = |app: &App| -> Vec<String> {
-        app.search
+        app.vault_view
+            .search
             .as_ref()
             .unwrap()
             .found
@@ -63,13 +64,13 @@ fn the_search_field_finds_titles_lines_and_tags_and_opens_them() {
     search(&mut app, SearchMessage::Move(1));
     search(&mut app, SearchMessage::Move(5));
     assert_eq!(
-        app.search.as_ref().unwrap().selected,
+        app.vault_view.search.as_ref().unwrap().selected,
         1,
         "stays on the last"
     );
     search(&mut app, SearchMessage::Choose(None));
-    assert!(app.search.is_none());
-    assert_eq!(app.shown, Shown::Tag("travel".into()));
+    assert!(app.vault_view.search.is_none());
+    assert_eq!(app.vault_view.shown, Shown::Tag("travel".into()));
     // A line opens its note with the match selected.
     search(&mut app, SearchMessage::Query("friday".into()));
     assert_eq!(found(&app), ["L Lisbon hotels 6"]);
@@ -81,7 +82,7 @@ fn the_search_field_finds_titles_lines_and_tags_and_opens_them() {
     // Escape closes without opening anything.
     search(&mut app, SearchMessage::Open);
     search(&mut app, SearchMessage::Close);
-    assert!(app.search.is_none());
+    assert!(app.vault_view.search.is_none());
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -106,7 +107,7 @@ fn ctrl_enter_lists_every_match_in_the_sidebar_until_cleared() {
         SearchMessage::Modifiers(iced::keyboard::Modifiers::COMMAND),
     );
     search(&mut app, SearchMessage::Choose(None));
-    assert!(app.listing.is_none());
+    assert!(app.vault_view.listing.is_none());
     search(&mut app, SearchMessage::Close);
     let _ = app.update(Message::Vault(VaultMessage::Picked(Some(dir.clone()))));
     search(&mut app, SearchMessage::Open);
@@ -116,8 +117,8 @@ fn ctrl_enter_lists_every_match_in_the_sidebar_until_cleared() {
         SearchMessage::Modifiers(iced::keyboard::Modifiers::COMMAND),
     );
     search(&mut app, SearchMessage::Choose(None));
-    assert!(app.search.is_none());
-    let listing = app.listing.as_ref().unwrap();
+    assert!(app.vault_view.search.is_none());
+    let listing = app.vault_view.listing.as_ref().unwrap();
     assert_eq!(listing.count, 2);
     let lines: Vec<usize> = listing.hits.iter().map(|h| h.lines.len()).collect();
     assert_eq!(lines, [1, 2], "most recent first, each with its lines");
@@ -129,9 +130,9 @@ fn ctrl_enter_lists_every_match_in_the_sidebar_until_cleared() {
     let first = listing.hits[0].lines[0].2.clone();
     let path = listing.hits[0].path.clone();
     search(&mut app, SearchMessage::Go(path, first));
-    assert!(app.listing.is_some());
+    assert!(app.vault_view.listing.is_some());
     search(&mut app, SearchMessage::Clear);
-    assert!(app.listing.is_none());
+    assert!(app.vault_view.listing.is_none());
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

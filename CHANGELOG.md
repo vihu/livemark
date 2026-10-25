@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.4.0 (2026-10-25)
+
+- Save as no longer hands the new file to a note opened while its dialog
+  was up, which could then be written over it; Ctrl+S writes at once.
+- Undo after typing a `#tag` in the front matter's `tags` list no longer
+  closes the app, and a `#` there no longer offers inline tags. Deleting
+  or merging a tag a note lists twice, and renaming a note linked from a
+  line with a reference definition after a link, no longer close it
+  either.
+- Typing in a vault with many tags is fast again: a keystroke at 1,000
+  tags took 96 ms, now 0.6 ms. Autosave and coming back to the window
+  read only what changed: 21 ms at 5,000 notes, now 3 ms. Search and `[[`
+  completion are about twice as fast.
+- Renames, tag edits and Move check that every file is still as read
+  before writing any, and keep their Undo when they stop part way.
+  Settings are written through a temporary file. Autosave says at once
+  when the file changed on disk.
+- A note's title comes from its first heading as the parser reads it,
+  never a `#` comment in code, and a rename changes that heading at any
+  level. Links to files with `#`, `?`, `%` or parentheses in their names
+  work. A `.txt` file moved into the vault becomes a `.md` note in its
+  list. Files that do not read are counted at the sidebar's foot.
+- `livemark note` fails when its body is not UTF-8 instead of writing an
+  empty note, and refuses `--tags` that would break the front matter;
+  `livemark search --limit` past 200 prints them all; output into a
+  closed pipe (`| head`) ends quietly.
+- A crash leaves its report in `crash.log` next to `settings.toml`.
+- For hosts: `widget::Selection`, `ZOOMS` and `SPLIT_RATIOS`;
+  `set_zoom` ignores NaN; Shift is published only while the find bar is
+  open.
+
 ## 0.3.3 (2026-10-15)
 
 - Tables wrap long cells instead of cutting them off: a column of short

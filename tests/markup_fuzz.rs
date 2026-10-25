@@ -9,7 +9,7 @@ use std::time::Duration;
 use common::Rng;
 use livemark::doc::{Doc, Selection};
 use livemark::edit::format::{self, Format};
-use livemark::edit::{self, lines, markup};
+use livemark::edit::{self, Direction, lines, markup};
 use livemark::style::Styled;
 
 mod common;
@@ -52,10 +52,10 @@ fn markup_commands_never_break_the_text() {
                 0 => edit::enter(&mut doc, now),
                 1 => markup::soft_break(&mut doc, now),
                 2 => edit::backspace(&mut doc, now),
-                3 => markup::indent(&mut doc, false, now),
-                4 => markup::indent(&mut doc, true, now),
-                10 => lines::move_lines(&mut doc, rng.below(2) == 0, now),
-                11 => lines::copy_lines(&mut doc, rng.below(2) == 0, now),
+                3 => markup::indent(&mut doc, Direction::Forward, now),
+                4 => markup::indent(&mut doc, Direction::Back, now),
+                10 => lines::move_lines(&mut doc, either(&mut rng), now),
+                11 => lines::copy_lines(&mut doc, either(&mut rng), now),
                 12 if rng.below(2) == 0 => lines::delete_lines(&mut doc, now),
                 12 => lines::blank_line(&mut doc, now),
                 _ => {
@@ -71,5 +71,14 @@ fn markup_commands_never_break_the_text() {
             );
         }
         while doc.undo() {}
+    }
+}
+
+/// Back or forward, half and half.
+fn either(rng: &mut Rng) -> Direction {
+    if rng.below(2) == 0 {
+        Direction::Forward
+    } else {
+        Direction::Back
     }
 }

@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 use iced::Task;
 
-use super::sidebar::Shown;
 use super::vault::Vault;
 use super::{App, Message};
 
@@ -73,22 +72,9 @@ impl App {
     }
 
     /// What belonged to the vault left: filters, lists, questions, the tag
-    /// manager, the last change's Undo.
+    /// manager, the last change's Undo (`VaultView`).
     fn leave_vault_state(&mut self) {
-        self.shown = Shown::All;
-        self.all_tags = false;
-        self.listing = None;
-        self.search = None;
-        self.manager = None;
-        self.naming = None;
-        self.tag_action = None;
-        self.note_action = None;
-        self.hovered_tag = None;
-        self.context = None;
-        self.undo = None;
-        self.toast = None;
-        self.kept_apart.clear();
-        self.outside_dismissed = None;
+        self.vault_view = super::VaultView::default();
     }
 
     /// The remembered vault, not the open one, that holds `path` (the

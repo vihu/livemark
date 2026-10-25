@@ -31,17 +31,14 @@ impl App {
         if file::is_picture(&file) {
             let dest = match &self.path {
                 Some(note) => file::link_to(note, &file),
-                None => file.to_string_lossy().replace(' ', "%20"),
+                None => file::link_path(&file.to_string_lossy()),
             };
             self.editor.insert_text(&format!("![]({dest})"));
             if let Ok(bytes) = std::fs::read(&file) {
                 self.editor.set_image(&dest, &bytes);
             }
             Task::none()
-        } else if file
-            .extension()
-            .is_some_and(|e| e == "md" || e == "markdown")
-        {
+        } else if file::is_markdown(&file) {
             self.update(Message::Opened(Some(file)))
         } else {
             Task::none()

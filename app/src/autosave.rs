@@ -41,7 +41,16 @@ impl App {
             self.autosave_waiting = true;
             return wait(QUIET - quiet);
         }
-        self.save_quietly();
+        // The file changed on disk while the window had focus: asked now
+        // (Load it, Keep mine), not only at the next focus or Ctrl+S.
+        if !self.save_quietly()
+            && self.settings.autosave
+            && self.unsaved()
+            && self.pending.is_none()
+            && self.changed_on_disk()
+        {
+            self.changed = true;
+        }
         Task::none()
     }
 
@@ -63,7 +72,7 @@ impl App {
                 self.saved = self.editor.version();
                 self.stamp = file::modified(&path);
                 self.last_edit = None;
-                self.refresh_vault();
+                self.refresh_saved(&path);
                 true
             }
             Err(error) => {

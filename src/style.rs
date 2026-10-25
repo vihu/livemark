@@ -378,4 +378,6 @@ impl Styled {
 }
 
 #[cfg(test)]
+mod block_tests;
+#[cfg(test)]
 mod tests;

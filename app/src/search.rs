@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use iced::{Task, keyboard};
 
-use super::matching::title_match;
+use super::matching::{title_match, title_match_in};
 use super::vault::{Note, Vault};
 use super::{App, Message};
 
@@ -21,7 +21,7 @@ pub(crate) const FIELD: iced::widget::Id = iced::widget::Id::new("livemark-searc
 
 /// The most notes listed in the sidebar, and lines a note.
 pub(crate) const NOTES: usize = 200;
-const LINES: usize = 5;
+pub(crate) const LINES: usize = 5;
 
 /// What the drop-down shows of each group; notes when nothing is typed.
 const TITLES: usize = 5;
@@ -131,7 +131,7 @@ pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
         .enumerate()
         .filter(|(_, note)| tagged(note, &tags))
         .filter_map(|(rank, note)| {
-            let (score, marks) = title_match(&note.title, &wanted)?;
+            let (score, marks) = title_match_in(&note.title, &note.title_words, &wanted)?;
             Some((score, rank, note, marks))
         })
         .collect();
@@ -147,7 +147,9 @@ pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
             Found::Note(note.title.clone(), meta, note.path.clone(), marks.clone())
         })
         .collect();
-    let (hits, count) = search(vault, query);
+    // Only what the drop-down shows: a line each, for as many notes as it
+    // lists, besides those it lists by title already.
+    let (hits, count) = search(vault, query, titles.len() + IN_TEXT, 1);
     let lines = hits
         .into_iter()
         .filter(|hit| !titles.iter().any(|(_, _, note, _)| note.path == hit.path))
@@ -167,10 +169,10 @@ pub fn find(vault: &Vault, query: &str) -> (Vec<Found>, usize) {
     if !prefixes.is_empty() {
         let names = vault
             .tags()
-            .into_iter()
+            .iter()
             .filter(|(tag, _)| prefixes.iter().any(|p| tag.starts_with(p.as_str())))
             .take(TAGS)
-            .map(|(tag, count)| Found::Tag(tag, count));
+            .map(|(tag, count)| Found::Tag(tag.clone(), *count));
         found.extend(names);
     }
     (found, count)
@@ -196,7 +198,7 @@ fn find_recent(recent: &[PathBuf], query: &str) -> Vec<Found> {
 
 /// The notes of `vault` with every word and tag in `query`, most recent
 /// first, and how many there are.
-pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
+pub fn search(vault: &Vault, query: &str, notes: usize, most: usize) -> (Vec<Hit>, usize) {
     let (words, tags) = split(query);
     if words.is_empty() && tags.is_empty() {
         return (Vec::new(), 0);
@@ -208,13 +210,13 @@ pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
             continue;
         }
         count += 1;
-        if hits.len() >= NOTES {
+        if hits.len() >= notes {
             continue;
         }
         hits.push(Hit {
             title: note.title.clone(),
             path: note.path.clone(),
-            lines: lines(&note.text, &words),
+            lines: lines(&note.text, &words, most),
         });
     }
     (hits, count)
@@ -222,7 +224,7 @@ pub fn search(vault: &Vault, query: &str) -> (Vec<Hit>, usize) {
 
 /// The lines of `text` with one of `words` in them: their number, the text
 /// around the first match and the match's range.
-fn lines(text: &str, words: &[String]) -> Vec<(usize, String, Range<usize>)> {
+fn lines(text: &str, words: &[String], most: usize) -> Vec<(usize, String, Range<usize>)> {
     let mut found = Vec::new();
     let mut start = 0;
     for (number, line) in text.split_inclusive('\n').enumerate() {
@@ -237,27 +239,39 @@ fn lines(text: &str, words: &[String]) -> Vec<(usize, String, Range<usize>)> {
         else {
             continue;
         };
-        // Lowercasing kept the bytes where they were: the match's own
-        // range; else the line's.
-        let range = if lower.len() == line.len() {
-            at + offset..at + offset + word.len()
-        } else {
-            at..at + line.len()
-        };
+        // The match's own bytes in the line as written, character by
+        // character (lowercasing can change a character's length); the
+        // whole line when the match starts or ends inside one.
+        let range = original(line, offset..offset + word.len())
+            .map_or(at..at + line.len(), |r| at + r.start..at + r.end);
         found.push((number + 1, around(line, range.start - at), range));
-        if found.len() == LINES {
+        if found.len() == most {
             break;
         }
     }
     found
 }
 
+/// The bytes of `line` that lowercase to `range` of its lowercase, when
+/// both ends fall between characters there.
+fn original(line: &str, range: Range<usize>) -> Option<Range<usize>> {
+    let mut lower = 0;
+    let mut start = None;
+    for (i, c) in line.char_indices() {
+        if lower == range.start {
+            start = Some(i);
+        }
+        if lower == range.end {
+            return Some(start?..i);
+        }
+        lower += c.to_lowercase().map(char::len_utf8).sum::<usize>();
+    }
+    (lower == range.end).then_some(start?..line.len())
+}
+
 /// Up to `AROUND` characters each side of byte `at` in `line`, trimmed.
 fn around(line: &str, at: usize) -> String {
-    let at = (0..=at.min(line.len()))
-        .rev()
-        .find(|&i| line.is_char_boundary(i))
-        .unwrap_or(0);
+    let at = line.floor_char_boundary(at);
     let before: String = line[..at]
         .chars()
         .rev()
@@ -283,8 +297,13 @@ impl App {
         match message {
             SearchMessage::Open => {
                 self.menu = false;
-                let query = self.search.take().map(|s| s.query).unwrap_or_default();
-                self.search = Some(Search {
+                let query = self
+                    .vault_view
+                    .search
+                    .take()
+                    .map(|s| s.query)
+                    .unwrap_or_default();
+                self.vault_view.search = Some(Search {
                     query,
                     ..Search::default()
                 });
@@ -292,27 +311,29 @@ impl App {
                 return iced::widget::operation::focus(FIELD);
             }
             SearchMessage::Query(query) => {
-                let search = self.search.get_or_insert_with(Search::default);
+                let search = self.vault_view.search.get_or_insert_with(Search::default);
                 search.query = query;
                 search.selected = 0;
                 self.find();
             }
             SearchMessage::Move(step) => {
-                if let Some(search) = &mut self.search {
+                if let Some(search) = &mut self.vault_view.search {
                     let last = search.found.len().saturating_sub(1) as i32;
                     search.selected = (search.selected as i32 + step).clamp(0, last) as usize;
                 }
             }
             SearchMessage::Modifiers(modifiers) => {
-                if let Some(search) = &mut self.search {
+                if let Some(search) = &mut self.vault_view.search {
                     search.command = modifiers.command();
                 }
             }
-            SearchMessage::Choose(None) if self.search.as_ref().is_some_and(|s| s.command) => {
+            SearchMessage::Choose(None)
+                if self.vault_view.search.as_ref().is_some_and(|s| s.command) =>
+            {
                 return self.list();
             }
             SearchMessage::Choose(at) => {
-                let Some(search) = self.search.take() else {
+                let Some(search) = self.vault_view.search.take() else {
                     return Task::none();
                 };
                 let chosen = search.found.into_iter().nth(at.unwrap_or(search.selected));
@@ -322,8 +343,8 @@ impl App {
                         return self.search_update(SearchMessage::Go(path, range));
                     }
                     Some(Found::Tag(tag, _)) => {
-                        self.listing = None;
-                        self.shown = super::sidebar::Shown::Tag(tag);
+                        self.vault_view.listing = None;
+                        self.vault_view.shown = super::sidebar::Shown::Tag(tag);
                         Task::none()
                     }
                     None => Task::none(),
@@ -331,7 +352,7 @@ impl App {
                 return Task::batch([task, livemark::widget::Editor::focus()]);
             }
             SearchMessage::Go(path, range) => {
-                self.search = None;
+                self.vault_view.search = None;
                 let task = self.update(Message::Opened(Some(path.clone())));
                 if self.path.as_ref() == Some(&path) {
                     self.editor.select(range.start, range.end);
@@ -339,17 +360,17 @@ impl App {
                 return Task::batch([task, livemark::widget::Editor::focus()]);
             }
             SearchMessage::Close => {
-                self.search = None;
+                self.vault_view.search = None;
                 return livemark::widget::Editor::focus();
             }
-            SearchMessage::Clear => self.listing = None,
+            SearchMessage::Clear => self.vault_view.listing = None,
         }
         Task::none()
     }
 
     /// The drop-down's results for its query.
     fn find(&mut self) {
-        let Some(search) = &mut self.search else {
+        let Some(search) = &mut self.vault_view.search else {
             return;
         };
         (search.found, search.count) = match &self.vault {
@@ -364,12 +385,16 @@ impl App {
         if self.vault.is_none() {
             return Task::none();
         }
-        let (Some(search), Some(vault)) = (self.search.take(), &self.vault) else {
+        let (Some(search), Some(vault)) = (self.vault_view.search.take(), &self.vault) else {
             return Task::none();
         };
-        let (hits, count) = self::search(vault, &search.query);
-        let generation = self.listing.as_ref().map_or(0, |l| l.generation + 1);
-        self.listing = Some(Listing {
+        let (hits, count) = self::search(vault, &search.query, NOTES, LINES);
+        let generation = self
+            .vault_view
+            .listing
+            .as_ref()
+            .map_or(0, |l| l.generation + 1);
+        self.vault_view.listing = Some(Listing {
             query: search.query,
             hits,
             count,
@@ -381,12 +406,12 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{around, lines};
+    use super::{LINES, around, lines};
 
     #[test]
     fn matching_lines_carry_their_range_and_some_context() {
         let text = "first line\nThe Hotel near Alfama\r\nnothing\nhotel again\n";
-        let found = lines(text, &["hotel".to_owned()]);
+        let found = lines(text, &["hotel".to_owned()], LINES);
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].0, 2);
         assert_eq!(&text[found[0].2.clone()], "Hotel");
@@ -398,8 +423,11 @@ mod tests {
                 && shown.contains("needle")
                 && shown.ends_with('\u{2026}')
         );
-        // A line whose lowercase is longer: the whole line is the range.
-        let text = "\u{130}stanbul hotel\n";
-        assert_eq!(lines(text, &["hotel".to_owned()])[0].2, 0..text.len() - 1);
+        // Lowercase longer or shorter by the character: the match's own
+        // bytes still (found in REVIEW-001: the length alone misled).
+        for text in ["\u{130}stanbul hotel\n", "\u{23a}hotel\u{1e9e}\n"] {
+            let range = lines(text, &["hotel".to_owned()], LINES)[0].2.clone();
+            assert_eq!(&text[range], "hotel", "{text:?}");
+        }
     }
 }
