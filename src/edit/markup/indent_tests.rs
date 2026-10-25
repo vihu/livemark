@@ -5,10 +5,20 @@ use std::time::Duration;
 use super::indent;
 use super::tests::{doc, shown};
 use crate::doc::{Doc, Selection};
+use crate::edit::Direction;
+
+/// Shift+Tab when `outdent`, else Tab.
+fn direction(outdent: bool) -> Direction {
+    if outdent {
+        Direction::Back
+    } else {
+        Direction::Forward
+    }
+}
 
 pub(super) fn tab(text: &str, outdent: bool) -> String {
     let mut doc = doc(text);
-    indent(&mut doc, outdent, Duration::ZERO);
+    indent(&mut doc, direction(outdent), Duration::ZERO);
     shown(&doc)
 }
 
@@ -29,7 +39,7 @@ fn tab_over(text: &str, outdent: bool) -> String {
     let (anchor, head) = (text.find('[').unwrap(), text.find(']').unwrap() - 1);
     let mut doc = Doc::new(text.replacen('[', "", 1).replacen(']', "", 1));
     doc.set_selection(Selection { anchor, head });
-    indent(&mut doc, outdent, Duration::ZERO);
+    indent(&mut doc, direction(outdent), Duration::ZERO);
     let range = doc.selection().range();
     let mut shown = doc.text().to_owned();
     shown.insert(range.end, ']');

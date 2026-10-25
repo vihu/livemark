@@ -5,7 +5,7 @@ use iced::Task;
 
 use super::{Editor, Input, Key, Message, Mode, Pane, Vertical};
 use crate::doc::Selection;
-use crate::edit::{self, Motion};
+use crate::edit::{self, Direction, Motion};
 use crate::layout::Affinity;
 use crate::style::Styled;
 
@@ -178,7 +178,7 @@ impl Editor {
                 Key::Insert(c) => edit::type_text(&mut self.doc, c.encode_utf8(&mut [0; 4]), now),
                 Key::Enter => edit::enter(&mut self.doc, now),
                 Key::SoftEnter => edit::markup::soft_break(&mut self.doc, now),
-                Key::Indent(outdent) => edit::markup::indent(&mut self.doc, outdent, now),
+                Key::Indent(direction) => edit::markup::indent(&mut self.doc, direction, now),
                 Key::Format(format) => {
                     edit::format::toggle(&mut self.doc, &self.styled, format, now);
                 }
@@ -186,8 +186,8 @@ impl Editor {
                 Key::AddTag => edit::properties::add_tag(&mut self.doc, &self.styled, now),
                 Key::Block(block) => edit::blocks::toggle(&mut self.doc, block, now),
                 Key::SetMode(mode) => self.set_mode(mode),
-                Key::MoveLines(down) => edit::lines::move_lines(&mut self.doc, down, now),
-                Key::CopyLines(down) => edit::lines::copy_lines(&mut self.doc, down, now),
+                Key::MoveLines(direction) => edit::lines::move_lines(&mut self.doc, direction, now),
+                Key::CopyLines(direction) => edit::lines::copy_lines(&mut self.doc, direction, now),
                 Key::DeleteLines => edit::lines::delete_lines(&mut self.doc, now),
                 Key::BlankLine => edit::lines::blank_line(&mut self.doc, now),
                 Key::Follow => {
@@ -207,20 +207,25 @@ impl Editor {
                 Key::Delete(Motion::Left) => edit::backspace(&mut self.doc, now),
                 Key::Delete(motion) => edit::delete(&mut self.doc, motion, now),
                 Key::Move(motion @ (Motion::LineStart | Motion::LineEnd), extend) => {
-                    side = self.line_boundary(motion == Motion::LineEnd, extend);
+                    let direction = if motion == Motion::LineEnd {
+                        Direction::Forward
+                    } else {
+                        Direction::Back
+                    };
+                    side = self.line_boundary(direction, extend);
                 }
                 Key::Move(motion, extend) => edit::go(&mut self.doc, motion, extend),
                 Key::Vertical(direction, extend) => {
                     side = self.vertical(direction, extend);
                     vertical = true;
                 }
-                Key::Copy(cut) => {
+                key @ (Key::Copy | Key::Cut) => {
                     // With nothing selected, the line (REFERENCE-001
                     // section 18); worked out here, after every earlier
                     // message, so a click just before is counted.
                     let (text, _, linewise) = edit::copied(&self.doc);
                     self.linewise = linewise.then(|| text.clone());
-                    if cut {
+                    if matches!(key, Key::Cut) {
                         edit::cut(&mut self.doc, now);
                     } else {
                         keep_view = true;
@@ -272,16 +277,16 @@ impl Editor {
     /// Home and End: the edge of the visual row, then of the source line,
     /// Home stopping at the indentation (REFERENCE-001 section 13). The
     /// caret stays on the row it moved to the edge of.
-    fn line_boundary(&mut self, forward: bool, extend: bool) -> Affinity {
+    fn line_boundary(&mut self, direction: Direction, extend: bool) -> Affinity {
         let selection = self.doc.selection();
         let side = self.side;
         let row = self.with_lines(|lines, source| lines.row_bounds(source, selection.head, side));
         let line = self.doc.line_range(self.doc.line_at(selection.head));
         let markup = self.styled.hang_at(line);
-        let head = edit::line_boundary(&self.doc, selection.head, row, forward, markup);
+        let head = edit::line_boundary(&self.doc, selection.head, row, direction, markup);
         let anchor = if extend { selection.anchor } else { head };
         self.doc.set_selection(Selection { anchor, head });
-        if forward {
+        if direction == Direction::Forward {
             Affinity::Before
         } else {
             Affinity::After

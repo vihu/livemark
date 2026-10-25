@@ -4,8 +4,8 @@ use iced::Point;
 
 use super::preview::Pane;
 use super::{Mode, complete, find};
-use crate::edit::Motion;
 use crate::edit::format::Format;
+use crate::edit::{Direction, Motion};
 
 /// A message from the editor's view, for [`Editor::update`].
 #[derive(Debug, Clone)]
@@ -111,8 +111,8 @@ pub(super) enum Key {
     Enter,
     /// Shift+Enter: a new line without new markup.
     SoftEnter,
-    /// Tab, or Shift+Tab with `true`.
-    Indent(bool),
+    /// Tab (`Forward`) or Shift+Tab (`Back`).
+    Indent(Direction),
     /// Ctrl/Cmd+B, I or E (REFERENCE-001 section 12).
     Format(Format),
     /// Ctrl/Cmd+K.
@@ -122,10 +122,10 @@ pub(super) enum Key {
     AddTag,
     /// Ctrl/Cmd+Shift+E: live preview or source mode (the user's pick).
     ToggleMode,
-    /// Alt+Up, or Alt+Down with `true`: move the selected lines.
-    MoveLines(bool),
-    /// Shift+Alt+Up, or Shift+Alt+Down with `true`: copy them.
-    CopyLines(bool),
+    /// Alt+Up or Alt+Down: move the selected lines.
+    MoveLines(Direction),
+    /// Shift+Alt+Up or Shift+Alt+Down: copy them.
+    CopyLines(Direction),
     /// Ctrl/Cmd+Shift+K.
     DeleteLines,
     /// Ctrl/Cmd+Enter: a blank line below.
@@ -136,8 +136,9 @@ pub(super) enum Key {
     Move(Motion, bool),
     Vertical(Vertical, bool),
     SelectAll,
-    /// Copy, or cut with `true` (REFERENCE-001 section 18).
-    Copy(bool),
+    /// Copy and cut (REFERENCE-001 section 18).
+    Copy,
+    Cut,
     Undo,
     Redo,
     /// Escape: collapse the selection (REFERENCE-001 section 13).

@@ -148,10 +148,7 @@ impl Editor {
         };
         let (unit, first) = match clicks {
             1 => (Unit::Char, offset..offset),
-            2 => (
-                Unit::Word,
-                edit::word_at(&self.doc, offset, side == Affinity::Before),
-            ),
+            2 => (Unit::Word, edit::word_at(&self.doc, offset, side)),
             _ => (Unit::Line, edit::line_with_ending(&self.doc, offset)),
         };
         let selection = match unit {
@@ -190,7 +187,7 @@ impl Editor {
             },
             Unit::Word | Unit::Line => {
                 let here = if press.unit == Unit::Word {
-                    edit::word_at(&self.doc, offset, side == Affinity::Before)
+                    edit::word_at(&self.doc, offset, side)
                 } else {
                     edit::line_with_ending(&self.doc, offset)
                 };

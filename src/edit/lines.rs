@@ -7,7 +7,7 @@
 use std::ops::Range;
 use std::time::Duration;
 
-use super::line_ending;
+use super::{Direction, line_ending};
 use crate::doc::{Change, Doc, Kind, Selection};
 
 /// The first and last line the selection covers; a selection ending at a
@@ -41,7 +41,8 @@ fn ending_after(doc: &Doc, index: usize) -> &str {
 /// the line above or below, and the selection goes with them. A selection
 /// end at the start of the line after them stays after them, past
 /// whichever line ending now follows.
-pub fn move_lines(doc: &mut Doc, down: bool, now: Duration) {
+pub fn move_lines(doc: &mut Doc, direction: Direction, now: Duration) {
+    let down = direction == Direction::Forward;
     let (first, last) = block(doc);
     let lines = span(doc, first, last);
     let text = doc.text();
@@ -95,7 +96,8 @@ pub fn move_lines(doc: &mut Doc, down: bool, now: Duration) {
 /// Shift+Alt+Up and Shift+Alt+Down (`copyLine`): a copy of the selected
 /// lines above or below them; the selection stays in the upper copy going
 /// up and in the lower one going down.
-pub fn copy_lines(doc: &mut Doc, down: bool, now: Duration) {
+pub fn copy_lines(doc: &mut Doc, direction: Direction, now: Duration) {
+    let down = direction == Direction::Forward;
     let (first, last) = block(doc);
     let lines = span(doc, first, last);
     let ending = ending_after(doc, last);
@@ -191,7 +193,7 @@ pub fn blank_line(doc: &mut Doc, now: Duration) {
 mod tests {
     use std::time::Duration;
 
-    use super::{blank_line, copy_lines, delete_lines, move_lines};
+    use super::{Direction, blank_line, copy_lines, delete_lines, move_lines};
     use crate::doc::{Doc, Selection};
 
     /// Runs `command` on `text` with the selection `anchor..head` and
@@ -216,8 +218,8 @@ mod tests {
 
     #[test]
     fn moving_lines_trades_places_and_keeps_the_endings() {
-        let down = |d: &mut Doc| move_lines(d, true, NOW);
-        let up = |d: &mut Doc| move_lines(d, false, NOW);
+        let down = |d: &mut Doc| move_lines(d, Direction::Forward, NOW);
+        let up = |d: &mut Doc| move_lines(d, Direction::Back, NOW);
         assert_eq!(run("a\nbc\nd", 3, 3, down), "a\nd\nb|c");
         assert_eq!(run("a\nbc\nd", 3, 3, up), "b|c\na\nd");
         assert_eq!(run("a\nb", 0, 0, up), "|a\nb", "first line up");
@@ -234,8 +236,8 @@ mod tests {
 
     #[test]
     fn copying_lines_keeps_the_selection_in_the_right_copy() {
-        let down = |d: &mut Doc| copy_lines(d, true, NOW);
-        let up = |d: &mut Doc| copy_lines(d, false, NOW);
+        let down = |d: &mut Doc| copy_lines(d, Direction::Forward, NOW);
+        let up = |d: &mut Doc| copy_lines(d, Direction::Back, NOW);
         assert_eq!(run("ab\nc", 1, 1, down), "ab\na|b\nc");
         assert_eq!(run("ab\nc", 1, 1, up), "a|b\nab\nc");
         assert_eq!(

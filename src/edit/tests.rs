@@ -82,15 +82,18 @@ fn deleting_takes_the_selection_or_one_motion() {
 
 #[test]
 fn home_goes_to_the_row_start_then_toggles_indentation_and_line_start() {
-    use super::line_boundary;
+    use super::{Direction, line_boundary};
     // One source line, wrapped as two rows: 0..10 and 10..20.
     let doc = doc_at("    aaaa bbbbbbbbbbb", 0);
-    let home = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, false, None);
+    let home =
+        |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, Direction::Back, None);
     assert_eq!(home(15, 10..20), 10, "the row's start first");
     assert_eq!(home(10, 10..20), 4, "then the end of the indentation");
     assert_eq!(home(4, 0..10), 0, "then the line start");
     assert_eq!(home(0, 0..10), 4, "and back");
-    let end = |head, row: std::ops::Range<usize>| line_boundary(&doc, head, row, true, None);
+    let end = |head, row: std::ops::Range<usize>| {
+        line_boundary(&doc, head, row, Direction::Forward, None)
+    };
     assert_eq!(end(2, 0..10), 10);
     assert_eq!(end(10, 0..10), 20, "from the row's end, the line's end");
 }
@@ -98,8 +101,16 @@ fn home_goes_to_the_row_start_then_toggles_indentation_and_line_start() {
 #[test]
 fn a_double_click_takes_the_class_on_the_clicked_side() {
     use super::word_at;
+    use crate::layout::Affinity;
     let doc = doc_at("say **bold_er**,  ok\n\nx", 0);
-    let word = |at, before| &doc.text()[word_at(&doc, at, before)];
+    let word = |at, before: bool| {
+        let side = if before {
+            Affinity::Before
+        } else {
+            Affinity::After
+        };
+        &doc.text()[word_at(&doc, at, side)]
+    };
     assert_eq!(word(7, false), "bold_er");
     assert_eq!(word(6, true), "**", "right half of the second *");
     assert_eq!(word(6, false), "bold_er");
@@ -134,9 +145,9 @@ fn copy_with_nothing_selected_takes_the_line_and_pastes_it_above() {
 
 #[test]
 fn home_stops_after_list_and_quote_markup_first() {
-    use super::line_boundary;
+    use super::{Direction, line_boundary};
     let doc = doc_at("  - [ ] task text", 0);
-    let home = |head| line_boundary(&doc, head, 0..17, false, Some(8));
+    let home = |head| line_boundary(&doc, head, 0..17, Direction::Back, Some(8));
     assert_eq!(home(17), 8, "the item's text, not the line's start");
     assert_eq!(home(8), 0, "then the line's start");
     assert_eq!(home(0), 8, "and back");

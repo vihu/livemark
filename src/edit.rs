@@ -15,6 +15,7 @@ use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::doc::{Change, Doc, Kind, Selection};
+use crate::layout::Affinity;
 
 /// A caret motion that needs no layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,6 +80,14 @@ pub fn go(doc: &mut Doc, motion: Motion, extend: bool) {
     });
 }
 
+/// Which way a command goes: towards the document's start (`Back`: Home,
+/// Shift+Tab, Alt+Up, the previous match) or its end (`Forward`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Back,
+    Forward,
+}
+
 /// Home and End (REFERENCE-001 section 13, CodeMirror's
 /// `moveByLineBoundary`): to the edge of the visual row `row` the caret is
 /// on; from an edge already reached, to the edge of the source line. Home
@@ -89,9 +98,10 @@ pub fn line_boundary(
     doc: &Doc,
     head: usize,
     row: Range<usize>,
-    forward: bool,
+    direction: Direction,
     markup: Option<usize>,
 ) -> usize {
+    let forward = direction == Direction::Forward;
     let line = doc.line_range(doc.line_at(head));
     let (edge, line_edge) = if forward {
         (row.end, line.end)
@@ -112,9 +122,11 @@ pub fn line_boundary(
 
 /// The word, run of spaces or run of punctuation a double click at `at`
 /// selects (REFERENCE-001 section 14): the grapheme before `at` when
-/// `before` (the click was on the right half of it), else the one after,
-/// grown in both directions within the line while the class holds.
-pub fn word_at(doc: &Doc, at: usize, before: bool) -> Range<usize> {
+/// `side` is `Before` (the click was on the right half of it), else the
+/// one after, grown in both directions within the line while the class
+/// holds.
+pub fn word_at(doc: &Doc, at: usize, side: Affinity) -> Range<usize> {
+    let before = side == Affinity::Before;
     let line = doc.line_range(doc.line_at(at));
     let text = &doc.text()[line.clone()];
     let at = at.min(line.end) - line.start;

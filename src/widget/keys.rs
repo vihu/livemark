@@ -14,8 +14,8 @@ use iced::widget::text_editor::{Binding, KeyPress, Motion as IcedMotion};
 use super::find::FindInput;
 use super::surface::{State, Surface};
 use super::{Input, Key, Message, Pane, Vertical};
-use crate::edit::Motion;
 use crate::edit::format::Format;
+use crate::edit::{Direction, Motion};
 
 /// The shortcut `key` with `modifiers` is, if any.
 pub(super) fn shortcut(
@@ -50,11 +50,15 @@ pub(super) fn shortcut(
         keyboard::Key::Named(named @ (Named::ArrowUp | Named::ArrowDown))
             if modifiers.alt() && !modifiers.command() =>
         {
-            let down = named == Named::ArrowDown;
-            Some(if modifiers.shift() {
-                Key::CopyLines(down)
+            let direction = if named == Named::ArrowDown {
+                Direction::Forward
             } else {
-                Key::MoveLines(down)
+                Direction::Back
+            };
+            Some(if modifiers.shift() {
+                Key::CopyLines(direction)
+            } else {
+                Key::MoveLines(direction)
             })
         }
         keyboard::Key::Named(Named::Enter) if command && !modifiers.shift() => Some(Key::BlankLine),
@@ -158,7 +162,12 @@ impl Surface<'_> {
         // control character); here it indents (REFERENCE-001
         // section 7).
         if *key == keyboard::Key::Named(keyboard::key::Named::Tab) && !modifiers.command() {
-            publish(shell, Input::Key(Key::Indent(modifiers.shift())));
+            let direction = if modifiers.shift() {
+                Direction::Back
+            } else {
+                Direction::Forward
+            };
+            publish(shell, Input::Key(Key::Indent(direction)));
             if let Some(focus) = &mut state.focus {
                 focus.updated_at = Instant::now();
             }
@@ -231,8 +240,8 @@ pub(super) fn bind(
 ) {
     let key = |key| Message(Input::Key(key));
     match binding {
-        Binding::Copy => shell.publish(key(Key::Copy(false))),
-        Binding::Cut => shell.publish(key(Key::Copy(true))),
+        Binding::Copy => shell.publish(key(Key::Copy)),
+        Binding::Cut => shell.publish(key(Key::Cut)),
         Binding::Paste => {
             *pasting = Some(clipboard::Kind::Text);
             shell.read_clipboard(clipboard::Kind::Text);

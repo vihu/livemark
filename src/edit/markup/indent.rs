@@ -6,6 +6,7 @@ use self::lists::Lists;
 use super::context::{Blocks, contexts, item_number};
 use super::{line_at, map};
 use crate::doc::{Change, Doc, Kind, Selection};
+use crate::edit::Direction;
 
 mod lists;
 
@@ -14,7 +15,8 @@ mod lists;
 /// back out to its parent's column; the sibling items after it that the
 /// selection reaches move the same way, with theirs. Elsewhere Tab types a
 /// tab and Shift+Tab takes one indent unit off the line.
-pub fn indent(doc: &mut Doc, outdent: bool, now: Duration) {
+pub fn indent(doc: &mut Doc, direction: Direction, now: Duration) {
+    let outdent = direction == Direction::Back;
     let text = doc.text();
     let selection = doc.selection();
     let pos = selection.head;
