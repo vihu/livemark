@@ -182,13 +182,13 @@ impl Settings {
     /// light theme, by night a dark one; at most ten recent files.
     fn checked(mut self) -> Self {
         let default = Self::default();
-        if !(0.5..=3.0).contains(&self.zoom) {
+        if !livemark::widget::ZOOMS.contains(&self.zoom) {
             self.zoom = default.zoom;
         }
         if !(0.5..=2.0).contains(&self.scale) {
             self.scale = default.scale;
         }
-        if !(0.2..=0.8).contains(&self.split) {
+        if !livemark::widget::SPLIT_RATIOS.contains(&self.split) {
             self.split = default.split;
         }
         if !SIDEBAR_WIDTHS.contains(&self.sidebar_width) {

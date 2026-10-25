@@ -38,9 +38,6 @@ impl App {
             // The note is out of sight behind the tag manager: its toolbar
             // does nothing meanwhile.
             Message::Editor(_) if self.manager.is_some() || self.appearance => {}
-            Message::Editor(message) if message.pasted_image().is_some() => {
-                return self.paste_picture(message.pasted_image().unwrap_or_default());
-            }
             Message::Dropped(file) => return self.dropped(file),
             Message::Vault(message) => return self.vault_update(message),
             Message::Tag(message) => return self.tag_update(message),
@@ -48,6 +45,10 @@ impl App {
             Message::Note(message) => return self.note_update(message),
             Message::Search(message) => return self.search_update(message),
             Message::Editor(message) => {
+                // Encoded once, as the clipboard's picture comes.
+                if let Some(png) = message.pasted_image() {
+                    return self.paste_picture(png);
+                }
                 if let Some(tag) = message.tag() {
                     self.show_tag(tag);
                 }

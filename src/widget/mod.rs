@@ -31,11 +31,20 @@ use iced::advanced::widget::Id;
 use iced::{Color, Element, Point, Rectangle, Size, Task};
 
 pub use self::complete::{Choice, Complete, Completing};
+pub use crate::doc::Selection;
+
+/// The text sizes [`Editor::set_zoom`] takes, as a share of the default.
+pub const ZOOMS: std::ops::RangeInclusive<f32> = 0.5..=3.0;
+
+/// The shares of the width the markdown pane may take side by side
+/// ([`Editor::set_split_ratio`]).
+pub const SPLIT_RATIOS: std::ops::RangeInclusive<f32> =
+    divider::MIN_SHARE..=1.0 - divider::MIN_SHARE;
 pub use self::footer::FooterLink;
 use self::lines::{Lines, Source};
 use self::preview::Pane;
 use self::shape::Colors;
-use crate::doc::{Doc, Selection};
+use crate::doc::Doc;
 use crate::edit::Motion;
 use crate::edit::format::Format;
 use crate::layout::Affinity;
@@ -338,13 +347,7 @@ impl Editor {
     /// and moved back to a character boundary) and scrolls to show `head`.
     pub fn select(&mut self, anchor: usize, head: usize) {
         let text = self.doc.text();
-        let fit = |at: usize| {
-            let mut at = at.min(text.len());
-            while !text.is_char_boundary(at) {
-                at -= 1;
-            }
-            at
-        };
+        let fit = |at: usize| text.floor_char_boundary(at);
         let selection = Selection {
             anchor: fit(anchor),
             head: fit(head),
@@ -398,9 +401,8 @@ impl Editor {
     /// double click on it puts it back to 0.5. A host keeps it between
     /// starts.
     pub fn set_split_ratio(&mut self, ratio: f32) {
-        let min = divider::MIN_SHARE;
         if ratio.is_finite() {
-            self.split_ratio = ratio.clamp(min, 1.0 - min);
+            self.split_ratio = ratio.clamp(*SPLIT_RATIOS.start(), *SPLIT_RATIOS.end());
         }
     }
 
@@ -440,11 +442,15 @@ impl Editor {
         self.lines.borrow().zoom
     }
 
-    /// Sets the text size as a share of the default, from 0.5 to 3.0
+    /// Sets the text size as a share of the default, within [`ZOOMS`]
     /// (prose, headings, code and tables together), keeping the caret's
-    /// row where it was on screen. Ctrl+=, Ctrl+- and Ctrl+0 in the app.
+    /// row where it was on screen; not a number leaves it as it is.
+    /// Ctrl+=, Ctrl+- and Ctrl+0 in the app.
     pub fn set_zoom(&mut self, zoom: f32) {
-        let zoom = zoom.clamp(0.5, 3.0);
+        if zoom.is_nan() {
+            return;
+        }
+        let zoom = zoom.clamp(*ZOOMS.start(), *ZOOMS.end());
         if zoom != self.zoom() {
             self.keep_caret_row(|lines| lines.zoom = zoom);
             let mut preview = self.preview.lines.borrow_mut();

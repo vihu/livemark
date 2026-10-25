@@ -271,10 +271,7 @@ fn original(line: &str, range: Range<usize>) -> Option<Range<usize>> {
 
 /// Up to `AROUND` characters each side of byte `at` in `line`, trimmed.
 fn around(line: &str, at: usize) -> String {
-    let at = (0..=at.min(line.len()))
-        .rev()
-        .find(|&i| line.is_char_boundary(i))
-        .unwrap_or(0);
+    let at = line.floor_char_boundary(at);
     let before: String = line[..at]
         .chars()
         .rev()
